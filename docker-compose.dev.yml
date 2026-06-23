@@ -1,0 +1,55 @@
+# Development stack with hot reload. Source is bind-mounted, so edits on the
+# host are picked up live (tsx watch for the server, Vite HMR for the client).
+# Because you have no local Node, this is the recommended way to develop.
+#
+#   docker compose -f docker-compose.dev.yml up
+#
+# Client: http://localhost:5173   Server: http://localhost:3001
+#
+# Note: each service installs deps into its own anonymous node_modules volume on
+# first start, so the initial boot is slow. Subsequent starts are fast.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev:server"
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-insecure-secret-change-me
+      RECONNECT_GRACE_MS: 60000
+      CLIENT_ORIGIN: http://localhost:5173
+      # Bind-mounted source on Windows doesn't emit inotify events into the
+      # container, so file watchers must poll to see host edits.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - .:/app
+      - server-node-modules:/app/node_modules
+    depends_on:
+      - redis
+
+  client:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev:client"
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_SERVER_URL: http://localhost:3001
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - .:/app
+      - client-node-modules:/app/node_modules
+    depends_on:
+      - server
+
+volumes:
+  server-node-modules:
+  client-node-modules:

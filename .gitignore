@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Local editor/agent settings
+.claude/settings.local.json

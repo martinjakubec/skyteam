@@ -1,0 +1,21 @@
+{
+  "name": "skyteam",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @skyteam/shared",
+    "build": "npm run build -w @skyteam/shared && npm run build -w @skyteam/client",
+    "dev": "npm run build:shared && concurrently -n shared,server,client -c blue,green,magenta \"npm run dev -w @skyteam/shared\" \"npm run dev -w @skyteam/server\" \"npm run dev -w @skyteam/client\"",
+    "dev:server": "npm run build:shared && npm run dev -w @skyteam/server",
+    "dev:client": "npm run build:shared && npm run dev -w @skyteam/client",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  }
+}
