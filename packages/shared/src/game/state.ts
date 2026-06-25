@@ -82,15 +82,19 @@ export interface GameState {
   brakesDeployed: number; // 0..3 — how far the red Brake marker has advanced
 
   // --- Per-round space occupancy (reset every round when dice are taken back) ---
-  gearSlots: boolean[];
-  flapSlots: boolean[];
+  gearSlots: (DieValue | null)[]; // value placed this round (kept visible until reset)
+  flapSlots: (DieValue | null)[];
   brakeSlots: boolean[];
-  radioPilotUsed: boolean;
-  radioCopilotUsed: boolean[]; // length RADIO_COPILOT_SLOTS
+  radioPilot: DieValue | null; // the value placed on the Pilot's Radio space
+  radioCopilot: (DieValue | null)[]; // per Co-Pilot Radio space; length RADIO_COPILOT_SLOTS
   concentrationSlots: boolean[]; // length CONCENTRATION_SLOTS
 
   coffee: number; // 0..MAX_COFFEE
   rerollTokens: number;
+  // A joint reroll is in flight: the active player has rerolled and we are now
+  // waiting on this crew to reroll (or decline). null = no reroll pending. While
+  // set, every other command is rejected — this is the no-race lock.
+  pendingReroll: Crew | null;
 
   outcome: { result: "won" } | { result: "lost"; reason: string } | null;
   log: string[];
@@ -137,14 +141,15 @@ export function createInitialGameState(
     gearGreen: Array(LANDING_GEAR_COUNT).fill(false),
     flapsGreen: Array(FLAPS_COUNT).fill(false),
     brakesDeployed: 0,
-    gearSlots: Array(LANDING_GEAR_COUNT).fill(false),
-    flapSlots: Array(FLAPS_COUNT).fill(false),
+    gearSlots: Array(LANDING_GEAR_COUNT).fill(null),
+    flapSlots: Array(FLAPS_COUNT).fill(null),
     brakeSlots: Array(BRAKE_VALUES.length).fill(false),
-    radioPilotUsed: false,
-    radioCopilotUsed: Array(RADIO_COPILOT_SLOTS).fill(false),
+    radioPilot: null,
+    radioCopilot: Array(RADIO_COPILOT_SLOTS).fill(null),
     concentrationSlots: Array(CONCENTRATION_SLOTS).fill(false),
     coffee: 0,
     rerollTokens: 0,
+    pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
   };

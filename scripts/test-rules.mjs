@@ -31,6 +31,7 @@ function place(s, who, value, target, coffeeDelta) {
   if (!die) throw new Error(`no unplaced ${value} for ${crew} [${s.dice[crew].map((d) => d.value)}]`);
   return reduce(s, { type: "placeDie", dieId: die.id, target, coffeeDelta }, who).state;
 }
+const reroll = (s, who, dieIds, values) => reduce(s, { type: "reroll", dieIds, values }, who).state;
 // Fresh game in the "rolling" phase; each test rolls its own controlled dice.
 const init = (scenario) => createInitialGameState(scenario, P, C);
 
@@ -121,15 +122,32 @@ console.log("3) Engine speed thresholds");
   check("sum 9 -> advance 2", advanceWith(4, 5) === 2);
 }
 
-// 4) Collision loss ---------------------------------------------------------
-console.log("4) Collision: advancing off a space occupied by an airplane");
+// 4) Collision: leaving or flying through traffic (but NOT landing on it) -----
+console.log("4) Collision: leaving/through traffic loses; landing on it is safe");
 {
-  const s0 = scn({ approachTrack: [{ traffic: 1 }, { traffic: 0 }, { traffic: 0, airport: true }], rounds: 7 });
-  let s = init(s0);
-  s = roll(s, [4, 1, 1, 1], [4, 1, 1, 1]);
-  s = place(s, P, 4, { kind: "engine" });
-  s = place(s, C, 4, { kind: "engine" }); // sum 8 -> must advance, but airplane on space 0
-  check("collision -> lost", s.phase === "lost" && /collision/i.test(s.outcome?.reason ?? ""));
+  // Traffic on the intermediate space (1); advancing 2 flies *through* it.
+  const through = scn({ approachTrack: [{ traffic: 0 }, { traffic: 1 }, { traffic: 0 }, { traffic: 0, airport: true }], rounds: 7 });
+  let s = init(through);
+  s = roll(s, [5, 1, 1, 1], [4, 1, 1, 1]);
+  s = place(s, P, 5, { kind: "engine" });
+  s = place(s, C, 4, { kind: "engine" }); // sum 9 -> advance 2, through space 1
+  check("flying through traffic -> lost", s.phase === "lost" && /collision/i.test(s.outcome?.reason ?? ""));
+
+  // Plane starts on a traffic space (0); moving off it at all collides.
+  const from = scn({ approachTrack: [{ traffic: 1 }, { traffic: 0 }, { traffic: 0, airport: true }], rounds: 7 });
+  let f = init(from);
+  f = roll(f, [3, 1, 1, 1], [2, 1, 1, 1]);
+  f = place(f, P, 3, { kind: "engine" });
+  f = place(f, C, 2, { kind: "engine" }); // sum 5 -> advance 1 off the occupied space 0
+  check("leaving an occupied space -> lost", f.phase === "lost" && /collision/i.test(f.outcome?.reason ?? ""));
+
+  // Traffic on the landing space (1); advancing 1 lands on it — this is SAFE.
+  const onto = scn({ approachTrack: [{ traffic: 0 }, { traffic: 1 }, { traffic: 0, airport: true }], rounds: 7 });
+  let t = init(onto);
+  t = roll(t, [3, 1, 1, 1], [2, 1, 1, 1]);
+  t = place(t, P, 3, { kind: "engine" });
+  t = place(t, C, 2, { kind: "engine" }); // sum 5 -> advance 1 onto space 1
+  check("landing on traffic -> safe", t.phase !== "lost" && t.position === 1);
 }
 
 // 5) Overshoot loss ---------------------------------------------------------
@@ -218,6 +236,98 @@ console.log("10) Flaps/Brakes must deploy in order");
   // Co-Pilot flaps slot 1 before slot 0 is illegal (after a pilot move).
   let s2 = place(s, P, 1, { kind: "axis" });
   expectThrow("flaps out of order rejected", () => place(s2, C, 3, { kind: "flaps", slot: 1 }));
+}
+
+// 11) A deployed gear/flap section can't be filled again in a later round ----
+console.log("11) Re-placing on an already-deployed section is rejected (no wasted die)");
+{
+  let s = init(scn({ rounds: 7 }));
+  // R1 (pilot leads): deploy gear0 + flaps0, fill the rest legally to end the round.
+  s = roll(s, [1, 4, 1, 4], [1, 4, 1, 4]);
+  s = place(s, P, 1, { kind: "landingGear", slot: 0 }); // 1/2
+  s = place(s, C, 1, { kind: "flaps", slot: 0 }); // 1/2
+  s = place(s, P, 4, { kind: "axis" });
+  s = place(s, C, 4, { kind: "axis" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 1, { kind: "engine" }); // sum 2 -> hold
+  s = place(s, P, 4, { kind: "radio", slot: 0 });
+  s = place(s, C, 4, { kind: "concentration", slot: 0 }); // 8th die -> round ends
+  check("gear/flaps 0 deployed; round advanced", s.gearGreen[0] && s.flapsGreen[0] && s.round === 2 && s.phase === "rolling");
+  // R2 (copilot leads): the per-round flags reset, but the sections stay down.
+  s = roll(s, [2, 1, 1, 1], [2, 1, 1, 1]);
+  expectThrow("re-deploying flaps slot 0 rejected", () => place(s, C, 2, { kind: "flaps", slot: 0 }));
+  s = place(s, C, 2, { kind: "flaps", slot: 1 }); // valid next flap -> turn passes to pilot
+  expectThrow("re-deploying gear slot 0 rejected", () => place(s, P, 2, { kind: "landingGear", slot: 0 }));
+}
+
+// 12) Joint reroll: active player initiates, the other player then responds ---
+console.log("12) Joint reroll: one token, initiator picks dice, the other player responds");
+{
+  // a/b) initiator rerolls >=1 -> token spent + pending set; responder rerolls a
+  //      subset -> pending cleared, turn order untouched.
+  let s = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s = roll(s, [2, 2, 2, 2], [3, 3, 3, 3]); // round 1: pilot is the active player, 1 token granted
+  check("token granted on the reroll round", s.rerollTokens === 1);
+  const pIds = s.dice.pilot.map((d) => d.id);
+  s = reroll(s, P, [pIds[0], pIds[1]], [5, 6]); // pilot initiates on two of their dice
+  check("initiator's chosen dice rerolled", s.dice.pilot[0].value === 5 && s.dice.pilot[1].value === 6);
+  check("one token spent for the whole joint event", s.rerollTokens === 0);
+  check("now awaiting the co-pilot's reroll", s.pendingReroll === "copilot");
+  const cIds = s.dice.copilot.map((d) => d.id);
+  s = reroll(s, C, [cIds[0]], [1]); // responder rerolls one of their own
+  check("responder's chosen die rerolled", s.dice.copilot[0].value === 1);
+  check("reroll fully resolved", s.pendingReroll === null);
+  check("turn order unchanged by the reroll", s.turn === "pilot");
+
+  // c) the responder may decline by rerolling zero dice.
+  let s2 = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s2 = roll(s2, [2, 2, 2, 2], [3, 3, 3, 3]);
+  s2 = reroll(s2, P, [s2.dice.pilot[0].id], [6]);
+  const before = JSON.stringify(s2.dice.copilot.map((d) => d.value));
+  s2 = reroll(s2, C, [], []); // decline
+  check("responder declining clears the pending reroll", s2.pendingReroll === null);
+  check("declining leaves the responder's dice intact", JSON.stringify(s2.dice.copilot.map((d) => d.value)) === before);
+
+  // d) while a reroll is pending, no other command may resolve (race lock).
+  let s3 = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s3 = roll(s3, [2, 2, 2, 2], [3, 3, 3, 3]);
+  s3 = reroll(s3, P, [s3.dice.pilot[0].id], [6]); // pending = copilot
+  expectThrow("placeDie rejected while a reroll is pending", () =>
+    reduce(s3, { type: "placeDie", dieId: s3.dice.pilot[1].id, target: { kind: "axis" } }, P),
+  );
+  let lockMsg = "";
+  try {
+    reroll(s3, P, [s3.dice.pilot[1].id], [4]);
+  } catch (e) {
+    lockMsg = e.message;
+  }
+  check("second initiation blocked by the pending lock (not token count)", /pending|progress|waiting|finish/i.test(lockMsg));
+
+  // e) the initiator must reroll at least one die.
+  let s4 = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s4 = roll(s4, [2, 2, 2, 2], [3, 3, 3, 3]);
+  expectThrow("initiator with zero dice rejected", () => reroll(s4, P, [], []));
+
+  // f) only the active player may initiate a reroll.
+  let s5 = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s5 = roll(s5, [2, 2, 2, 2], [3, 3, 3, 3]); // turn = pilot
+  expectThrow("non-active player cannot initiate", () => reroll(s5, C, [s5.dice.copilot[0].id], [4]));
+
+  // g) auto-complete: if the responder has no unplaced dice, no prompt is left open.
+  let s6 = init(scn({ rerollRounds: [1], rounds: 7 }));
+  s6 = roll(s6, [1, 3, 2, 1], [1, 2, 3, 4]); // round 1, pilot leads
+  s6 = place(s6, P, 1, { kind: "landingGear", slot: 0 }); // 1/2
+  s6 = place(s6, C, 1, { kind: "flaps", slot: 0 }); // 1/2
+  s6 = place(s6, P, 3, { kind: "landingGear", slot: 1 }); // 3/4
+  s6 = place(s6, C, 2, { kind: "axis" });
+  s6 = place(s6, P, 2, { kind: "axis" }); // axis 2 vs 2 -> level
+  s6 = place(s6, C, 3, { kind: "engine" });
+  s6 = place(s6, P, 1, { kind: "engine" }); // sum 4 -> advance 0; pilot now has 0 unplaced dice
+  check("setup: co-pilot active, pilot out of dice", s6.turn === "copilot" && s6.dice.pilot.every((d) => d.placed));
+  const lastC = s6.dice.copilot.find((d) => !d.placed).id;
+  s6 = reroll(s6, C, [lastC], [5]); // pilot (the responder) has nothing to reroll
+  check("auto-completed -> nothing left pending", s6.pendingReroll === null);
+  check("auto-complete still spent the token", s6.rerollTokens === 0);
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

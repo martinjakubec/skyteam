@@ -49,6 +49,7 @@ export function attachSocket(server: http.Server): IOServer {
     socket.on("room:join", (payload, ack) => void onJoin(io, socket, payload, ack));
     socket.on("seat:ready", (payload, ack) => void onReady(io, socket, payload, ack));
     socket.on("game:start", (ack) => void onStart(io, socket, ack));
+    socket.on("game:reset", (ack) => void onReset(io, socket, ack));
     socket.on("game:command", (payload, ack) => void onCommand(io, socket, payload, ack));
     socket.on("disconnect", () => void onDisconnect(io, socket));
   });
@@ -124,6 +125,29 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   room.status = "in_progress";
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
+  let game = createInitialGameState(DEFAULT_SCENARIO, pilotId, copilotId);
+  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
+  room.game = game;
+  room.version = 0;
+  await saveRoom(room);
+
+  ack({ ok: true });
+  broadcastState(io, room);
+}
+
+/** Restart an in-progress or finished game from a fresh round 1 (same crew). */
+async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  if (room.hostPlayerId !== playerId)
+    return ack({ ok: false, error: "Only the host can reset the game." });
+  if (room.status !== "in_progress" && room.status !== "finished")
+    return ack({ ok: false, error: "There is no game to reset." });
+
+  const pilotId = room.seats.find((s) => s.role === "host")!.playerId;
+  const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
+
+  room.status = "in_progress";
   let game = createInitialGameState(DEFAULT_SCENARIO, pilotId, copilotId);
   game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
   room.game = game;

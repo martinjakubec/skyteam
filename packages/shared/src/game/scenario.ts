@@ -156,7 +156,8 @@ export const YUL_MONTREAL: Scenario = {
   startAltitudeFeet: 6000,
   feetPerRound: 1000,
   rerollRounds: [1, 4], // round 1 confirmed by rulebook; 2nd is a placeholder
-  axisSpinAt: 5,
+  // The plane may sit at most 2 pips off-centre; reaching the 3rd pip (±3) spins out.
+  axisSpinAt: 3,
   aeroBlueStart: AERO_BLUE_START,
   aeroOrangeStart: AERO_ORANGE_START,
 };

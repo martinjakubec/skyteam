@@ -4,7 +4,8 @@ import { createRoom, joinRoom } from "./api";
 import { useGame } from "./store";
 
 export function App() {
-  const { snapshot, connected, lastError, connect, setReady, startGame, sendCommand } = useGame();
+  const { snapshot, connected, lastError, connect, setReady, startGame, resetGame, sendCommand } =
+    useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -36,6 +37,9 @@ export function App() {
       const r = await createRoom();
       setRoom(r);
       connect(r.roomId);
+      // Put the room in the URL so a refresh re-enters it via the auto-join path
+      // below (the per-tab token reconnects the host to their existing seat).
+      window.history.replaceState(null, "", `?join=${r.inviteCode}`);
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -64,9 +68,22 @@ export function App() {
     <main className={inGame ? "stage" : "center"}>
       <header className="topbar">
         <h1 className="wordmark">SKY&middot;TEAM</h1>
-        <span className={`conn ${connected ? "on" : "off"}`}>
-          {connected ? "● linked" : "○ reconnecting"}
-        </span>
+        <div className="topbar-right">
+          <span className={`conn ${connected ? "on" : "off"}`}>
+            {connected ? "● linked" : "○ reconnecting"}
+          </span>
+          {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
+            <button
+              className="reset-btn"
+              onClick={() => {
+                if (window.confirm("Reset the game back to the start? All progress will be lost."))
+                  resetGame();
+              }}
+            >
+              Reset game
+            </button>
+          )}
+        </div>
       </header>
       {lastError && <p className="error">{lastError}</p>}
 
@@ -176,11 +193,30 @@ function Cockpit({
 
   const [selected, setSelected] = useState<number | null>(null);
   const [coffeeDelta, setCoffeeDelta] = useState(0);
+  // Reroll is a two-step handshake. `rerollMode` = I (the active player) clicked
+  // Reroll and am choosing which of my dice to reroll. `rerollPick` holds the ids
+  // I've toggled. The other player's prompt is driven by `game.pendingReroll`.
+  const [rerollMode, setRerollMode] = useState(false);
+  const [rerollPick, setRerollPick] = useState<number[]>([]);
 
   const myDice = myCrew ? game.dice[myCrew] : [];
   const oppDice = myCrew ? game.dice[myCrew === "pilot" ? "copilot" : "pilot"] : [];
   const selDie = myDice.find((d) => d.id === selected && !d.placed);
   const selValue = selDie?.value !== undefined ? clamp(selDie.value + coffeeDelta, 1, 6) : null;
+
+  // The server prompts the *other* crew via pendingReroll. iMustRespond = it's my
+  // turn to reroll-or-decline; waitingForReroll = I initiated and am waiting.
+  const iMustRespond = myCrew !== null && game.pendingReroll === myCrew;
+  const waitingForReroll = game.pendingReroll !== null && game.pendingReroll !== myCrew;
+  // The dice tray is in pick-toggle mode when I'm choosing dice for a reroll.
+  const rerollActive = (rerollMode && myTurn) || iMustRespond;
+
+  // Drop any local reroll UI when the reroll context changes server-side
+  // (initiated, resolved, or a new round dealt) so stale picks never linger.
+  useEffect(() => {
+    setRerollMode(false);
+    setRerollPick([]);
+  }, [game.pendingReroll, game.round]);
 
   const place = (target: Target) => {
     if (selected === null) return;
@@ -188,23 +224,128 @@ function Cockpit({
     setSelected(null);
     setCoffeeDelta(0);
   };
-  const reroll = () => {
-    const ids = myDice.filter((d) => !d.placed).map((d) => d.id);
-    if (ids.length) onCommand({ type: "reroll", dieIds: ids });
+  const startReroll = () => {
+    setSelected(null);
+    setCoffeeDelta(0);
+    setRerollPick([]);
+    setRerollMode(true);
+  };
+  const toggleRerollDie = (id: number) =>
+    setRerollPick((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const confirmReroll = () => {
+    onCommand({ type: "reroll", dieIds: rerollPick });
+    setRerollMode(false);
+    setRerollPick([]);
+  };
+  const cancelReroll = () => {
+    setRerollMode(false);
+    setRerollPick([]);
   };
 
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
-  const can = (free: boolean) => myTurn && selected !== null && free;
+  // Flaps deploy strictly in order: only the first undeployed section is legal.
+  const nextFlap = game.flapsGreen.findIndex((g) => !g);
+
+  // --- Drag-and-drop: grab a die, drop it onto a space, snap back otherwise ---
+  const [dragging, setDragging] = useState(false);
+  const [drag, setDrag] = useState<{ dieId: number; value: number; crew: Crew; x: number; y: number } | null>(null);
+
+  // A panel space is a live drop/click target when it's my turn, the space is
+  // free, and I'm either holding a selected die or mid-drag.
+  const can = (free: boolean) =>
+    myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && !rerollMode;
+
+  // The value of the die currently in hand (dragged or selected, Coffee applied).
+  // Spaces with a number requirement only light up when this value fits them.
+  const activeValue = drag ? drag.value : selValue;
+  const valOk = (allowed: number[]) => activeValue === null || allowed.includes(activeValue);
+
+  const gesture = useRef<null | {
+    dieId: number;
+    crew: Crew;
+    startX: number;
+    startY: number;
+    active: boolean;
+    value: number;
+    coffee: number;
+  }>(null);
+  // A glowing ring rendered over whichever valid space the die is hovering, so
+  // it reads as "about to click in here". Rect-based and React-controlled.
+  const [hoverRect, setHoverRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  const validSlotUnder = (x: number, y: number): HTMLElement | null => {
+    const slot = (document.elementFromPoint(x, y) as Element | null)?.closest(".slot") as HTMLElement | null;
+    return slot?.dataset.open === "1" ? slot : null;
+  };
+
+  const onDragMove = (e: PointerEvent) => {
+    const g = gesture.current;
+    if (!g) return;
+    if (!g.active && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < 6) return;
+    if (!g.active) {
+      g.active = true;
+      setDragging(true);
+    }
+    const slot = validSlotUnder(e.clientX, e.clientY);
+    const r = slot?.getBoundingClientRect();
+    setHoverRect(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
+    setDrag({ dieId: g.dieId, value: g.value, crew: g.crew, x: e.clientX, y: e.clientY });
+  };
+  const onDragEnd = (e: PointerEvent) => {
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+    const g = gesture.current;
+    gesture.current = null;
+    setHoverRect(null);
+    setDrag(null);
+    setDragging(false);
+    if (!g) return;
+    if (!g.active) {
+      // No real drag — treat as a tap: select the die (reveals Coffee controls).
+      setSelected(g.dieId);
+      setCoffeeDelta(0);
+      return;
+    }
+    const slot = validSlotUnder(e.clientX, e.clientY);
+    if (slot?.dataset.target) {
+      const target = JSON.parse(slot.dataset.target) as Target;
+      onCommand({ type: "placeDie", dieId: g.dieId, target, coffeeDelta: g.coffee || undefined });
+      setSelected(null);
+      setCoffeeDelta(0);
+    } else {
+      setSelected(null); // dropped nowhere valid — the die stays put in the tray
+    }
+  };
+  const startDrag = (e: React.PointerEvent, die: { id: number; value?: number; placed?: boolean }) => {
+    if (die.placed || !myTurn || !myCrew || game.pendingReroll !== null || rerollMode) return;
+    e.preventDefault();
+    const base = die.value ?? 1;
+    const coffee = selected === die.id ? coffeeDelta : 0;
+    gesture.current = {
+      dieId: die.id,
+      crew: myCrew,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      value: clamp(base + coffee, 1, 6),
+      coffee,
+    };
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+  };
 
   return (
     <div className="board">
       {/* Top instruments: altitude strip · cockpit window · axis dial */}
       <section className="instruments">
         <Altitude game={game} />
-        <div className="axis-cluster">
-          <Slot tone="blue" noSwitch taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
-          <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
-          <Slot tone="orange" noSwitch taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
+        <div className="dial-stack">
+          <div className="axis-cluster">
+            <Slot tone="blue" noSwitch dice target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
+            <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
+            <Slot tone="orange" noSwitch dice target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
+          </div>
+          <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
         </div>
         <div className="instr-spacer" aria-hidden="true" />
       </section>
@@ -214,18 +355,23 @@ function Cockpit({
           ? game.outcome.result === "won"
             ? "Smooth landing — the passengers applaud."
             : game.outcome.reason
-          : myCrew
-            ? myTurn
-              ? "Your turn — choose a die, then a panel space."
-              : `Silence. Waiting for the ${label(game.turn)}…`
-            : "Spectating the approach."}
+          : waitingForReroll
+            ? `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`
+            : iMustRespond
+              ? "Reroll offered — pick any of your dice to reroll, or Skip."
+              : myCrew
+                ? myTurn
+                  ? rerollMode
+                    ? "Reroll — pick the dice to reroll, then Confirm."
+                    : "Your turn — drag a die onto a panel space."
+                  : `Silence. Waiting for the ${label(game.turn)}…`
+                : "Spectating the approach."}
       </p>
 
       {/* Main deck */}
       <section className="deck">
-        {/* Left rail: speed gauge + landing gear (blue, Pilot) */}
+        {/* Left rail: landing gear (blue, Pilot) */}
         <div className="rail">
-          <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
           <Module title="Landing Gear" tone="blue">
             <div className="slots-col">
               {game.gearGreen.map((green, i) => (
@@ -233,10 +379,12 @@ function Cockpit({
                   key={i}
                   tone="blue"
                   green={green}
-                  taken={game.gearSlots[i]}
+                  target={{ kind: "landingGear", slot: i }}
+                  taken={game.gearSlots[i] !== null}
+                  held={game.gearSlots[i]}
                   label={GEAR_LABEL[i]}
                   onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={can(myCrew === "pilot" && !game.gearSlots[i])}
+                  enabled={can(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
                 />
               ))}
             </div>
@@ -250,17 +398,17 @@ function Cockpit({
           <div className="mandatory-row">
             <Module title="Engines" mandatory tone="split">
               <div className="slots-row">
-                <Slot tone="blue" noSwitch taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
-                <Slot tone="orange" noSwitch taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
+                <Slot tone="blue" noSwitch dice target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
+                <Slot tone="orange" noSwitch dice target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
               </div>
             </Module>
           </div>
 
           <Module title="Radio" tone="split">
             <div className="slots-row">
-              <Slot tone="blue" taken={game.radioPilotUsed} label="P" onClick={() => place({ kind: "radio", slot: 0 })} enabled={can(myCrew === "pilot" && !game.radioPilotUsed)} />
-              {game.radioCopilotUsed.map((used, i) => (
-                <Slot key={i} tone="orange" taken={used} label="C" onClick={() => place({ kind: "radio", slot: i })} enabled={can(myCrew === "copilot" && !used)} />
+              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={can(myCrew === "pilot" && game.radioPilot === null)} />
+              {game.radioCopilot.map((val, i) => (
+                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={can(myCrew === "copilot" && val === null)} />
               ))}
             </div>
           </Module>
@@ -268,7 +416,7 @@ function Cockpit({
           <Module title="Brakes" tone="blue">
             <div className="slots-row brakes">
               {game.brakeSlots.map((taken, i) => (
-                <Slot key={i} tone="blue" green={i < game.brakesDeployed} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={can(myCrew === "pilot" && !taken)} />
+                <Slot key={i} tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={can(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
               ))}
             </div>
           </Module>
@@ -276,7 +424,7 @@ function Cockpit({
           <Module title="Concentration" tone="split">
             <div className="slots-row concentration">
               {game.concentrationSlots.map((taken, i) => (
-                <Slot key={i} tone="neutral" taken={taken} label="☕" onClick={() => place({ kind: "concentration", slot: i })} enabled={can(!taken)} />
+                <Slot key={i} tone="neutral" noSwitch target={{ kind: "concentration", slot: i }} taken={taken} label="☕" onClick={() => place({ kind: "concentration", slot: i })} enabled={can(!taken)} />
               ))}
               <span className="coffee-count" title="Coffee tokens">
                 {"☕".repeat(game.coffee) || "—"}
@@ -294,10 +442,12 @@ function Cockpit({
                   key={i}
                   tone="orange"
                   green={green}
-                  taken={game.flapSlots[i]}
+                  target={{ kind: "flaps", slot: i }}
+                  taken={game.flapSlots[i] !== null}
+                  held={game.flapSlots[i]}
                   label={FLAP_LABEL[i]}
                   onClick={() => place({ kind: "flaps", slot: i })}
-                  enabled={can(myCrew === "copilot" && !game.flapSlots[i])}
+                  enabled={can(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
                 />
               ))}
             </div>
@@ -313,19 +463,20 @@ function Cockpit({
               Your dice ({label(myCrew)}){selValue !== null && ` — placing as ${selValue}`}
             </label>
             <div className="dice">
-              {myDice.map((d) => (
-                <button
-                  key={d.id}
-                  className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""}`}
-                  disabled={d.placed || !myTurn}
-                  onClick={() => {
-                    setSelected(d.id);
-                    setCoffeeDelta(0);
-                  }}
-                >
-                  {d.placed ? "" : (d.value ?? "")}
-                </button>
-              ))}
+              {myDice.map((d) => {
+                const picked = rerollActive && rerollPick.includes(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
+                    disabled={rerollActive ? d.placed : d.placed || !myTurn || game.pendingReroll !== null}
+                    onPointerDown={rerollActive ? undefined : (e) => startDrag(e, d)}
+                    onClick={rerollActive ? () => toggleRerollDie(d.id) : undefined}
+                  >
+                    {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
+                  </button>
+                );
+              })}
               <span className="opp">
                 {label(myCrew === "pilot" ? "copilot" : "pilot")}:
                 <span className="opp-dice">
@@ -336,17 +487,41 @@ function Cockpit({
               </span>
             </div>
             <div className="controls">
-              {game.coffee > 0 && selDie && (
-                <span className="coffee-ctl">
-                  <span className="muted">Coffee</span>
-                  <button disabled={!selValue || selValue <= 1 || Math.abs(coffeeDelta - 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d - 1)}>−1</button>
-                  <b>{coffeeDelta > 0 ? `+${coffeeDelta}` : coffeeDelta}</b>
-                  <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
+              {rerollActive ? (
+                <span className="reroll-pick">
+                  <span className="muted">
+                    {iMustRespond ? "Reroll offered — pick yours" : "Pick dice to reroll"}
+                  </span>
+                  {iMustRespond ? (
+                    <button className="reroll" onClick={confirmReroll}>
+                      {rerollPick.length ? `Reroll ${rerollPick.length} 🎲` : "Skip"}
+                    </button>
+                  ) : (
+                    <>
+                      <button className="reroll" disabled={rerollPick.length === 0} onClick={confirmReroll}>
+                        Reroll {rerollPick.length} 🎲
+                      </button>
+                      <button onClick={cancelReroll}>Cancel</button>
+                    </>
+                  )}
                 </span>
+              ) : waitingForReroll ? (
+                <span className="muted">Waiting for the {label(game.pendingReroll!)} to reroll…</span>
+              ) : (
+                <>
+                  {game.coffee > 0 && selDie && (
+                    <span className="coffee-ctl">
+                      <span className="muted">Coffee</span>
+                      <button disabled={!selValue || selValue <= 1 || Math.abs(coffeeDelta - 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d - 1)}>−1</button>
+                      <b>{coffeeDelta > 0 ? `+${coffeeDelta}` : coffeeDelta}</b>
+                      <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
+                    </span>
+                  )}
+                  <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
+                    Reroll 🎲 ×{game.rerollTokens}
+                  </button>
+                </>
               )}
-              <button className="reroll" disabled={game.rerollTokens <= 0 || myDice.every((d) => d.placed)} onClick={reroll}>
-                Reroll 🎲 ×{game.rerollTokens}
-              </button>
             </div>
           </div>
         )}
@@ -357,6 +532,19 @@ function Cockpit({
           ))}
         </ul>
       </section>
+
+      {hoverRect && (
+        <div
+          className="drop-ring"
+          style={{ left: hoverRect.x, top: hoverRect.y, width: hoverRect.w, height: hoverRect.h }}
+          aria-hidden="true"
+        />
+      )}
+      {drag && (
+        <div className={`drag-die ${drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+          {drag.value}
+        </div>
+      )}
     </div>
   );
 }
@@ -398,7 +586,9 @@ function Window({
   // matching pip on the bank scale above the dial. 7 pips: a hollow centre mark,
   // four white dots, and a red ✕ at each outer (danger) limit.
   const STEP = 24;
-  const bank = clamp(offset * STEP, -90, 90);
+  // +offset means the Pilot's die was higher → tilt toward the Pilot, who sits on
+  // the left of the dial, which is a counter-clockwise (negative-degree) bank.
+  const bank = clamp(-offset * STEP, -90, 90);
   const danger = Math.abs(offset) >= spinAt - 1;
   const R = 100; // pip arc radius from the 88px dial centre — just outside the rim
   const pips = [-3, -2, -1, 0, 1, 2, 3];
@@ -442,32 +632,86 @@ function Window({
   );
 }
 
+// Horizontal speed gauge, bent into a smile (∪): slow on the left, fast on the
+// right, with both ends raised and the middle dipped. The bar is a circular arc
+// (the dial's circle, enlarged); markers and the needle sit on that same circle.
 function SpeedGauge({ blue, orange, speed }: { blue: number; orange: number; speed: number | null }) {
   const MIN = 2;
-  const MAX = 13;
-  const pct = (v: number) => `${((MAX - v) / (MAX - MIN)) * 100}%`;
+  const MAX = 12;
+  // The bar is a circular arc — like the dial's circle enlarged and viewed from the
+  // bottom. R sets the curvature (larger than the dial = "enlarged"); SPAN is how
+  // much of the circle the bar covers. Low speed sits at the left, high at the right.
+  const R = 120;
+  const SPAN = 64; // degrees, each side of the bottom — wider sweep = rounder, more dial-like
+  const cx = 150;
+  const cy = 78 - R; // circle centre, above the gauge (lowest point of the arc at y=78)
+  const at = (v: number) => {
+    const t = clamp((v - MIN) / (MAX - MIN), 0, 1);
+    const phi = ((t - 0.5) * 2 * SPAN * Math.PI) / 180;
+    return { x: cx + R * Math.sin(phi), y: cy + R * Math.cos(phi) };
+  };
+  const left = at(MIN);
+  const right = at(MAX);
+  const bp = at(blue + 0.5);
+  const cp = at(orange + 0.5);
+  const sp = speed !== null ? at(speed) : null;
+  // Pilot/copilot marker: a tall (radial) rectangle whose right long edge is
+  // pulled into a triangular tip pointing toward the fast end (progress). Built
+  // in arc-local coords so it stays upright on the bar wherever it sits.
+  const marker = (v: number) => {
+    const t = clamp((v - MIN) / (MAX - MIN), 0, 1);
+    const phi = ((t - 0.5) * 2 * SPAN * Math.PI) / 180;
+    const rx = Math.sin(phi); // radial — the marker's long (vertical) axis
+    const ry = Math.cos(phi);
+    const tx = Math.cos(phi); // tangent toward higher speed — where the tip points
+    const ty = -Math.sin(phi);
+    const c = at(v);
+    const off = -2.5; // recenter: shift left by half the tip's protrusion (5/2)
+    const P = (rad: number, tan: number) =>
+      `${c.x + rx * rad + tx * (tan + off)},${c.y + ry * rad + ty * (tan + off)}`;
+    // top-left → top-right shoulder → right tip → bottom-right shoulder → bottom-left
+    return [P(7, -3), P(7, 3), P(0, 8), P(-7, 3), P(-7, -3)].join(" ");
+  };
+  // Needle: a triangle sitting on the inside (concave side) of the arc at the
+  // current speed, pointing radially outward toward that number.
+  let needlePoints = "";
+  if (sp !== null) {
+    const phi = ((clamp((speed! - MIN) / (MAX - MIN), 0, 1) - 0.5) * 2 * SPAN * Math.PI) / 180;
+    const ux = Math.sin(phi); // radial outward
+    const uy = Math.cos(phi);
+    const wx = Math.cos(phi); // tangent (triangle width)
+    const wy = -Math.sin(phi);
+    const tx = sp.x - 6 * ux; // tip just inside the bar, pointing out
+    const ty = sp.y - 6 * uy;
+    const bx = sp.x - 20 * ux; // base, deeper inside the arc
+    const by = sp.y - 20 * uy;
+    needlePoints = `${tx},${ty} ${bx + 9 * wx},${by + 9 * wy} ${bx - 9 * wx},${by - 9 * wy}`;
+  }
   return (
     <div className="gauge">
-      <span className="gauge-cap">Speed</span>
-      <div className="gauge-body">
-        <div className="gauge-scale">
-          {[12, 10, 8, 6, 4, 2].map((n) => (
-            <span key={n} style={{ top: pct(n) }}>
-              {n}
-            </span>
-          ))}
-        </div>
-        <div className="gauge-bar">
-          <div className="aero blue" style={{ top: pct(blue + 0.5) }} title={`Pilot marker (≤${blue} → 0)`}>
-            <span className="aero-tag">P</span>
-          </div>
-          <div className="aero orange" style={{ top: pct(orange + 0.5) }} title={`Co-Pilot marker (>${orange} → 2)`}>
-            <span className="aero-tag">C</span>
-          </div>
-          {speed !== null && <div className="needle" style={{ top: pct(speed) }} title={`Speed ${speed}`} />}
-        </div>
-      </div>
-      <span className="gauge-foot">Speed {speed ?? "—"}</span>
+      <svg className="gauge-svg" viewBox="0 0 300 112" aria-hidden="true">
+        <path className="gauge-track" d={`M ${left.x} ${left.y} A ${R} ${R} 0 0 0 ${right.x} ${right.y}`} />
+        {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => {
+          const p = at(n);
+          const t = (n - MIN) / (MAX - MIN);
+          const phi = ((t - 0.5) * 2 * SPAN * Math.PI) / 180;
+          const rot = -(t - 0.5) * 2 * SPAN; // tangent angle — rotates the number parallel to the arc
+          const D = 30; // push the number just outside the (now thicker) arc, along the radius
+          const nx = p.x + D * Math.sin(phi);
+          const ny = p.y + D * Math.cos(phi);
+          return (
+            <g key={n}>
+              <circle className="gauge-tick" cx={p.x} cy={p.y} r="3" />
+              <text className="gauge-num" x={nx} y={ny} transform={`rotate(${rot} ${nx} ${ny})`}>
+                {n}
+              </text>
+            </g>
+          );
+        })}
+        <polygon className="aero-dot blue" points={marker(blue + 0.5)} />
+        <polygon className="aero-dot orange" points={marker(orange + 0.5)} />
+        {sp && <polygon className="gauge-needle" points={needlePoints} />}
+      </svg>
     </div>
   );
 }
@@ -525,6 +769,9 @@ function Slot({
   onClick,
   enabled,
   noSwitch,
+  dice,
+  held,
+  target,
 }: {
   taken: boolean;
   green?: boolean;
@@ -533,22 +780,41 @@ function Slot({
   onClick: () => void;
   enabled: boolean;
   noSwitch?: boolean;
+  dice?: boolean;
+  held?: number | null;
+  target?: Target;
 }) {
-  return (
+  // `held` is the die value placed on this space this round (Gear/Flaps): show it
+  // until the round resets so it's clear where the dice went. Otherwise show the
+  // requirement label, or nothing once the section is deployed (green).
+  const faceText = held != null ? held : green ? "" : label;
+  const button = (
     <button
-      className={`slot ${tone} ${green ? "green" : ""} ${taken ? "taken" : ""} ${enabled ? "open" : ""} ${noSwitch ? "dice" : ""}`}
+      className={`slot ${tone} ${green ? "green" : ""} ${taken ? "taken" : ""} ${enabled ? "open" : ""} ${dice ? "dice" : ""} ${held != null ? "held" : ""}`}
       disabled={!enabled}
       onClick={onClick}
+      data-open={enabled ? "1" : "0"}
+      data-target={target ? JSON.stringify(target) : undefined}
     >
-      <span className="slot-face">{green ? "" : label}</span>
-      {!noSwitch && <span className="switch" />}
+      <span className="slot-face">{faceText}</span>
     </button>
+  );
+  // Switch modules (Gear/Flaps/Brakes) carry their deploy switch *under* the slot.
+  if (noSwitch) return button;
+  return (
+    <div className="slot-stack">
+      {button}
+      <span className={`switch ${green ? "on" : ""}`} aria-hidden="true" />
+    </div>
   );
 }
 
 const GEAR_LABEL = ["1/2", "3/4", "5/6"];
 const FLAP_LABEL = ["1/2", "2/3", "3/4", "4/5"];
 const BRAKE_VAL = [2, 4, 6];
+// Die values each numbered space accepts (mirrors the reducer's legality rules).
+const GEAR_RANGES = [[1, 2], [3, 4], [5, 6]];
+const FLAP_RANGES = [[1, 2], [2, 3], [3, 4], [4, 5]];
 
 function label(crew: Crew): string {
   return crew === "pilot" ? "Pilot" : "Co-Pilot";

@@ -86,12 +86,13 @@ function handleRoll(
   s.axis.copilot = null;
   s.engines = { pilot: null, copilot: null };
   s.lastSpeed = null;
-  s.gearSlots = s.gearSlots.map(() => false);
-  s.flapSlots = s.flapSlots.map(() => false);
+  s.gearSlots = s.gearSlots.map(() => null);
+  s.flapSlots = s.flapSlots.map(() => null);
   s.brakeSlots = s.brakeSlots.map(() => false);
-  s.radioPilotUsed = false;
-  s.radioCopilotUsed = s.radioCopilotUsed.map(() => false);
+  s.radioPilot = null;
+  s.radioCopilot = s.radioCopilot.map(() => null);
   s.concentrationSlots = s.concentrationSlots.map(() => false);
+  s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
   s.altitudeFeet = s.scenario.startAltitudeFeet - (s.round - 1) * s.scenario.feetPerRound;
@@ -107,18 +108,64 @@ function handleRoll(
 
 // --- reroll -----------------------------------------------------------------
 
+/**
+ * A Reroll token buys one *joint* reroll: the active player picks which of their
+ * dice to reroll, then the other player is prompted to reroll any number of theirs
+ * (including none). It runs as a two-step handshake so the two players never act
+ * at once: the initiation sets `pendingReroll` to the other crew, and only that
+ * crew's response (this same command) clears it. Both steps carry the same shape;
+ * `pendingReroll` decides which one this is.
+ */
 function handleReroll(
   s: GameState,
   cmd: { dieIds: number[]; values: DieValue[] },
   byPlayerId: PlayerId,
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("You can only reroll during placement.");
+  if (cmd.dieIds.length !== cmd.values.length) throw new GameRuleError("Invalid reroll.");
   const crew = requireCrew(s, byPlayerId);
-  if (s.rerollTokens <= 0) throw new GameRuleError("No Reroll tokens available.");
-  if (cmd.dieIds.length !== cmd.values.length || cmd.dieIds.length === 0) {
-    throw new GameRuleError("Invalid reroll.");
-  }
 
+  if (s.pendingReroll === null) return initiateReroll(s, crew, cmd);
+  if (s.pendingReroll !== crew)
+    throw new GameRuleError("Waiting for the other player to finish rerolling.");
+  return respondReroll(s, crew, cmd);
+}
+
+/** Step 1 — the active player spends the token and rerolls at least one die. */
+function initiateReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): ReduceResult {
+  if (s.turn !== crew) throw new GameRuleError("Only the active player can start a reroll.");
+  if (s.rerollTokens <= 0) throw new GameRuleError("No Reroll tokens available.");
+  if (cmd.dieIds.length === 0) throw new GameRuleError("Select at least one die to reroll.");
+
+  applyReroll(s, crew, cmd);
+  s.rerollTokens -= 1;
+  s.log.push(`${crewLabel(crew)} spent a Reroll token (${cmd.dieIds.length} dice).`);
+
+  // Hand the (free) reroll to the other crew. If they have no dice left to
+  // reroll, there is nothing to prompt — resolve the event immediately.
+  const responder = other(crew);
+  if (s.dice[responder].every((d) => d.placed)) {
+    s.log.push(`${crewLabel(responder)} has no dice to reroll.`);
+    return { state: s, description: "Dice rerolled." };
+  }
+  s.pendingReroll = responder;
+  return { state: s, description: "Dice rerolled — other player may reroll." };
+}
+
+/** Step 2 — the prompted player rerolls any number of their dice (0 = decline). */
+function respondReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): ReduceResult {
+  applyReroll(s, crew, cmd);
+  s.pendingReroll = null;
+  s.log.push(
+    cmd.dieIds.length > 0
+      ? `${crewLabel(crew)} rerolled ${cmd.dieIds.length} dice.`
+      : `${crewLabel(crew)} declined to reroll.`,
+  );
+  return { state: s, description: "Reroll complete." };
+}
+
+/** Overwrite the named dice in a crew's hand with the server-supplied values. */
+function applyReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): void {
   const hand = s.dice[crew];
   cmd.dieIds.forEach((id, i) => {
     const die = hand.find((d) => d.id === id);
@@ -126,10 +173,6 @@ function handleReroll(
     if (die.placed) throw new GameRuleError("Cannot reroll a die already placed.");
     die.value = cmd.values[i];
   });
-
-  s.rerollTokens -= 1;
-  s.log.push(`${crewLabel(crew)} spent a Reroll token (${cmd.dieIds.length} dice).`);
-  return { state: s, description: "Dice rerolled." };
 }
 
 // --- placeDie ---------------------------------------------------------------
@@ -140,6 +183,7 @@ function handlePlaceDie(
   byPlayerId: PlayerId,
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
+  if (s.pendingReroll !== null) throw new GameRuleError("A reroll is in progress.");
   const crew = requireCrew(s, byPlayerId);
   if (s.turn !== crew) throw new GameRuleError("It is not your turn.");
 
@@ -240,24 +284,30 @@ function resolveEngines(s: GameState): void {
   s.log.push(`Engines: speed ${speed} → advance ${advance}.`);
   if (advance === 0) return;
 
-  if (s.position === airportIndex(s.scenario)) {
-    return lose(s, "Overshot the airport!");
+  // Move one space at a time. The plane collides with traffic on any space it
+  // leaves or flies through — i.e. every space it passes over except the one it
+  // finally lands on. Moving past the airport overshoots.
+  const airport = airportIndex(s.scenario);
+  for (let step = 0; step < advance; step++) {
+    if (s.airplanes[s.position] > 0) {
+      return lose(s, "Collision with traffic!");
+    }
+    if (s.position === airport) {
+      return lose(s, "Overshot the airport!");
+    }
+    s.position += 1;
   }
-  if (s.airplanes[s.position] > 0) {
-    return lose(s, "Collision with traffic on your space!");
-  }
-  s.position = Math.min(s.position + advance, airportIndex(s.scenario));
 }
 
 function placeRadio(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   if (crew === "pilot") {
     if (slot !== 0 || RADIO_PILOT_SLOTS !== 1) throw new GameRuleError("Invalid Radio space.");
-    if (s.radioPilotUsed) throw new GameRuleError("That Radio space is taken.");
-    s.radioPilotUsed = true;
+    if (s.radioPilot !== null) throw new GameRuleError("That Radio space is taken.");
+    s.radioPilot = value;
   } else {
     if (slot < 0 || slot >= RADIO_COPILOT_SLOTS) throw new GameRuleError("Invalid Radio space.");
-    if (s.radioCopilotUsed[slot]) throw new GameRuleError("That Radio space is taken.");
-    s.radioCopilotUsed[slot] = true;
+    if (s.radioCopilot[slot] !== null) throw new GameRuleError("That Radio space is taken.");
+    s.radioCopilot[slot] = value;
   }
   // Value N clears one airplane N−1 spaces ahead (N=1 → current position).
   const target = s.position + (value - 1);
@@ -272,11 +322,14 @@ function placeRadio(s: GameState, crew: Crew, value: DieValue, slot: number): vo
 function placeLandingGear(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   if (crew !== "pilot") throw new GameRuleError("Only the Pilot deploys the Landing Gear.");
   requireSlot(slot, LANDING_GEAR_VALUES.length);
-  if (s.gearSlots[slot]) throw new GameRuleError("That Landing Gear space is taken.");
+  // Once a section is deployed (green) it stays down for the rest of the game —
+  // re-placing would silently waste the die. gearSlots resets each round, so the
+  // permanent gearGreen flag is what makes a section unavailable.
+  if (s.gearSlots[slot] !== null || s.gearGreen[slot]) throw new GameRuleError("That Landing Gear is already deployed.");
   if (!LANDING_GEAR_VALUES[slot].includes(value)) {
     throw new GameRuleError(`Landing Gear ${slot + 1} needs ${LANDING_GEAR_VALUES[slot].join(" or ")}.`);
   }
-  s.gearSlots[slot] = true;
+  s.gearSlots[slot] = value;
   if (!s.gearGreen[slot]) {
     s.gearGreen[slot] = true;
     s.aeroBlue += 1;
@@ -287,7 +340,7 @@ function placeLandingGear(s: GameState, crew: Crew, value: DieValue, slot: numbe
 function placeFlaps(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   if (crew !== "copilot") throw new GameRuleError("Only the Co-Pilot deploys the Flaps.");
   requireSlot(slot, FLAPS_VALUES.length);
-  if (s.flapSlots[slot]) throw new GameRuleError("That Flaps space is taken.");
+  if (s.flapSlots[slot] !== null || s.flapsGreen[slot]) throw new GameRuleError("Those Flaps are already deployed.");
   if (!FLAPS_VALUES[slot].includes(value)) {
     throw new GameRuleError(`Flaps ${slot + 1} needs ${FLAPS_VALUES[slot].join(" or ")}.`);
   }
@@ -295,7 +348,7 @@ function placeFlaps(s: GameState, crew: Crew, value: DieValue, slot: number): vo
   if (!s.flapsGreen[slot] && slot !== nextToDeploy) {
     throw new GameRuleError("Flaps must be deployed in order.");
   }
-  s.flapSlots[slot] = true;
+  s.flapSlots[slot] = value;
   if (!s.flapsGreen[slot]) {
     s.flapsGreen[slot] = true;
     s.aeroOrange += 1;
@@ -310,7 +363,9 @@ function placeBrakes(s: GameState, crew: Crew, value: DieValue, slot: number): v
   if (value !== BRAKE_VALUES[slot]) {
     throw new GameRuleError(`Brakes ${slot + 1} needs a ${BRAKE_VALUES[slot]}.`);
   }
-  if (slot > s.brakesDeployed) throw new GameRuleError("Brakes must be deployed in order.");
+  // Only the next undeployed brake (slot === brakesDeployed) is legal: a higher
+  // slot is out of order, a lower one is already deployed (and would waste the die).
+  if (slot !== s.brakesDeployed) throw new GameRuleError("Brakes must be deployed in order.");
   s.brakeSlots[slot] = true;
   if (slot === s.brakesDeployed) {
     s.brakesDeployed += 1;

@@ -54,8 +54,10 @@ export const GameCommand = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("reroll"),
-    /** Indices of the player's own dice to reroll (spends one Reroll token). */
-    dieIds: z.array(z.number().int().min(0).max(3)).min(1).max(4),
+    /** Indices of the player's own dice to reroll. The active player initiates a
+     *  joint reroll (≥1 die, spends one token); the other player is then prompted
+     *  and may reroll any number, including zero (decline). */
+    dieIds: z.array(z.number().int().min(0).max(3)).min(0).max(4),
   }),
 ]);
 export type GameCommand = z.infer<typeof GameCommand>;
@@ -133,6 +135,7 @@ export interface ClientToServerEvents {
   "room:join": (payload: JoinRoomPayload, ack: (res: Ack) => void) => void;
   "seat:ready": (payload: SetReadyPayload, ack: (res: Ack) => void) => void;
   "game:start": (ack: (res: Ack) => void) => void;
+  "game:reset": (ack: (res: Ack) => void) => void;
   "game:command": (payload: GameCommandPayload, ack: (res: Ack) => void) => void;
 }
 
