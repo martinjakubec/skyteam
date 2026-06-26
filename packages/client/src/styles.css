@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark;
-  --panel: #8a9a7e;
-  --panel-2: #6c7b60;
-  --panel-edge: #3f4836;
+  --panel: #939aa1;
+  --panel-2: #6d747b;
+  --panel-edge: #3b4046;
   --recess: #141a23;
   --recess-2: #222b38;
   --metal: #c2c8bc;
@@ -363,7 +363,7 @@ ul {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2.4rem;
+  gap: 3.7rem; /* dice spaces pushed further from the dial */
   justify-self: center;
 }
 .window-wrap {
@@ -528,12 +528,6 @@ ul {
   padding: 0.85rem;
 }
 
-.mandatory-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.55rem;
-}
-
 /* ---- Module shell ---- */
 .module {
   background: rgba(0, 0, 0, 0.2);
@@ -573,6 +567,37 @@ ul {
   display: flex;
   gap: 0.45rem;
   align-items: center;
+}
+/* Engines: no panel — two spaces beneath the speed gauge joined by a fine
+   white line, with a lead running up from its midpoint to meet the gauge. */
+.engines {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.7rem;
+}
+/* horizontal line joining the two spaces */
+.engines::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.7rem;
+  height: 1px;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.7);
+}
+/* vertical lead from the midpoint up to the speed gauge */
+.engines::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  top: -0.7rem; /* reach up across the dial-stack gap to the gauge */
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.7);
 }
 .slots-col {
   display: flex;
@@ -757,12 +782,10 @@ ul {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  background: linear-gradient(180deg, var(--panel), var(--panel-2));
-  border: 1px solid var(--panel-edge);
-  border-top-color: rgba(255, 255, 255, 0.28);
+  background: none;
+  border: none;
   border-radius: 10px;
   padding: 0.4rem 0.7rem 0.5rem;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.22), 0 8px 16px rgba(0, 0, 0, 0.45);
 }
 /* Horizontal smile-bent speed bar */
 .gauge-svg {
