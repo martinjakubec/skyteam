@@ -1,4 +1,4 @@
-import { clamp } from "../util";
+w
 
 // Horizontal speed gauge, bent into a smile (∪): slow on the left, fast on the
 // right, with both ends raised and the middle dipped. The bar is a circular arc

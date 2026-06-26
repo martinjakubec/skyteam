@@ -360,11 +360,30 @@ ul {
 }
 /* Axis dice spaces flank the dial — pilot left, co-pilot right, centred to it */
 .axis-cluster {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3.7rem; /* dice spaces pushed further from the dial */
   justify-self: center;
+}
+/* Fine leads running horizontally from each dice space in to the dial. Absolute
+   so they don't become flex items; they span the 3.7rem gap to the dial rim. */
+.axis-cluster::before,
+.axis-cluster::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 3.7rem;
+  height: 1px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.7);
+}
+.axis-cluster::before {
+  left: 68px; /* right edge of the pilot space → dial */
+}
+.axis-cluster::after {
+  right: 68px; /* left edge of the co-pilot space → dial */
 }
 .window-wrap {
   position: relative;
@@ -575,7 +594,7 @@ ul {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.7rem;
+  gap: 8.5rem; /* ~2× the 68px slot width between the two spaces */
 }
 /* horizontal line joining the two spaces */
 .engines::before {
@@ -583,7 +602,7 @@ ul {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 1.7rem;
+  width: 8.5rem;
   height: 1px;
   transform: translate(-50%, -50%);
   background: rgba(255, 255, 255, 0.7);
