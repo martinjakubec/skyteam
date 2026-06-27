@@ -316,22 +316,27 @@ export function Cockpit({
 
           <Module title="Concentration" tone="split">
             <div className="slots-row concentration">
-              {game.concentrationSlots.map((cell, i) => (
-                // Empty: neutral split (blue/orange) with the ☕ hint. Filled: render
-                // exactly like the Radio/Engine/Axis dice spaces (dice + taken) so the
-                // seated die looks identical — blue for the Pilot, orange for the Co-Pilot.
-                <Slot
-                  key={i}
-                  tone={cell ? (cell.crew === "pilot" ? "blue" : "orange") : "neutral"}
-                  noSwitch
-                  dice={cell !== null}
-                  target={{ kind: "concentration", slot: i }}
-                  taken={cell !== null}
-                  label={cell ? face(cell.value) : "☕"}
-                  onClick={() => place({ kind: "concentration", slot: i })}
-                  enabled={canFree(cell === null)}
-                />
-              ))}
+              {game.concentrationSlots.map((cell, i) => {
+                // A space is empty when its cell is null *or* undefined — treat both
+                // identically (state can serialise an empty cell as either). Empty:
+                // neutral split (blue/orange) with the ☕ hint. Filled: render exactly
+                // like the Radio/Engine/Axis dice spaces (dice + taken) so the seated
+                // die looks identical — blue for the Pilot, orange for the Co-Pilot.
+                const filled = cell != null;
+                return (
+                  <Slot
+                    key={i}
+                    tone={filled ? (cell.crew === "pilot" ? "blue" : "orange") : "neutral"}
+                    noSwitch
+                    dice
+                    target={{ kind: "concentration", slot: i }}
+                    taken={filled}
+                    label={filled ? face(cell.value) : "☕"}
+                    onClick={() => place({ kind: "concentration", slot: i })}
+                    enabled={canFree(!filled)}
+                  />
+                );
+              })}
               <span className="coffee-count" title="Coffee tokens">
                 {"☕".repeat(game.coffee) || "—"}
               </span>

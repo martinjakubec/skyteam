@@ -688,25 +688,13 @@ ul {
   background: linear-gradient(180deg, #db802d, #995316);
   border-top-color: #995e22;
 }
-/* Concentration spaces: split down the middle — Pilot (blue) left, Co-Pilot (orange) right */
+/* Concentration spaces: same blue/orange fills as the other dice spaces
+   (.slot.blue / .slot.orange), split down the middle — Pilot (blue) left,
+   Co-Pilot (orange) right. Keeps the base .slot border + inner shadow. */
 .slot.neutral {
   background:
     linear-gradient(180deg, #2e69a5, #235079) left / 50% 100% no-repeat,
     linear-gradient(180deg, #db802d, #995316) right / 50% 100% no-repeat;
-}
-/* Top border split at the midpoint: blue accent left, orange accent right.
-   A 1px bar (matching the real border edge) so it reads as the same border type
-   while keeping the slot's rounded corners. */
-.slot.neutral::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, #4d8fcf 0 50%, #995e22 50% 100%);
-  border-radius: 8px 8px 0 0;
-  pointer-events: none;
 }
 /* A die seated in an Engine/Axis spot is drawn as a real die — same font + colours as the tray */
 .slot.dice.taken {

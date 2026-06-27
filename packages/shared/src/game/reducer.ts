@@ -388,7 +388,9 @@ function placeBrakes(s: GameState, crew: Crew, value: DieValue, slot: number): v
 
 function placeConcentration(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   requireSlot(slot, CONCENTRATION_SLOTS);
-  if (s.concentrationSlots[slot] !== null) throw new GameRuleError("That Concentration space is taken.");
+  // `!= null` (not `!== null`) so an empty cell serialised as undefined counts as
+  // free — matches the client, which also treats null/undefined as empty.
+  if (s.concentrationSlots[slot] != null) throw new GameRuleError("That Concentration space is taken.");
   s.concentrationSlots[slot] = { value, crew };
   if (s.coffee < MAX_COFFEE) {
     s.coffee += 1;
