@@ -9,3 +9,4 @@ dist/
 
 # Local editor/agent settings
 .claude/settings.local.json
+.playwright-mcp/

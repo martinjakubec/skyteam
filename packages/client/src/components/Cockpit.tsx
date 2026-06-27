@@ -96,6 +96,21 @@ export function Cockpit({
   const can = (free: boolean) =>
     myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && !rerollMode;
 
+  // Mandatory spots: every round a crew must seat one die on its Axis and one on
+  // its Engine. Those dice are reserved — when the dice still in hand are all
+  // needed to fill the crew's still-open mandatory spots, no other space may be a
+  // target, so the player can't strand a mandatory spot. Covers every case:
+  //   2 dice left / Axis+Engine both open → only Axis & Engine are legal;
+  //   1 die left / 1 mandatory spot open  → only that spot is legal;
+  //   more dice than open mandatory spots → free to place anywhere.
+  const openMandatory =
+    myCrew === null ? 0 : (game.axis[myCrew] === null ? 1 : 0) + (game.engines[myCrew] === null ? 1 : 0);
+  const diceLeft = myDice.filter((d) => !d.placed).length;
+  const lockToMandatory = diceLeft <= openMandatory;
+  // Axis/Engine keep using `can` (always legal when free); every non-mandatory
+  // space additionally requires that we're not holding the last dice in reserve.
+  const canFree = (free: boolean) => can(free) && !lockToMandatory;
+
   // The value of the die currently in hand (dragged or selected, Coffee applied).
   // Spaces with a number requirement only light up when this value fits them.
   const activeValue = drag ? drag.value : selValue;
@@ -182,14 +197,15 @@ export function Cockpit({
         <Altitude game={game} />
         <div className="dial-stack">
           <div className="axis-cluster">
-            <Slot tone="blue" noSwitch dice target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
+            <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
             <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
-            <Slot tone="orange" noSwitch dice target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
+            <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
           </div>
           <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
           <div className="engines">
-            <Slot tone="blue" noSwitch dice target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
-            <Slot tone="orange" noSwitch dice target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
+            <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
+            <span className="engine-plus" aria-hidden="true">+</span>
+            <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
           </div>
         </div>
         <div className="instr-spacer" aria-hidden="true" />
@@ -229,7 +245,7 @@ export function Cockpit({
                   held={game.gearSlots[i]}
                   label={GEAR_LABEL[i]}
                   onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={can(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
                 />
               ))}
             </div>
@@ -242,9 +258,9 @@ export function Cockpit({
 
           <Module title="Radio" tone="split">
             <div className="slots-row">
-              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={can(myCrew === "pilot" && game.radioPilot === null)} />
+              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
               {game.radioCopilot.map((val, i) => (
-                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={can(myCrew === "copilot" && val === null)} />
+                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
               ))}
             </div>
           </Module>
@@ -252,15 +268,28 @@ export function Cockpit({
           <Module title="Brakes" tone="blue">
             <div className="slots-row brakes">
               {game.brakeSlots.map((taken, i) => (
-                <Slot key={i} tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={can(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+                <Slot key={i} tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
               ))}
             </div>
           </Module>
 
           <Module title="Concentration" tone="split">
             <div className="slots-row concentration">
-              {game.concentrationSlots.map((taken, i) => (
-                <Slot key={i} tone="neutral" noSwitch target={{ kind: "concentration", slot: i }} taken={taken} label="☕" onClick={() => place({ kind: "concentration", slot: i })} enabled={can(!taken)} />
+              {game.concentrationSlots.map((cell, i) => (
+                // Empty: neutral split (blue/orange) with the ☕ hint. Filled: render
+                // exactly like the Radio/Engine/Axis dice spaces (dice + taken) so the
+                // seated die looks identical — blue for the Pilot, orange for the Co-Pilot.
+                <Slot
+                  key={i}
+                  tone={cell ? (cell.crew === "pilot" ? "blue" : "orange") : "neutral"}
+                  noSwitch
+                  dice={cell !== null}
+                  target={{ kind: "concentration", slot: i }}
+                  taken={cell !== null}
+                  label={cell ? face(cell.value) : "☕"}
+                  onClick={() => place({ kind: "concentration", slot: i })}
+                  enabled={canFree(cell === null)}
+                />
               ))}
               <span className="coffee-count" title="Coffee tokens">
                 {"☕".repeat(game.coffee) || "—"}
@@ -283,7 +312,7 @@ export function Cockpit({
                   held={game.flapSlots[i]}
                   label={FLAP_LABEL[i]}
                   onClick={() => place({ kind: "flaps", slot: i })}
-                  enabled={can(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                  enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
                 />
               ))}
             </div>

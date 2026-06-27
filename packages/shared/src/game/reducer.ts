@@ -91,7 +91,7 @@ function handleRoll(
   s.brakeSlots = s.brakeSlots.map(() => false);
   s.radioPilot = null;
   s.radioCopilot = s.radioCopilot.map(() => null);
-  s.concentrationSlots = s.concentrationSlots.map(() => false);
+  s.concentrationSlots = s.concentrationSlots.map(() => null);
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -191,6 +191,19 @@ function handlePlaceDie(
   if (!die || die.value === undefined) throw new GameRuleError("No such die.");
   if (die.placed) throw new GameRuleError("That die has already been placed.");
 
+  // Mandatory spots: every round a crew must seat one die on its Axis and one on
+  // its Engine. Those dice are reserved — a non-mandatory placement is illegal
+  // when the dice still in hand (this one included) are all needed to fill the
+  // crew's still-open mandatory spots, otherwise a mandatory spot could be
+  // stranded. Mirrors the client's placement gating.
+  if (cmd.target.kind !== "axis" && cmd.target.kind !== "engine") {
+    const openMandatory = (s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0);
+    const diceLeft = s.dice[crew].filter((d) => !d.placed).length;
+    if (diceLeft <= openMandatory) {
+      throw new GameRuleError("Your remaining dice must go on the Axis and Engine.");
+    }
+  }
+
   // Apply any Coffee modifier to get the effective value.
   const delta = cmd.coffeeDelta ?? 0;
   const spend = Math.abs(delta);
@@ -238,7 +251,7 @@ function applyPlacement(s: GameState, crew: Crew, value: DieValue, target: Place
     case "brakes":
       return placeBrakes(s, crew, value, target.slot);
     case "concentration":
-      return placeConcentration(s, target.slot);
+      return placeConcentration(s, crew, value, target.slot);
     default:
       return assertNever(target);
   }
@@ -373,10 +386,10 @@ function placeBrakes(s: GameState, crew: Crew, value: DieValue, slot: number): v
   }
 }
 
-function placeConcentration(s: GameState, slot: number): void {
+function placeConcentration(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   requireSlot(slot, CONCENTRATION_SLOTS);
-  if (s.concentrationSlots[slot]) throw new GameRuleError("That Concentration space is taken.");
-  s.concentrationSlots[slot] = true;
+  if (s.concentrationSlots[slot] !== null) throw new GameRuleError("That Concentration space is taken.");
+  s.concentrationSlots[slot] = { value, crew };
   if (s.coffee < MAX_COFFEE) {
     s.coffee += 1;
     s.log.push(`Concentration: gained a Coffee token (${s.coffee}/${MAX_COFFEE}).`);

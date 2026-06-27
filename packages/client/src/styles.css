@@ -392,6 +392,10 @@ ul {
   align-items: center;
   gap: 7px;
   justify-self: center;
+  /* Sit above the axis-cluster lead lines so both leads tuck behind the dial
+     rim. Without this the ::after (right) lead, last in DOM order, paints on
+     top of the dial while the ::before (left) lead correctly paints under it. */
+  z-index: 1;
 }
 .window-cap {
   font-family: var(--font-display);
@@ -596,7 +600,8 @@ ul {
   justify-content: center;
   gap: 8.5rem; /* ~2× the 68px slot width between the two spaces */
 }
-/* horizontal line joining the two spaces */
+/* horizontal line joining the two spaces — broken by a transparent gap in the
+   middle so the page background shows through around the central "+". */
 .engines::before {
   content: "";
   position: absolute;
@@ -605,18 +610,43 @@ ul {
   width: 8.5rem;
   height: 1px;
   transform: translate(-50%, -50%);
-  background: rgba(255, 255, 255, 0.7);
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.7) 0,
+    rgba(255, 255, 255, 0.7) calc(50% - 1.3rem),
+    transparent calc(50% - 1.3rem),
+    transparent calc(50% + 1.3rem),
+    rgba(255, 255, 255, 0.7) calc(50% + 1.3rem),
+    rgba(255, 255, 255, 0.7) 100%
+  );
 }
-/* vertical lead from the midpoint up to the speed gauge */
+/* vertical lead from the speed gauge down toward the midpoint — stops short of
+   the centre, leaving a gap above the "+" so the lines never touch it. */
 .engines::after {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: 50%;
+  bottom: calc(50% + 1.3rem); /* end above the "+", not at the meeting point */
   top: -0.7rem; /* reach up across the dial-stack gap to the gauge */
   width: 1px;
   transform: translateX(-50%);
   background: rgba(255, 255, 255, 0.7);
+}
+/* The "+" that joins the two engine dice (pilot + co-pilot = thrust). Centred on
+   the now-hidden meeting point of the leads, sitting in the clear gap with the
+   page background around it. Absolute so it stays out of the flex flow. */
+.engine-plus {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1; /* above the leads */
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 600;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
 }
 .slots-col {
   display: flex;
@@ -704,6 +734,24 @@ ul {
   font-size: 1.05rem;
   line-height: 1;
   min-height: 1.05rem;
+}
+/* Caution triangle floating just above a mandatory, still-empty dice spot.
+   Absolutely positioned so it never nudges the slot or the surrounding layout. */
+.slot-warn {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.slot-warn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .switch {
   width: 22px;

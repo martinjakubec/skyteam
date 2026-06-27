@@ -87,7 +87,9 @@ export interface GameState {
   brakeSlots: boolean[];
   radioPilot: DieValue | null; // the value placed on the Pilot's Radio space
   radioCopilot: (DieValue | null)[]; // per Co-Pilot Radio space; length RADIO_COPILOT_SLOTS
-  concentrationSlots: boolean[]; // length CONCENTRATION_SLOTS
+  // The die placed on each Concentration space this round (value + crew, for the
+  // seated-die colour). Kept visible until the round resets, like gear/flap slots.
+  concentrationSlots: ({ value: DieValue; crew: Crew } | null)[]; // length CONCENTRATION_SLOTS
 
   coffee: number; // 0..MAX_COFFEE
   rerollTokens: number;
@@ -146,7 +148,7 @@ export function createInitialGameState(
     brakeSlots: Array(BRAKE_VALUES.length).fill(false),
     radioPilot: null,
     radioCopilot: Array(RADIO_COPILOT_SLOTS).fill(null),
-    concentrationSlots: Array(CONCENTRATION_SLOTS).fill(false),
+    concentrationSlots: Array(CONCENTRATION_SLOTS).fill(null),
     coffee: 0,
     rerollTokens: 0,
     pendingReroll: null,
