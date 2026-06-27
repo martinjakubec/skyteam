@@ -673,7 +673,8 @@ ul {
   text-transform: none;
   box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
 }
-/* Dice spaces (Engines, Axis): plain square wells, no switch, empty until a die lands */
+/* Dice spaces (Engines, Axis, Radio): plain square wells, no switch, empty until a
+   die lands. Concentration shares this base too, but adds its own blue/orange split. */
 .slot.dice {
   width: 68px;
   height: 68px;
@@ -696,7 +697,7 @@ ul {
     linear-gradient(180deg, #2e69a5, #235079) left / 50% 100% no-repeat,
     linear-gradient(180deg, #db802d, #995316) right / 50% 100% no-repeat;
 }
-/* A die seated in an Engine/Axis spot is drawn as a real die — same font + colours as the tray */
+/* A die seated in a dice spot (Engines/Axis/Radio/Concentration) is drawn as a real die — same font + colours as the tray */
 .slot.dice.taken {
   border: none;
   border-radius: 12px;
@@ -804,7 +805,7 @@ ul {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 /* A placed die keeps its full crew colour so it clearly reads as seated in the spot.
-   Exclude .dice spaces (Engines/Axis/Radio) — they paint their own raised die look
+   Exclude .dice spaces (Engines/Axis/Radio/Concentration) — they paint their own raised die look
    via .slot.dice.taken, which this dark inset shadow would otherwise override. */
 .slot.taken:not(.green):not(.dice) {
   opacity: 1;

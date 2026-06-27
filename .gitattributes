@@ -1,0 +1,4 @@
+# Normalize line endings: store all text files with LF in the repo, regardless
+# of the OS used to check them out. Prevents the CRLF/LF churn that otherwise
+# shows up as "every line changed" diffs on Windows checkouts.
+* text=auto eol=lf
