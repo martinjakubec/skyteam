@@ -134,13 +134,57 @@ export function Cockpit({
     return slot?.dataset.open === "1" ? slot : null;
   };
 
+  // --- Edge auto-scroll while dragging --------------------------------------
+  // Touchpads can't scroll mid-drag, so on a short screen a die can't be carried
+  // from the tray (bottom) up to the instruments (top). While a drag is active
+  // and the pointer sits in the top/bottom edge zone, scroll the page toward it
+  // (speed ramps with how deep into the zone it is) to bring the rest of the
+  // board into reach. The dragged die is position:fixed, so it stays under the
+  // pointer as the page moves beneath it.
+  const autoScroll = useRef<{ raf: number | null; x: number; y: number }>({ raf: null, x: 0, y: 0 });
+  const stepAutoScroll = () => {
+    const a = autoScroll.current;
+    const EDGE = 96; // px zone at top/bottom edge that triggers scrolling
+    const MAX = 18; // px/frame at the very edge
+    const h = window.innerHeight;
+    let dy = 0;
+    if (a.y < EDGE) dy = -Math.ceil(((EDGE - a.y) / EDGE) * MAX);
+    else if (h - a.y < EDGE) dy = Math.ceil(((EDGE - (h - a.y)) / EDGE) * MAX);
+    if (dy !== 0) {
+      const before = window.scrollY;
+      window.scrollBy(0, dy);
+      // The page moved under a possibly-still pointer — re-resolve the hovered
+      // slot so the drop ring keeps tracking even when no pointermove fires.
+      if (window.scrollY !== before) {
+        const slot = validSlotUnder(a.x, a.y);
+        const r = slot?.getBoundingClientRect();
+        setHoverRect(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
+      }
+    }
+    a.raf = requestAnimationFrame(stepAutoScroll);
+  };
+  const startAutoScroll = () => {
+    if (autoScroll.current.raf === null) autoScroll.current.raf = requestAnimationFrame(stepAutoScroll);
+  };
+  const stopAutoScroll = () => {
+    if (autoScroll.current.raf !== null) {
+      cancelAnimationFrame(autoScroll.current.raf);
+      autoScroll.current.raf = null;
+    }
+  };
+  // Safety net: never leave the loop running if we unmount mid-drag.
+  useEffect(() => stopAutoScroll, []);
+
   const onDragMove = (e: PointerEvent) => {
     const g = gesture.current;
     if (!g) return;
     if (!g.active && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < 6) return;
+    autoScroll.current.x = e.clientX;
+    autoScroll.current.y = e.clientY;
     if (!g.active) {
       g.active = true;
       setDragging(true);
+      startAutoScroll();
     }
     const slot = validSlotUnder(e.clientX, e.clientY);
     const r = slot?.getBoundingClientRect();
@@ -150,6 +194,7 @@ export function Cockpit({
   const onDragEnd = (e: PointerEvent) => {
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", onDragEnd);
+    stopAutoScroll();
     const g = gesture.current;
     gesture.current = null;
     setHoverRect(null);
@@ -231,8 +276,13 @@ export function Cockpit({
 
       {/* Main deck */}
       <section className="deck">
-        {/* Left rail: landing gear (blue, Pilot) */}
+        {/* Left rail: radio (Pilot) above landing gear (blue, Pilot) */}
         <div className="rail">
+          <Module title="Radio" tone="blue">
+            <div className="slots-row">
+              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
+            </div>
+          </Module>
           <Module title="Landing Gear" tone="blue">
             <div className="slots-col">
               {game.gearGreen.map((green, i) => (
@@ -255,15 +305,6 @@ export function Cockpit({
         {/* Center panel */}
         <div className="center-panel material riveted">
           <Approach game={game} airportIdx={airportIdx} />
-
-          <Module title="Radio" tone="split">
-            <div className="slots-row">
-              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
-              {game.radioCopilot.map((val, i) => (
-                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
-              ))}
-            </div>
-          </Module>
 
           <Module title="Brakes" tone="blue">
             <div className="slots-row brakes">
@@ -298,8 +339,15 @@ export function Cockpit({
           </Module>
         </div>
 
-        {/* Right rail: flaps (orange, Co-Pilot) */}
+        {/* Right rail: radio (Co-Pilot) above flaps (orange, Co-Pilot) */}
         <div className="rail">
+          <Module title="Radio" tone="orange">
+            <div className="slots-col">
+              {game.radioCopilot.map((val, i) => (
+                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
+              ))}
+            </div>
+          </Module>
           <Module title="Flaps" tone="orange">
             <div className="slots-col">
               {game.flapsGreen.map((green, i) => (
