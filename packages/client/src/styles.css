@@ -374,28 +374,42 @@ ul {
 .axis-cluster {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* dice spaces sit level with the top of the dial */
   justify-content: center;
   gap: 3.7rem; /* dice spaces pushed further from the dial */
   justify-self: center;
 }
-/* Fine leads running horizontally from each dice space in to the dial. Absolute
-   so they don't become flex items; they span the 3.7rem gap to the dial rim. */
-.axis-cluster::before,
-.axis-cluster::after {
-  content: "";
+/* Elbow leads tying each dice space to the dial: a horizontal stub off the
+   space's inner edge, then a diagonal down to the dial rim. Absolute so they
+   don't join the flex flow; they tuck behind the dial (window-wrap z-index).
+   Geometry: spaces are 68px, seated at the cluster top, so their vertical
+   centre is 34px; the 3.7rem gap (59.2px) is split into an 18px stub + the
+   diagonal, which lands ~90px down on the rim (≈53.6°, length ≈69.5px). */
+.axis-lead {
   position: absolute;
-  top: 50%;
-  width: 3.7rem;
+  top: 34px;
   height: 1px;
-  transform: translateY(-50%);
   background: rgba(255, 255, 255, 0.7);
 }
-.axis-cluster::before {
-  left: 68px; /* right edge of the pilot space → dial */
+.axis-lead.h-left {
+  left: 68px;
+  width: 18px;
 }
-.axis-cluster::after {
-  right: 68px; /* left edge of the co-pilot space → dial */
+.axis-lead.h-right {
+  right: 68px;
+  width: 18px;
+}
+.axis-lead.d-left {
+  left: 86px; /* 68px space edge + 18px stub */
+  width: 69.5px;
+  transform-origin: left center;
+  transform: rotate(53.6deg);
+}
+.axis-lead.d-right {
+  right: 86px;
+  width: 69.5px;
+  transform-origin: right center;
+  transform: rotate(-53.6deg);
 }
 .window-wrap {
   position: relative;
@@ -870,6 +884,11 @@ ul {
   border: none;
   border-radius: 10px;
   padding: 0.4rem 0.7rem 0.5rem;
+}
+/* Pull the speed gauge up under the dial (the axis spaces now sit at the dial's
+   top, freeing the space below it). */
+.axis-cluster + .gauge {
+  margin-top: -3rem;
 }
 /* Horizontal smile-bent speed bar */
 .gauge-svg {

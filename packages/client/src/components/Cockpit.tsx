@@ -274,6 +274,12 @@ export function Cockpit({
         </div>
         <div className="dial-stack">
           <div className="axis-cluster">
+            {/* Elbow leads: a diagonal up from each dial rim, then a horizontal
+                stub into the inner edge of the (top-aligned) dice space. */}
+            <span className="axis-lead h-left" aria-hidden="true" />
+            <span className="axis-lead d-left" aria-hidden="true" />
+            <span className="axis-lead h-right" aria-hidden="true" />
+            <span className="axis-lead d-right" aria-hidden="true" />
             <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
             <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
             <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
