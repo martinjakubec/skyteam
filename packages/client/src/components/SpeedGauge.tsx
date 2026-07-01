@@ -9,8 +9,8 @@ export function SpeedGauge({ blue, orange, speed }: { blue: number; orange: numb
   // The bar is a circular arc — like the dial's circle enlarged and viewed from the
   // bottom. R sets the curvature (larger than the dial = "enlarged"); SPAN is how
   // much of the circle the bar covers. Low speed sits at the left, high at the right.
-  const R = 140;
-  const SPAN = 75; // degrees, each side of the bottom — wider sweep = rounder, more dial-like
+  const R = 120;
+  const SPAN = 85; // degrees, each side of the bottom — wider sweep = rounder, more dial-like
   const cx = 150;
   const cy = 78 - R; // circle centre, above the gauge (lowest point of the arc at y=78)
   const at = (v: number) => {

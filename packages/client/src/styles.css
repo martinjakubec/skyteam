@@ -376,15 +376,16 @@ ul {
   display: flex;
   align-items: flex-start; /* dice spaces sit level with the top of the dial */
   justify-content: center;
-  gap: 3.7rem; /* dice spaces pushed further from the dial */
+  gap: 2.5rem; /* dice spaces sit near the dial */
   justify-self: center;
 }
 /* Elbow leads tying each dice space to the dial: a horizontal stub off the
-   space's inner edge, then a diagonal down to the dial rim. Absolute so they
-   don't join the flex flow; they tuck behind the dial (window-wrap z-index).
+   space's inner edge, then a diagonal to the dial rim. Absolute so they don't
+   join the flex flow; they tuck behind the dial (window-wrap z-index).
    Geometry: spaces are 68px, seated at the cluster top, so their vertical
-   centre is 34px; the 3.7rem gap (59.2px) is split into an 18px stub + the
-   diagonal, which lands ~90px down on the rim (≈53.6°, length ≈69.5px). */
+   centre is 34px; the 2.5rem gap (40px) is split into a 14px stub + the
+   diagonal, aimed at the outermost bank pip on the rim (~108px/298px, y≈57px)
+   so the arms fit between the two outer pips (≈41.5°, length ≈34.7px). */
 .axis-lead {
   position: absolute;
   top: 34px;
@@ -393,23 +394,23 @@ ul {
 }
 .axis-lead.h-left {
   left: 68px;
-  width: 18px;
+  width: 14px;
 }
 .axis-lead.h-right {
   right: 68px;
-  width: 18px;
+  width: 14px;
 }
 .axis-lead.d-left {
-  left: 86px; /* 68px space edge + 18px stub */
-  width: 69.5px;
+  left: 82px; /* 68px space edge + 14px stub */
+  width: 34.7px;
   transform-origin: left center;
-  transform: rotate(53.6deg);
+  transform: rotate(15.5deg);
 }
 .axis-lead.d-right {
-  right: 86px;
-  width: 69.5px;
+  right: 82px;
+  width: 34.7px;
   transform-origin: right center;
-  transform: rotate(-53.6deg);
+  transform: rotate(-15.5deg);
 }
 .window-wrap {
   position: relative;
@@ -621,6 +622,7 @@ ul {
    white line, with a lead running up from its midpoint to meet the gauge. */
 .engines {
   position: relative;
+  margin-top: -0.6rem; /* nudge the engine spaces up under the gauge */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -653,7 +655,7 @@ ul {
   position: absolute;
   left: 50%;
   bottom: calc(50% + 1.3rem); /* end above the "+", not at the meeting point */
-  top: -0.7rem; /* reach up across the dial-stack gap to the gauge */
+  top: -0.2rem; /* stop short of the gauge so it clears the "7" */
   width: 1px;
   transform: translateX(-50%);
   background: rgba(255, 255, 255, 0.7);
@@ -934,7 +936,6 @@ ul {
 /* A smaller twin of the speed gauge, sat just beneath it. Same arc + classes,
    scaled down, with a single red marker for the Brake track's position. */
 .brakes-gauge {
-  margin-top: 1.5rem; /* breathing room below the engine dice slots */
   padding-top: 0;
 }
 /* Right-pointing arrow between the brake spaces — signals they must be filled
