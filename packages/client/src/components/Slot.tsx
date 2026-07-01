@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Target } from "../types";
 
 export function Slot({
@@ -12,6 +13,7 @@ export function Slot({
   held,
   target,
   mandatory,
+  icon,
 }: {
   taken: boolean;
   green?: boolean;
@@ -24,11 +26,16 @@ export function Slot({
   held?: number | null;
   target?: Target;
   mandatory?: boolean;
+  /** A hint icon shown inside the slot while it's empty (e.g. a headset on the
+   *  Radio spaces). Replaced by the seated die's face once a die is placed. */
+  icon?: ReactNode;
 }) {
   // `held` is the die value placed on this space this round (Gear/Flaps): show it
   // until the round resets so it's clear where the dice went. Otherwise show the
   // requirement label, or nothing once the section is deployed (green).
   const faceText = held != null ? held : green ? "" : label;
+  // An empty slot with an icon shows the icon as a hint; a seated die takes over.
+  const showIcon = icon != null && !taken;
   const button = (
     <button
       className={`slot ${tone} ${green ? "green" : ""} ${taken ? "taken" : ""} ${enabled ? "open" : ""} ${dice ? "dice" : ""} ${held != null ? "held" : ""}`}
@@ -48,7 +55,11 @@ export function Slot({
           </svg>
         </span>
       )}
-      <span className="slot-face">{faceText}</span>
+      {showIcon ? (
+        <span className="slot-icon" aria-hidden="true">{icon}</span>
+      ) : (
+        <span className="slot-face">{faceText}</span>
+      )}
     </button>
   );
   // Switch modules (Gear/Flaps/Brakes) carry their deploy switch *under* the slot.

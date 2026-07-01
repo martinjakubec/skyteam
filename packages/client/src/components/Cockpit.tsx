@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { GameCommand, RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label } from "../util";
@@ -11,6 +11,8 @@ import {
 } from "../constants";
 import { Altitude } from "./Altitude";
 import { Approach } from "./Approach";
+import { BrakesGauge } from "./BrakesGauge";
+import { Headset } from "./icons";
 import { Module } from "./Module";
 import { Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
@@ -237,9 +239,39 @@ export function Cockpit({
 
   return (
     <div className="board">
-      {/* Top instruments: altitude strip · cockpit window · axis dial */}
-      <section className="instruments">
+      {/* Full-width status tracks above the console: approach path + altitude */}
+      <section className="tracks">
+        <Approach game={game} airportIdx={airportIdx} />
         <Altitude game={game} />
+      </section>
+
+      {/* Console: pilot rail · central dial-stack · co-pilot rail */}
+      <section className="instruments">
+        {/* Left rail (Pilot): radio above landing gear (blue) */}
+        <div className="rail">
+          <Module title="Radio" tone="blue">
+            <div className="slots-row">
+              <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
+            </div>
+          </Module>
+          <Module title="Landing Gear" tone="blue">
+            <div className="slots-col">
+              {game.gearGreen.map((green, i) => (
+                <Slot
+                  key={i}
+                  tone="blue"
+                  green={green}
+                  target={{ kind: "landingGear", slot: i }}
+                  taken={game.gearSlots[i] !== null}
+                  held={game.gearSlots[i]}
+                  label={GEAR_LABEL[i]}
+                  onClick={() => place({ kind: "landingGear", slot: i })}
+                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+                />
+              ))}
+            </div>
+          </Module>
+        </div>
         <div className="dial-stack">
           <div className="axis-cluster">
             <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
@@ -252,8 +284,56 @@ export function Cockpit({
             <span className="engine-plus" aria-hidden="true">+</span>
             <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
           </div>
+          <BrakesGauge deployed={game.brakesDeployed} />
+          {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
+              between them signal the mandatory order. Fine leads tie each space
+              up to the brake gauge (left "[", middle "|", right "]"). */}
+          <div className="slots-row brakes">
+            <span className="brake-leads" aria-hidden="true">
+              <span className="bus" />
+              <span className="up" />
+              <span className="drop left" />
+              <span className="drop mid" />
+              <span className="drop right" />
+            </span>
+            {game.brakeSlots.map((taken, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
+                <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+              </Fragment>
+            ))}
+          </div>
         </div>
-        <div className="instr-spacer" aria-hidden="true" />
+        {/* Right rail (Co-Pilot): radio above flaps (orange) */}
+        <div className="rail">
+          <Module title="Radio" tone="orange">
+            <div className="slots-col">
+              {game.radioCopilot.map((val, i) => (
+                <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
+              ))}
+            </div>
+          </Module>
+          <Module title="Flaps" tone="orange">
+            {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
+            <div className="slots-col">
+              {game.flapsGreen.map((green, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <span className="slot-arrow-v" aria-hidden="true" />}
+                  <Slot
+                    tone="orange"
+                    green={green}
+                    target={{ kind: "flaps", slot: i }}
+                    taken={game.flapSlots[i] !== null}
+                    held={game.flapSlots[i]}
+                    label={FLAP_LABEL[i]}
+                    onClick={() => place({ kind: "flaps", slot: i })}
+                    enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                  />
+                </Fragment>
+              ))}
+            </div>
+          </Module>
+        </div>
       </section>
 
       <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
@@ -276,44 +356,8 @@ export function Cockpit({
 
       {/* Main deck */}
       <section className="deck">
-        {/* Left rail: radio (Pilot) above landing gear (blue, Pilot) */}
-        <div className="rail">
-          <Module title="Radio" tone="blue">
-            <div className="slots-row">
-              <Slot tone="blue" noSwitch dice target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
-            </div>
-          </Module>
-          <Module title="Landing Gear" tone="blue">
-            <div className="slots-col">
-              {game.gearGreen.map((green, i) => (
-                <Slot
-                  key={i}
-                  tone="blue"
-                  green={green}
-                  target={{ kind: "landingGear", slot: i }}
-                  taken={game.gearSlots[i] !== null}
-                  held={game.gearSlots[i]}
-                  label={GEAR_LABEL[i]}
-                  onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
-                />
-              ))}
-            </div>
-          </Module>
-        </div>
-
         {/* Center panel */}
         <div className="center-panel material riveted">
-          <Approach game={game} airportIdx={airportIdx} />
-
-          <Module title="Brakes" tone="blue">
-            <div className="slots-row brakes">
-              {game.brakeSlots.map((taken, i) => (
-                <Slot key={i} tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
-              ))}
-            </div>
-          </Module>
-
           <Module title="Concentration" tone="split">
             <div className="slots-row concentration">
               {game.concentrationSlots.map((cell, i) => {
@@ -340,34 +384,6 @@ export function Cockpit({
               <span className="coffee-count" title="Coffee tokens">
                 {"☕".repeat(game.coffee) || "—"}
               </span>
-            </div>
-          </Module>
-        </div>
-
-        {/* Right rail: radio (Co-Pilot) above flaps (orange, Co-Pilot) */}
-        <div className="rail">
-          <Module title="Radio" tone="orange">
-            <div className="slots-col">
-              {game.radioCopilot.map((val, i) => (
-                <Slot key={i} tone="orange" noSwitch dice target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
-              ))}
-            </div>
-          </Module>
-          <Module title="Flaps" tone="orange">
-            <div className="slots-col">
-              {game.flapsGreen.map((green, i) => (
-                <Slot
-                  key={i}
-                  tone="orange"
-                  green={green}
-                  target={{ kind: "flaps", slot: i }}
-                  taken={game.flapSlots[i] !== null}
-                  held={game.flapSlots[i]}
-                  label={FLAP_LABEL[i]}
-                  onClick={() => place({ kind: "flaps", slot: i })}
-                  enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
-                />
-              ))}
             </div>
           </Module>
         </div>
