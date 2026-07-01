@@ -245,34 +245,10 @@ export function Cockpit({
         <Altitude game={game} />
       </section>
 
-      {/* Console: pilot rail · central dial-stack · co-pilot rail */}
-      <section className="instruments">
-        {/* Left rail (Pilot): radio above landing gear (blue) */}
-        <div className="rail">
-          <Module title="Radio" tone="blue">
-            <div className="slots-row">
-              <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
-            </div>
-          </Module>
-          <Module title="Landing Gear" tone="blue">
-            <div className="slots-col">
-              {game.gearGreen.map((green, i) => (
-                <Slot
-                  key={i}
-                  tone="blue"
-                  green={green}
-                  target={{ kind: "landingGear", slot: i }}
-                  taken={game.gearSlots[i] !== null}
-                  held={game.gearSlots[i]}
-                  label={GEAR_LABEL[i]}
-                  onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
-                />
-              ))}
-            </div>
-          </Module>
-        </div>
-        <div className="dial-stack">
+      {/* Central dial-stack. The crew rails are placed after the deck (see below)
+          so they can reflow beneath the main panel on narrow screens; on wide
+          screens the .board grid areas position them back beside the dial. */}
+      <div className="dial-stack">
           <div className="axis-cluster">
             {/* Elbow leads: a diagonal up from each dial rim, then a horizontal
                 stub into the inner edge of the (top-aligned) dice space. */}
@@ -310,37 +286,6 @@ export function Cockpit({
             ))}
           </div>
         </div>
-        {/* Right rail (Co-Pilot): radio above flaps (orange) */}
-        <div className="rail">
-          <Module title="Radio" tone="orange">
-            <div className="slots-col">
-              {game.radioCopilot.map((val, i) => (
-                <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
-              ))}
-            </div>
-          </Module>
-          <Module title="Flaps" tone="orange">
-            {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
-            <div className="slots-col">
-              {game.flapsGreen.map((green, i) => (
-                <Fragment key={i}>
-                  {i > 0 && <span className="slot-arrow-v" aria-hidden="true" />}
-                  <Slot
-                    tone="orange"
-                    green={green}
-                    target={{ kind: "flaps", slot: i }}
-                    taken={game.flapSlots[i] !== null}
-                    held={game.flapSlots[i]}
-                    label={FLAP_LABEL[i]}
-                    onClick={() => place({ kind: "flaps", slot: i })}
-                    enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
-                  />
-                </Fragment>
-              ))}
-            </div>
-          </Module>
-        </div>
-      </section>
 
       <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
         {game.outcome
@@ -394,6 +339,63 @@ export function Cockpit({
           </Module>
         </div>
       </section>
+
+      {/* Crew rails. In DOM they follow the deck so they stack under the main
+          panel on narrow screens; on wide screens the .board grid places the
+          pilot rail left of the dial and the co-pilot rail right of it. */}
+      <div className="rail rail-pilot">
+        <Module title="Radio" tone="blue">
+          <div className="slots-row">
+            <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
+          </div>
+        </Module>
+        <Module title="Landing Gear" tone="blue">
+          <div className="slots-col">
+            {game.gearGreen.map((green, i) => (
+              <Slot
+                key={i}
+                tone="blue"
+                green={green}
+                target={{ kind: "landingGear", slot: i }}
+                taken={game.gearSlots[i] !== null}
+                held={game.gearSlots[i]}
+                label={GEAR_LABEL[i]}
+                onClick={() => place({ kind: "landingGear", slot: i })}
+                enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+              />
+            ))}
+          </div>
+        </Module>
+      </div>
+      <div className="rail rail-copilot">
+        <Module title="Radio" tone="orange">
+          <div className="slots-col">
+            {game.radioCopilot.map((val, i) => (
+              <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
+            ))}
+          </div>
+        </Module>
+        <Module title="Flaps" tone="orange">
+          {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
+          <div className="slots-col">
+            {game.flapsGreen.map((green, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span className="slot-arrow-v" aria-hidden="true" />}
+                <Slot
+                  tone="orange"
+                  green={green}
+                  target={{ kind: "flaps", slot: i }}
+                  taken={game.flapSlots[i] !== null}
+                  held={game.flapSlots[i]}
+                  label={FLAP_LABEL[i]}
+                  onClick={() => place({ kind: "flaps", slot: i })}
+                  enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                />
+              </Fragment>
+            ))}
+          </div>
+        </Module>
+      </div>
 
       {/* Dice tray + log */}
       <section className="tray">

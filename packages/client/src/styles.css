@@ -215,10 +215,40 @@ ul {
 }
 
 /* ============================ BOARD ============================ */
+/* Wide screens: a grid whose named areas place the crew rails beside the dial
+   even though they come after the deck in the DOM. That DOM order is what lets
+   the rails reflow beneath the main panel on narrow screens (see media query). */
 .board {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas:
+    "tracks  tracks  tracks"
+    "prail   dial    crail"
+    "callout callout callout"
+    "deck    deck    deck"
+    "tray    tray    tray";
+  gap: 0.7rem 2rem;
+  align-items: start;
+}
+.board > .tracks {
+  grid-area: tracks;
+}
+.board > .callout {
+  grid-area: callout;
+}
+.board > .deck {
+  grid-area: deck;
+}
+.rail-pilot {
+  grid-area: prail;
+  justify-self: end;
+}
+.rail-copilot {
+  grid-area: crail;
+  justify-self: start;
+}
+.board > .tray {
+  grid-area: tray;
 }
 
 .callout {
@@ -253,23 +283,10 @@ ul {
   margin-bottom: 1.4rem; /* breathing room above the console */
 }
 
-/* ---- Top instruments ---- */
-/* Pilot rail (blue) · central dial-stack · Co-Pilot rail (orange). The side rails
-   hug the dial-stack so the three read as one console. */
-.instruments {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 2rem;
-  align-items: start;
-}
-.instruments > .rail:first-of-type {
-  justify-self: end;
-}
-.instruments > .rail:last-of-type {
-  justify-self: start;
-}
+/* ---- Console ---- */
 /* Centre column: the axis dial with the speed gauge stacked beneath it */
 .dial-stack {
+  grid-area: dial;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1289,22 +1306,48 @@ ul {
 
 /* ---- Responsive ---- */
 @media (max-width: 760px) {
-  .deck {
-    grid-template-columns: 1fr;
+  /* Everything stacks; the crew rails dissolve into a 4-column strip beneath the
+     main panel — pilot radio · landing gear · flaps · co-pilot radio. */
+  /* 1fr gutter columns on each side: full-width rows (tracks, callout, deck,
+     tray) span gutter-to-gutter so they fill the screen, while the 4-module
+     strip sits in the middle content columns, centred by the gutters. */
+  .board {
+    grid-template-columns: 1fr auto auto auto auto 1fr;
+    grid-template-areas:
+      "tracks  tracks tracks tracks tracks tracks"
+      "dial    dial   dial   dial   dial   dial"
+      "callout callout callout callout callout callout"
+      "deck    deck   deck   deck   deck   deck"
+      ".       pradio gear   flaps  cradio ."
+      "tray    tray   tray   tray   tray   tray";
+    gap: 0.9rem 0.5rem;
   }
-  .rail {
-    flex-direction: row;
-    flex-wrap: wrap;
+  /* display:contents promotes each rail's two modules to board grid items so
+     they can be placed individually. */
+  .rail-pilot,
+  .rail-copilot {
+    display: contents;
+  }
+  .rail-pilot > :first-child {
+    grid-area: pradio;
+  }
+  .rail-pilot > :last-child {
+    grid-area: gear;
+  }
+  .rail-copilot > :first-child {
+    grid-area: cradio;
+  }
+  .rail-copilot > :last-child {
+    grid-area: flaps;
+  }
+  /* panels only as wide as their content, aligned to the top of the strip */
+  .rail-pilot > *,
+  .rail-copilot > * {
+    justify-self: center;
+    align-self: start;
   }
   .tray {
     grid-template-columns: 1fr;
-  }
-  .instruments {
-    grid-template-columns: 1fr 1fr;
-  }
-  .window {
-    grid-column: 1 / -1;
-    justify-self: center;
   }
 }
 @media (prefers-reduced-motion: reduce) {
