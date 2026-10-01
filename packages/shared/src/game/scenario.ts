@@ -42,7 +42,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
   kerosene: "Kerosene",
   keroseneLeak: "Kerosene Leak",
   intern: "Intern",
-  wind: "Winds",
+  wind: "Wind",
   iceBrakes: "Ice Brakes",
   realTime: "Real Time",
   trafficDie: "Traffic Die",
@@ -54,7 +54,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes", "intern"];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes", "intern", "wind"];
 
 /**
  * Modules that can't be played together — at most one per group. Kerosene Leak
@@ -79,6 +79,15 @@ export const INTERN_TOKEN_COUNT = 6;
 export const KEROSENE_START = 20;
 /** Kerosene burned at the end of a round in which the Kerosene space was left empty. */
 export const KEROSENE_IDLE_BURN = 6;
+
+/**
+ * Wind module: the 20 spaces of the Wind Ring, clockwise from the white space
+ * at the top where the blue Airplane token starts. The value the airplane
+ * points at is added to the Engine total. After each Axis phase the token turns
+ * one space per pip the Axis is off-centre — to the left (anticlockwise) when
+ * tilted toward the Pilot.
+ */
+export const WIND_RING: readonly number[] = [3, 3, 2, 2, 1, 0, -1, -2, -2, -3, -3, -3, -2, -2, -1, 0, 1, 2, 2, 3];
 
 /** One space on the Approach Track. */
 export interface ApproachSpace {

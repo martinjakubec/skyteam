@@ -18,6 +18,7 @@ import { Headset } from "./icons";
 import { IceBrakes } from "./IceBrakes";
 import { Intern } from "./Intern";
 import { Kerosene } from "./Kerosene";
+import { Wind } from "./Wind";
 import { Module } from "./Module";
 import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
@@ -205,6 +206,8 @@ export function Cockpit({
   // but no die space — the Engine dice drive the burn.
   const leakOn = (game.scenario.modules?.includes("keroseneLeak") ?? false) || previewModule("keroseneLeak");
   const keroseneOn = keroseneInPlay || previewModule("kerosene") || leakOn;
+  // Wind sits right of the Co-Pilot's Radio. Dev `?preview=wind` shows the ring.
+  const windOn = (game.scenario.modules?.includes("wind") ?? false) || previewModule("wind");
   // Intern sits under Concentration. Dev `?preview=intern` (module not in play)
   // shows sample tokens with the training spaces disabled.
   const internInPlay = game.scenario.modules?.includes("intern") ?? false;
@@ -447,7 +450,7 @@ export function Cockpit({
 
   return (
     <ExtraDieContext.Provider value={filledByExtra}>
-      <div className={`board${keroseneOn ? " with-kerosene" : ""}`}>
+      <div className={`board${keroseneOn ? " with-kerosene" : ""}${windOn ? " with-wind" : ""}`}>
         {/* Full-width status tracks above the console: approach path + altitude */}
         <section className="tracks">
           <Approach game={game} airportIdx={airportIdx} />
@@ -593,6 +596,8 @@ export function Cockpit({
           </Module>
         </div>
         <div className="rail rail-copilot">
+          {/* Wind sits right of the Co-Pilot's Radio (rail grid: see .with-wind). */}
+          {windOn && <Wind position={game.windPosition ?? 0} />}
           <Module title="Radio" tone="orange" className="mod-radio-copilot">
             <div className="slots-col">
               {game.radioCopilot.map((val, i) => (

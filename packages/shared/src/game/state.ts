@@ -100,6 +100,10 @@ export interface GameState {
   kerosene: number; // KEROSENE_START..0 — 0 means the tank ran dry (loss)
   keroseneSlot: { value: DieValue; crew: Crew } | null; // this round's die, either crew
 
+  // --- Wind module ---
+  /** Index into WIND_RING the blue Airplane token points at (0 = the white +3 at the top). */
+  windPosition: number;
+
   // --- Ice Brakes module (replaces the Brakes; reuses brakesDeployed, 0..4) ---
   // This round's dice per step: the Pilot's top space and the either-crew bottom
   // space. Both need the step's value for the marker to pass it.
@@ -192,6 +196,7 @@ export function createInitialGameState(
     concentrationSlots: Array(CONCENTRATION_SLOTS).fill(null),
     kerosene: KEROSENE_START,
     keroseneSlot: null,
+    windPosition: 0,
     iceBrakeSlots: emptyIceBrakeSlots(),
     internTokens: internOn
       ? (setup.internTokens ?? (Array.from({ length: INTERN_TOKEN_COUNT }, (_, i) => i + 1) as DieValue[]))

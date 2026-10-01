@@ -61,6 +61,10 @@ const ticked = (p) =>
     [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].filter((l) => l.querySelector("input").checked).map((l) => l.textContent),
   );
 
+// Wind module ring (shared WIND_RING; this script runs standalone in the
+// Playwright image, so it carries its own copy).
+const WIND_RING = [3, 3, 2, 2, 1, 0, -1, -2, -2, -3, -3, -3, -2, -2, -1, 0, 1, 2, 2, 3];
+
 /** Move heuristic. Legality comes from the UI; this only ranks legal moves. */
 function score(g, crew, v, t) {
   const other = crew === "pilot" ? "copilot" : "pilot";
@@ -79,8 +83,16 @@ function score(g, crew, v, t) {
     }
     case "engine": {
       const theirs = g.engines[other];
-      if (theirs === null) return 25 - v * 2;
-      const speed = v + theirs;
+      const wind = mods.includes("wind") ? WIND_RING[g.windPosition] : 0;
+      if (theirs === null) {
+        if (!wind || final) return 25 - v * 2;
+        // With Wind, guess the partner's die (3.5) and aim for a safe advance.
+        const est = v + 3.5 + wind;
+        const adv = est <= g.aeroBlue ? 0 : est > g.aeroOrange ? 2 : 1;
+        for (let k = 0; k < adv; k++) if (g.airplanes[g.position + k] > 0 || g.position + k === airport) return 5 - v;
+        return 25 - v;
+      }
+      const speed = v + theirs + wind;
       const leak = mods.includes("keroseneLeak") ? Math.abs(v - theirs) + 1 : 0;
       if (leak && g.kerosene <= leak) return -1000;
       if (final) return 50 - speed * 5 - leak * 3;
@@ -263,6 +275,10 @@ async function playGame(combo, tag) {
     let moves = 0;
     let tokens = 0;
     let unmarked = 0;
+    let windTurns = 0;
+    let windMismatch = 0;
+    const windOn = combo.includes("Wind");
+    const signed = (v) => (v > 0 ? `+${v}` : v < 0 ? `\u2212${-v}` : "0");
     try {
       while (!a.game.outcome && moves < MAX_MOVES) {
         const g = a.game;
@@ -273,9 +289,17 @@ async function playGame(combo, tag) {
         const wasToken = !!g.internHeld || !!g.trafficHeld;
         const extraClass = g.internHeld ? "intern" : "traffic";
         const round = g.round;
+        const windBefore = g.windPosition;
         const target = await act(crew === "pilot" ? a : b, crew, log);
         moves++;
         for (let k = 0; k < 100 && b.version !== a.version; k++) await sleep(50);
+        // Wind: both screens' ring must point where the server says.
+        if (windOn && !a.game.outcome) {
+          if (a.game.windPosition !== windBefore) windTurns++;
+          const want = `Wind ${signed(WIND_RING[a.game.windPosition])}`;
+          const shown = await Promise.all([a, b].map((x) => x.page.locator(".wind-ring").getAttribute("aria-label")));
+          if (shown.some((l) => l !== want)) windMismatch++;
+        }
         // An extra placed mid-round must be drawn in its colours on both screens.
         // (If it ended the round, the next round has rightly cleared the marks.
         // A Traffic die on an Intern space trains it instead: no mark.)
@@ -300,6 +324,7 @@ async function playGame(combo, tag) {
       a.pageError && `pilot page error: ${a.pageError}`,
       b.pageError && `co-pilot page error: ${b.pageError}`,
       unmarked && `${unmarked} space(s) filled by an extra die not drawn in its colours`,
+      windMismatch && `Wind ring disagreed with the server ${windMismatch} time(s)`,
     ].filter(Boolean);
     return {
       ok: problems.length === 0,
@@ -308,6 +333,7 @@ async function playGame(combo, tag) {
       round: g.round,
       moves,
       tokens,
+      windTurns,
       abilitiesUsed: a.game.log.filter((l) => /Anticipation|Adaptation|work together|Synchronisation:|Mastery:|Control:/.test(l)).length,
     };
   } finally {
@@ -352,7 +378,7 @@ for (const combo of combos) {
     }
     ran++;
     if (!res.ok) failed++;
-    const detail = res.ok ? `${res.outcome} · round ${res.round} · ${res.moves} moves${res.tokens ? ` · ${res.tokens} extra dice` : ""}${res.abilitiesUsed ? ` · ${res.abilitiesUsed} ability events` : ""}` : `${res.problem}${res.tail ? ` | last: ${res.tail}` : ""}`;
+    const detail = res.ok ? `${res.outcome} · round ${res.round} · ${res.moves} moves${res.tokens ? ` · ${res.tokens} extra dice` : ""}${res.windTurns ? ` · wind turned ${res.windTurns}×` : ""}${res.abilitiesUsed ? ` · ${res.abilitiesUsed} ability events` : ""}` : `${res.problem}${res.tail ? ` | last: ${res.tail}` : ""}`;
     console.log(`${res.ok ? "✅" : "❌"} ${name}${REPEAT > 1 ? ` #${r}` : ""} — ${detail}`);
   }
 }

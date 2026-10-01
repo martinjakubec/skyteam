@@ -9,6 +9,7 @@ import {
   IMPLEMENTED_MODULES,
   SCENARIOS,
   SetSetupPayload,
+  WIND_RING,
   createInitialGameState,
   reduce,
 } from "../packages/shared/src/index.ts";
@@ -861,6 +862,7 @@ console.log("27) Every combination of modules and Special Abilities");
     keroseneLeak: { quietBurn: 1, prep: () => {} }, // level(1,1): Engines equal, leak 1
     iceBrakes: { quietBurn: 0, prep: (st) => (st.brakesDeployed = 4) }, // must be past the 5
     intern: { quietBurn: 0, prep: (st) => (st.internTokens = st.internTokens.map(() => null)) }, // all trained
+    wind: { quietBurn: 0, prep: (st) => (st.windPosition = WIND_RING.indexOf(0)) }, // a calm space: the dice alone
   };
   // A quiet round (level(1,1)) plays Axis 3 vs 3 and Engines 1 vs 1 plus one
   // Concentration die, and touches no Gear/Flaps and no Reroll tokens.
@@ -919,6 +921,57 @@ console.log("27) Every combination of modules and Special Abilities");
   check(`${rejected} excluded setups are rejected`, !bad.some((b) => b.includes("excluded")));
   bad.slice(0, 12).forEach((b) => console.log(`     ↳ ${b}`));
   if (bad.length > 12) console.log(`     ↳ … and ${bad.length - 12} more`);
+}
+
+// 28) Wind --------------------------------------------------------------------
+console.log("28) Wind: the ring turns with the Axis and adds to the Engines");
+{
+  const wind = (over = {}) => init(scn({ rounds: 7, modules: ["wind"], ...over }));
+  const at = (s, pos) => ((s.windPosition = pos), s);
+  const idx = (v) => WIND_RING.indexOf(v); // first space with that wind
+
+  check("the ring starts at the white +3", wind().windPosition === 0 && WIND_RING[0] === 3);
+
+  // level(1,1): Axis 3 vs 3, Engines 1 + 1 = 2 → +3 wind = 5 > blue 4 → advance 1.
+  let s = playRound(wind(), level(1, 1));
+  check("Engines add the wind: 1 + 1 + 3 = 5", s.lastSpeed === 5);
+  check("…and the wind makes the plane advance", s.position === 1);
+  s = playRound(init(scn({ rounds: 7 })), level(1, 1));
+  check("without the module the wind is ignored", s.lastSpeed === 2 && s.position === 0);
+
+  s = playRound(at(wind(), idx(-3)), level(1, 1));
+  check("a head wind can take the speed below the dice total (2 − 3 = −1)", s.lastSpeed === -1 && s.position === 0);
+
+  // Axis 4 vs 3 tilts +1 toward the Pilot → the airplane turns 1 space left.
+  s = playRound(wind(), { pilot: [4, 1], copilot: [3, 1] });
+  check("tilt toward the Pilot turns the airplane left (anticlockwise)", s.axis.offset === 1 && s.windPosition === WIND_RING.length - 1);
+  s = playRound(wind(), { pilot: [3, 1], copilot: [5, 1] });
+  check("tilt toward the Co-Pilot turns it right by the offset (−2 → 2 spaces)", s.axis.offset === -2 && s.windPosition === 2);
+
+  s = wind();
+  s.axis.offset = 2;
+  s = playRound(s, level(1, 1));
+  check("it turns by the current tilt even when the Axis didn't move", s.axis.offset === 2 && s.windPosition === WIND_RING.length - 2);
+  check("level and unmoved: no turn", playRound(wind(), level(1, 1)).windPosition === 0);
+  s = init(scn({ rounds: 7 }));
+  s.axis.offset = 2;
+  check("without the module the ring never turns", playRound(s, level(1, 1)).windPosition === 0);
+
+  // Engines resolved before the Axis use the wind from before the turn.
+  s = roll(wind(), [1, 4, 6, 6], [1, 3, 6, 6]);
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 1, { kind: "engine" });
+  const before = s.lastSpeed;
+  s = place(s, P, 4, { kind: "axis" });
+  s = place(s, C, 3, { kind: "axis" });
+  check("Engines resolved first use the wind before the turn", before === 5 && s.windPosition === WIND_RING.length - 1);
+
+  // The landing round: the wind counts toward the speed the Brakes must hold.
+  const land = (pos, lvl) => playRound(readyToLand((st) => { st.scenario.modules = ["wind"]; st.windPosition = pos; }), lvl);
+  check("landing: 1 + 1 + 1 wind = 3 beats Brakes 2 → lost", lostFor(land(idx(1), level(1, 1)), /speed too high/));
+  check("landing: 2 + 1 − 1 wind = 2 held by Brakes 2 → won", land(idx(-1), level(2, 1)).phase === "won");
+
+  check("Wind is selectable in the lobby", SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["wind"] }).success);
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

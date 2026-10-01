@@ -118,7 +118,11 @@ landing checks).
   crew below — in one round; the marker must be past the 5 to land), and
   **Intern** (train with a die ≠ your next token to take it — Pilot from the
   left, Co-Pilot from the right — then place it at once like a die of its
-  number, not on Concentration, no Coffee; all 6 trained to land).
+  number, not on Concentration, no Coffee; all 6 trained to land), and
+  **Wind** (the Wind Ring's airplane starts on +3; after each Axis phase it
+  turns one space per pip the plane is tilted — left when tilted toward the
+  Pilot — and the wind it points at is added to the Engine total every round,
+  the landing round included).
 - **Game setup.** The host picks the airport (`SCENARIOS`), modules and Special
   Abilities in the lobby (`room:setup`); the server builds the game from
   `scenarioForSetup`. Only modules listed in `IMPLEMENTED_MODULES` can be

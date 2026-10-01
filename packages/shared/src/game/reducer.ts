@@ -21,6 +21,7 @@ import {
   MAX_COFFEE,
   RADIO_COPILOT_SLOTS,
   RADIO_PILOT_SLOTS,
+  WIND_RING,
   type Crew,
   type DieValue,
 } from "./scenario";
@@ -609,7 +610,15 @@ function resolveAxis(s: GameState): void {
     s.log.push("Control: matching Axis dice — gained a Coffee.");
   }
   if (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt) {
-    lose(s, "The plane went into a spin!");
+    return lose(s, "The plane went into a spin!");
+  }
+  // Wind: the airplane token turns one space per pip off-centre, even if the
+  // Axis didn't move — left (anticlockwise) when tilted toward the Pilot.
+  if (hasModule(s, "wind") && s.axis.offset !== 0) {
+    const n = WIND_RING.length;
+    s.windPosition = (((s.windPosition - s.axis.offset) % n) + n) % n;
+    const w = WIND_RING[s.windPosition];
+    s.log.push(`Wind: the airplane turns ${Math.abs(s.axis.offset)} ${s.axis.offset > 0 ? "left" : "right"} → wind ${w > 0 ? "+" : ""}${w}.`);
   }
 }
 
@@ -622,8 +631,12 @@ function placeEngine(s: GameState, crew: Crew, value: DieValue): void {
 /** Sum the engine dice → speed → advance the Approach Track (or, in the final
  *  round, just record the speed for the brake comparison). */
 function resolveEngines(s: GameState): void {
-  const speed = s.engines.pilot! + s.engines.copilot!;
+  // Wind: the wind speed the airplane token points at joins the dice, every
+  // round including the landing one.
+  const wind = hasModule(s, "wind") ? WIND_RING[s.windPosition] : 0;
+  const speed = s.engines.pilot! + s.engines.copilot! + wind;
   s.lastSpeed = speed;
+  if (wind !== 0) s.log.push(`Wind: ${s.engines.pilot} + ${s.engines.copilot} ${wind > 0 ? "+" : "−"} ${Math.abs(wind)} wind = ${speed}.`);
 
   // Mastery (Special Ability): matching Engine dice regain a spent Reroll token.
   if (hasAbility(s, "mastery") && s.engines.pilot === s.engines.copilot && s.rerollSpent > 0) {

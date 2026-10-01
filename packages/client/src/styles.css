@@ -85,6 +85,11 @@ h1,
   margin: 0 auto;
   padding: 1rem 1rem 2rem;
 }
+/* The Wind ring makes the co-pilot rail ~2 modules wide; widen the stage so it
+   stays inside the board while the dial keeps its centre. */
+.stage:has(.board.with-wind) {
+  max-width: 1160px;
+}
 .topbar {
   display: flex;
   align-items: baseline;
@@ -321,6 +326,26 @@ ul {
 }
 .with-kerosene .rail-pilot > .mod-gear {
   grid-area: gear;
+}
+/* Wind module: the co-pilot rail mirrors that — the ring sits right of the
+   Radio, top-aligned with it, the Flaps underneath. Rail stays left-aligned. */
+.with-wind .rail-copilot {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "cradio wind"
+    "flaps  .";
+  gap: 0.7rem;
+  align-items: start;
+}
+.with-wind .rail-copilot > .mod-wind {
+  grid-area: wind;
+}
+.with-wind .rail-copilot > .mod-radio-copilot {
+  grid-area: cradio;
+}
+.with-wind .rail-copilot > .mod-flaps {
+  grid-area: flaps;
 }
 
 .callout {
@@ -768,6 +793,89 @@ ul {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+/* ---- Wind module: the Wind Ring with the airplane token, readout below ---- */
+.wind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.wind-ring {
+  display: block;
+  width: 200px;
+  height: 200px;
+}
+.wind-space path {
+  fill: #7f9aa3;
+  stroke: #4c636b;
+  stroke-width: 0.8;
+}
+.wind-space text {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  fill: #f4f7f8;
+  pointer-events: none;
+}
+/* The white space the airplane starts on, as printed on the ring. */
+.wind-space.start path {
+  fill: #eef2f3;
+}
+.wind-space.start text {
+  fill: #4c636b;
+}
+.wind-space.current path {
+  fill: #f2c94c;
+  stroke: #8a6a12;
+  stroke-width: 1.4;
+  transition: fill 0.3s;
+}
+.wind-space.current text {
+  fill: #3b2c05;
+}
+.wind-disc {
+  fill: #1f4fa3;
+  stroke: #0f2d63;
+  stroke-width: 2;
+}
+.wind-plane {
+  transform-origin: 100px 100px;
+  transform-box: view-box;
+  transition: transform 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.wind-plane path {
+  fill: #e9eef2;
+  stroke: #5b6874;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.wind-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.wind-speed {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  min-width: 2ch;
+  text-align: center;
+}
+.wind-speed.tail {
+  color: #8a3a06;
+}
+.wind-speed.head {
+  color: #133a63;
+}
+.wind-hint {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.6rem;
+  opacity: 0.75;
 }
 
 /* ---- Kerosene module: dice space over a vertical fuel tube ---- */
@@ -1779,6 +1887,118 @@ ul {
     line-height: normal;
   }
   .with-kerosene .kerosene-gauge.horizontal {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: auto;
+  }
+}
+/* With Wind the co-pilot rail is ~2 modules wide and the ring no longer fits
+   beside the dial below ~1160px, so stack there. The ring gets its own row
+   above the module strip (below Kerosene when both are in play), with the
+   readout beside it. */
+@media (max-width: 1159px) {
+  .board.with-wind {
+    grid-template-columns: 1fr auto auto auto auto 1fr;
+    grid-template-areas:
+      "tracks  tracks  tracks tracks tracks  tracks"
+      "dial    dial    dial   dial   dial    dial"
+      "callout callout callout callout callout callout"
+      ".       wind    wind   wind   wind    ."
+      ".       pradio  gear   flaps  cradio  ."
+      "deck    deck    deck   deck   deck    deck"
+      "tray    tray    tray   tray   tray    tray";
+    gap: 0.9rem 0.5rem;
+  }
+  .board.with-kerosene.with-wind {
+    grid-template-areas:
+      "tracks  tracks  tracks tracks tracks  tracks"
+      "dial    dial    dial   dial   dial    dial"
+      "callout callout callout callout callout callout"
+      ".       kero    kero   kero   kero    ."
+      ".       wind    wind   wind   wind    ."
+      ".       pradio  gear   flaps  cradio  ."
+      "deck    deck    deck   deck   deck    deck"
+      "tray    tray    tray   tray   tray    tray";
+  }
+  .with-wind .rail-pilot,
+  .with-wind .rail-copilot {
+    display: contents;
+  }
+  .with-wind .mod-radio-pilot {
+    grid-area: pradio;
+  }
+  .with-wind .mod-gear {
+    grid-area: gear;
+  }
+  .with-wind .mod-radio-copilot {
+    grid-area: cradio;
+  }
+  .with-wind .mod-flaps {
+    grid-area: flaps;
+  }
+  .with-wind .rail-pilot > *,
+  .with-wind .rail-copilot > * {
+    justify-self: center;
+    align-self: start;
+  }
+  /* Three columns: the title at the left (vertically centred), the ring a
+     little left of centre, the readout centred in the wider right column so it
+     stands clear of the ring. */
+  .with-wind .rail-copilot > .mod-wind {
+    grid-area: wind;
+    justify-self: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 0.6fr) auto minmax(0, 1.4fr);
+    align-items: center;
+    column-gap: 0.6rem;
+  }
+  .with-wind .mod-wind > .module-title {
+    justify-self: start;
+    margin-bottom: 0;
+  }
+  .with-wind .wind {
+    display: contents;
+  }
+  .with-wind .wind-ring {
+    width: 210px;
+    height: 210px;
+  }
+  .with-wind .wind-readout {
+    justify-self: center;
+  }
+  .with-wind .wind-readout {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  .with-wind .wind-speed {
+    font-size: 1.6rem;
+  }
+  /* Kerosene stacks at 900px on its own; alongside Wind it stacks here too, in
+     the same horizontal form as the 900px rules. */
+  .with-wind.with-kerosene .rail-pilot > .mod-kerosene {
+    grid-area: kero;
+    justify-self: stretch;
+    position: relative;
+  }
+  .with-wind.with-kerosene .kerosene {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .with-wind.with-kerosene .kerosene-gauge.vertical {
+    display: none;
+  }
+  .with-wind.with-kerosene .kerosene-hint.leak {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.55rem;
+    font-size: 0.64rem;
+    line-height: normal;
+  }
+  .with-wind.with-kerosene .kerosene-gauge.horizontal {
     display: block;
     flex: 1;
     min-width: 0;
