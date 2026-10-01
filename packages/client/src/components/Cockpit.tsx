@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ICE_BRAKE_VALUES, firstPlayerForRound, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
+import { ICE_BRAKE_VALUES, REAL_TIME_SECONDS, firstPlayerForRound, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label, previewModule } from "../util";
 import {
@@ -19,6 +19,8 @@ import { IceBrakes } from "./IceBrakes";
 import { Intern } from "./Intern";
 import { Kerosene } from "./Kerosene";
 import { Wind } from "./Wind";
+import { RealTime } from "./RealTime";
+import { useGame } from "../store";
 import { Module } from "./Module";
 import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
@@ -206,6 +208,15 @@ export function Cockpit({
   // but no die space — the Engine dice drive the burn.
   const leakOn = (game.scenario.modules?.includes("keroseneLeak") ?? false) || previewModule("keroseneLeak");
   const keroseneOn = keroseneInPlay || previewModule("kerosene") || leakOn;
+  // Real-Time: the round's countdown runs under the Altitude track. Dev
+  // `?preview=realTime` shows a sample countdown from 60s.
+  const realTimeInPlay = game.scenario.modules?.includes("realTime") ?? false;
+  const realTimeOn = realTimeInPlay || previewModule("realTime");
+  const [previewEndsAt] = useState(() => Date.now() + REAL_TIME_SECONDS * 1000);
+  const clockOffset = useGame((s) => s.clockOffset);
+  // Who the paused clock is waiting for (the host flies as Pilot).
+  const awaited = snapshot.seats.find((s) => s.connection === "disconnected");
+  const pausedNote = awaited ? `waiting for the ${awaited.role === "host" ? "Pilot" : "Co-Pilot"} to reconnect` : undefined;
   // Wind sits right of the Co-Pilot's Radio. Dev `?preview=wind` shows the ring.
   const windOn = (game.scenario.modules?.includes("wind") ?? false) || previewModule("wind");
   // Intern sits under Concentration. Dev `?preview=intern` (module not in play)
@@ -455,6 +466,14 @@ export function Cockpit({
         <section className="tracks">
           <Approach game={game} airportIdx={airportIdx} />
           <Altitude game={game} />
+          {realTimeOn && (
+            <RealTime
+              endsAt={realTimeInPlay ? game.timerEndsAt : previewEndsAt}
+              remainingMs={realTimeInPlay ? game.timerRemainingMs : null}
+              clockOffset={realTimeInPlay ? clockOffset : 0}
+              pausedNote={pausedNote}
+            />
+          )}
         </section>
 
         {/* Central dial-stack. The crew rails are placed after the deck (see below)

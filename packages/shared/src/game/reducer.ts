@@ -21,6 +21,7 @@ import {
   MAX_COFFEE,
   RADIO_COPILOT_SLOTS,
   RADIO_PILOT_SLOTS,
+  REAL_TIME_SECONDS,
   WIND_RING,
   type Crew,
   type DieValue,
@@ -47,7 +48,8 @@ export class GameRuleError extends Error {
  * and `reroll` carry server-generated dice values (the server owns randomness).
  */
 export type ReduceCommand =
-  | { type: "roll"; pilot: DieValue[]; copilot: DieValue[] }
+  /** `at`: the server's clock (epoch ms) — Real-Time starts its countdown from it. */
+  | { type: "roll"; pilot: DieValue[]; copilot: DieValue[]; at?: number }
   | { type: "reroll"; dieIds: number[]; values: DieValue[] }
   | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
   | { type: "placeIntern"; target: PlacementTarget }
@@ -55,7 +57,16 @@ export type ReduceCommand =
   | { type: "anticipate"; dieId: number; value: DieValue }
   | { type: "swap"; dieId: number }
   | { type: "rollTraffic"; value: DieValue }
-  | { type: "placeTraffic"; target: PlacementTarget };
+  | { type: "placeTraffic"; target: PlacementTarget }
+  // Real-Time module, issued by the server's clock (never by a player):
+  | { type: "timeUp" }
+  | { type: "pauseTimer"; at: number }
+  | { type: "resumeTimer"; at: number };
+
+/** The commands a player issues — refused while a Real-Time clock is paused. */
+const PLAYER_ACTIONS: ReadonlySet<ReduceCommand["type"]> = new Set([
+  "reroll", "placeDie", "placeIntern", "adapt", "anticipate", "swap", "placeTraffic",
+]);
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -65,7 +76,20 @@ export type ReduceCommand =
  */
 export function reduce(state: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
   const draft: GameState = structuredClone(state);
+  if (draft.timerRemainingMs !== null && PLAYER_ACTIONS.has(command.type)) {
+    throw new GameRuleError("The clock is paused until both players are connected.");
+  }
+  const result = dispatch(draft, command, byPlayerId);
+  // Real-Time: the countdown only runs while a round is being played.
+  const s = result.state;
+  if (s.phase !== "placement" || s.outcome) {
+    s.timerEndsAt = null;
+    s.timerRemainingMs = null;
+  }
+  return result;
+}
 
+function dispatch(draft: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
   switch (command.type) {
     case "roll":
       return handleRoll(draft, command);
@@ -85,6 +109,12 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handleRollTraffic(draft, command);
     case "placeTraffic":
       return handlePlaceTraffic(draft, command, byPlayerId);
+    case "timeUp":
+      return handleTimeUp(draft);
+    case "pauseTimer":
+      return handlePauseTimer(draft, command);
+    case "resumeTimer":
+      return handleResumeTimer(draft, command);
     default:
       return assertNever(command);
   }
@@ -94,9 +124,11 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
 
 function handleRoll(
   s: GameState,
-  cmd: { pilot: DieValue[]; copilot: DieValue[] },
+  cmd: { pilot: DieValue[]; copilot: DieValue[]; at?: number },
 ): ReduceResult {
   if (s.phase !== "rolling") throw new GameRuleError("Not awaiting a roll.");
+  const realTime = hasModule(s, "realTime");
+  if (realTime && cmd.at === undefined) throw new GameRuleError("A Real-Time roll needs the server's clock.");
   if (cmd.pilot.length !== DICE_PER_PLAYER || cmd.copilot.length !== DICE_PER_PLAYER) {
     throw new GameRuleError("A roll must provide four dice per crew.");
   }
@@ -140,9 +172,58 @@ function handleRoll(
   if (s.scenario.rerollRounds.includes(s.round)) {
     s.rerollTokens += 1;
   }
+  // Real-Time: the countdown starts the moment the dice are rolled.
+  s.timerEndsAt = realTime ? cmd.at! + REAL_TIME_SECONDS * 1000 : null;
+  s.timerRemainingMs = null;
 
   s.log.push(`Round ${s.round}: dice rolled (${altitudeLabel(s)}). ${crewLabel(s.turn)} leads.`);
   return { state: s, description: `Round ${s.round} begins.` };
+}
+
+// --- Real-Time --------------------------------------------------------------
+
+/**
+ * The round's countdown ran out: no more dice. Anything pending (an Intern
+ * token or Traffic die in hand, a swap or reroll awaiting an answer) is
+ * dropped and unplaced dice are ignored. An empty Axis or Engine space loses;
+ * otherwise the round ends as usual (Kerosene burn, landing check…).
+ */
+function handleTimeUp(s: GameState): ReduceResult {
+  if (!hasModule(s, "realTime")) throw new GameRuleError("This game isn't played in Real-Time.");
+  if (s.phase !== "placement" || s.timerEndsAt === null) throw new GameRuleError("The clock is not running.");
+  s.internHeld = null;
+  s.trafficPending = false;
+  s.trafficHeld = null;
+  s.pendingSwap = null;
+  s.pendingReroll = null;
+  s.log.push("⏱ Time's up — no more dice this round.");
+  const mandatoryMet =
+    s.axis.pilot !== null && s.axis.copilot !== null && s.engines.pilot !== null && s.engines.copilot !== null;
+  if (!mandatoryMet) {
+    lose(s, "Time ran out before the Axis and Engines were set.");
+    s.phase = "lost";
+    return { state: s, description: lossText(s) };
+  }
+  endOfRound(s);
+  return { state: s, description: s.outcome ? endText(s) : "Time's up." };
+}
+
+/** A seat disconnected: freeze the time left. */
+function handlePauseTimer(s: GameState, cmd: { at: number }): ReduceResult {
+  if (s.timerEndsAt === null) throw new GameRuleError("The clock is not running.");
+  s.timerRemainingMs = Math.max(0, s.timerEndsAt - cmd.at);
+  s.timerEndsAt = null;
+  s.log.push("⏸ Clock paused — waiting for both players.");
+  return { state: s, description: "Clock paused." };
+}
+
+/** Both seats are back: the countdown restarts from the time left. */
+function handleResumeTimer(s: GameState, cmd: { at: number }): ReduceResult {
+  if (s.timerRemainingMs === null) throw new GameRuleError("The clock is not paused.");
+  s.timerEndsAt = cmd.at + s.timerRemainingMs;
+  s.timerRemainingMs = null;
+  s.log.push("▶ Clock running again.");
+  return { state: s, description: "Clock resumed." };
 }
 
 // --- reroll -----------------------------------------------------------------

@@ -393,6 +393,61 @@ ul {
 
 /* Altitude — horizontal per-round track, sharing the Approach panel's layout
    (.approach + .approach-track + .appr-cell) in the blue altimeter palette. */
+/* ---- Real-Time module: the round's countdown, under the Altitude ---- */
+.approach-tag.rt-tag {
+  background: linear-gradient(90deg, #f0b25a, #d9732c);
+  color: #2a1203;
+}
+.rt-track {
+  position: relative;
+  height: 30px;
+  overflow: hidden;
+  /* Repaint the track as a unit: a shrinking bar must not leave trails. */
+  contain: paint;
+}
+/* Width is updated every animation frame (no CSS transition), and the top
+   highlight is part of the gradient rather than a box-shadow — together these
+   avoid stale highlight pixels left behind as the bar shrinks. */
+.rt-bar {
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #9be59b 0 1px, #6fd06f 1px, #3d9b3d);
+}
+.rt-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.realtime.low .rt-bar {
+  background: linear-gradient(180deg, #f8df8c 0 1px, #f2c94c 1px, #d79a1d);
+}
+.realtime.critical .rt-bar {
+  background: linear-gradient(180deg, #f6a197 0 1px, #ef6a5a 1px, #c0392b);
+  animation: rt-pulse 0.8s ease-in-out infinite alternate;
+}
+.realtime.paused .rt-bar {
+  background: repeating-linear-gradient(135deg, #5d6b7a 0 10px, #4b5867 10px 20px);
+}
+.realtime.idle .rt-bar {
+  opacity: 0.35;
+}
+@keyframes rt-pulse {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.35);
+  }
+}
+
 .alt-tag {
   background: linear-gradient(90deg, #6fc0ef, #2f6fb0);
   color: #04141f;
@@ -2032,6 +2087,9 @@ ul {
   .stage { zoom: 0.7; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .realtime.critical .rt-bar {
+    animation: none;
+  }
   .plane-svg {
     transition: none;
   }

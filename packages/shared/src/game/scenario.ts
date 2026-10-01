@@ -54,7 +54,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes", "intern", "wind"];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes", "intern", "wind", "realTime"];
 
 /**
  * Modules that can't be played together — at most one per group. Kerosene Leak
@@ -74,6 +74,9 @@ export function conflictingModules(id: ModuleId): ModuleId[] {
  * landing loses the game.
  */
 export const INTERN_TOKEN_COUNT = 6;
+
+/** Real-Time module: seconds the crew has to place its dice each round. */
+export const REAL_TIME_SECONDS = 60;
 
 /** Kerosene module: the marker starts here; reaching 0 (the empty space) loses. */
 export const KEROSENE_START = 20;

@@ -8,6 +8,7 @@ import {
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   SCENARIOS,
+  REAL_TIME_SECONDS,
   SetSetupPayload,
   WIND_RING,
   createInitialGameState,
@@ -33,7 +34,9 @@ const P = "P";
 const C = "C";
 
 // Drive helpers -------------------------------------------------------------
-const roll = (s, pilot, copilot) => reduce(s, { type: "roll", pilot, copilot }, "").state;
+// Every roll carries the server's clock (Real-Time starts its countdown from it).
+const ROLL_AT = 1_000_000;
+const roll = (s, pilot, copilot) => reduce(s, { type: "roll", pilot, copilot, at: ROLL_AT }, "").state;
 function place(s, who, value, target, coffeeDelta) {
   const crew = who === P ? "pilot" : "copilot";
   const die = s.dice[crew].find((d) => !d.placed && d.value === value);
@@ -863,6 +866,7 @@ console.log("27) Every combination of modules and Special Abilities");
     iceBrakes: { quietBurn: 0, prep: (st) => (st.brakesDeployed = 4) }, // must be past the 5
     intern: { quietBurn: 0, prep: (st) => (st.internTokens = st.internTokens.map(() => null)) }, // all trained
     wind: { quietBurn: 0, prep: (st) => (st.windPosition = WIND_RING.indexOf(0)) }, // a calm space: the dice alone
+    realTime: { quietBurn: 0, prep: () => {} }, // every die placed in time: the clock never runs out
   };
   // A quiet round (level(1,1)) plays Axis 3 vs 3 and Engines 1 vs 1 plus one
   // Concentration die, and touches no Gear/Flaps and no Reroll tokens.
@@ -903,6 +907,13 @@ console.log("27) Every combination of modules and Special Abilities");
         if (quiet.phase !== "rolling" || quiet.round !== 2) bad.push(`${name}: quiet round didn't complete (${quiet.outcome?.reason})`);
         if (quiet.kerosene !== 20 - burn) bad.push(`${name}: kerosene ${quiet.kerosene}, expected ${20 - burn}`);
         if (quiet.coffee !== coffee) bad.push(`${name}: coffee ${quiet.coffee}, expected ${coffee}`);
+        // Real-Time: the clock runs out once the Axis and Engines are set → the round ends cleanly.
+        if (modules.includes("realTime")) {
+          let t = roll(init(scn({ rounds: 7, modules, abilities })), [3, 1, 6, 6], [3, 1, 6, 6]);
+          for (const [who, v, tg] of [[P, 3, { kind: "axis" }], [C, 3, { kind: "axis" }], [P, 1, { kind: "engine" }], [C, 1, { kind: "engine" }]]) t = place(t, who, v, tg);
+          t = reduce(t, { type: "timeUp" }, "").state;
+          if (t.phase !== "rolling" || t.round !== 2) bad.push(`${name}: time's up didn't end the round (${t.phase}, ${t.outcome?.reason})`);
+        }
         const landing = playRound(
           readyToLand((st) => {
             st.scenario.modules = [...modules];
@@ -972,6 +983,76 @@ console.log("28) Wind: the ring turns with the Axis and adds to the Engines");
   check("landing: 2 + 1 − 1 wind = 2 held by Brakes 2 → won", land(idx(-1), level(2, 1)).phase === "won");
 
   check("Wind is selectable in the lobby", SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["wind"] }).success);
+}
+
+// 29) Real-Time ----------------------------------------------------------------
+console.log("29) Real-Time: a 60-second round, time's up, pause and resume");
+{
+  const RT = REAL_TIME_SECONDS * 1000;
+  const rt = (over = {}) => init(scn({ rounds: 7, modules: ["realTime"], ...over }));
+  const timeUp = (s) => reduce(s, { type: "timeUp" }, "").state;
+  const pause = (s, at) => reduce(s, { type: "pauseTimer", at }, "").state;
+  const resume = (s, at) => reduce(s, { type: "resumeTimer", at }, "").state;
+  const throws = (fn, re) => { try { fn(); return false; } catch (e) { return re.test(e.message); } };
+
+  let s = roll(rt(), [3, 1, 6, 6], [3, 1, 6, 6]);
+  check("the roll starts a 60s countdown from the server's clock", s.timerEndsAt === ROLL_AT + RT && s.timerRemainingMs === null);
+  check("without the module there's no countdown", roll(init(scn({ rounds: 7 })), [3, 1, 6, 6], [3, 1, 6, 6]).timerEndsAt === null);
+  check("a Real-Time roll without the clock is refused", throws(() => reduce(rt(), { type: "roll", pilot: [1, 1, 1, 1], copilot: [1, 1, 1, 1] }, ""), /clock/i));
+
+  // Axis + Engines down, Radio dice still in hand: time's up ends the round.
+  s = place(s, P, 3, { kind: "axis" });
+  s = place(s, C, 3, { kind: "axis" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 1, { kind: "engine" });
+  s = timeUp(s);
+  check("time's up with Axis and Engines set: the round ends, unplaced dice ignored", s.phase === "rolling" && s.round === 2 && !s.outcome);
+  check("…and the countdown is cleared until the next roll", s.timerEndsAt === null && s.timerRemainingMs === null);
+
+  s = roll(rt(), [3, 1, 6, 6], [3, 1, 6, 6]);
+  s = place(s, P, 3, { kind: "axis" });
+  s = place(s, C, 3, { kind: "axis" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = timeUp(s);
+  check("time's up with an Engine space empty loses", lostFor(s, /time ran out/i) && s.phase === "lost");
+  check("time's up before any die loses", lostFor(timeUp(roll(rt(), [1, 1, 1, 1], [1, 1, 1, 1])), /time ran out/i));
+
+  s = roll(rt({ modules: ["realTime", "kerosene"] }), [3, 1, 6, 6], [3, 1, 6, 6]);
+  for (const [who, v, t] of [[P, 3, { kind: "axis" }], [C, 3, { kind: "axis" }], [P, 1, { kind: "engine" }], [C, 1, { kind: "engine" }]]) s = place(s, who, v, t);
+  s = timeUp(s);
+  check("the end of round still runs: an empty Kerosene space burns 6", s.kerosene === 14 && s.round === 2);
+
+  s = roll(rt(), [3, 1, 6, 6], [3, 1, 6, 6]);
+  s.internHeld = { crew: "pilot", value: 4 };
+  s.pendingSwap = { from: "pilot", dieId: 2 };
+  s.pendingReroll = "copilot";
+  s = timeUp(s);
+  check("time's up drops anything pending (Intern token, swap, reroll)", s.internHeld === null && s.pendingSwap === null && s.pendingReroll === null);
+
+  s = playRound(readyToLand((st) => (st.scenario.modules = ["realTime"])), { pilot: [3, 1], copilot: [3, 1] });
+  check("all dice placed in time: the round ends normally and the clock stops", s.phase === "won" && s.timerEndsAt === null);
+  s = roll(readyToLand((st) => (st.scenario.modules = ["realTime"])), [3, 1, 6, 6], [3, 1, 6, 6]);
+  for (const [who, v, t] of [[P, 3, { kind: "axis" }], [C, 3, { kind: "axis" }], [P, 1, { kind: "engine" }], [C, 1, { kind: "engine" }]]) s = place(s, who, v, t);
+  check("time's up in the landing round still checks the landing", timeUp(s).phase === "won");
+
+  s = roll(rt(), [1, 1, 6, 6], [6, 1, 6, 6]); // Axis 1 vs 6 → spin
+  s = place(s, P, 1, { kind: "axis" });
+  s = place(s, C, 6, { kind: "axis" });
+  check("a mid-round loss stops the clock", s.phase === "lost" && s.timerEndsAt === null);
+
+  s = roll(rt(), [3, 1, 6, 6], [3, 1, 6, 6]);
+  s = pause(s, ROLL_AT + 20_000);
+  check("pause freezes the time left (40s)", s.timerEndsAt === null && s.timerRemainingMs === 40_000);
+  check("no dice can be placed while paused", throws(() => place(s, P, 3, { kind: "axis" }), /paused/i));
+  check("time's up can't fire while paused", throws(() => timeUp(s), /not running/i));
+  s = resume(s, ROLL_AT + 90_000);
+  check("resume restarts the countdown from the time left", s.timerEndsAt === ROLL_AT + 130_000 && s.timerRemainingMs === null);
+  check("…and play goes on", place(s, P, 3, { kind: "axis" }).axis.pilot === 3);
+  check("pause past the deadline leaves 0s", pause(roll(rt(), [1, 1, 1, 1], [1, 1, 1, 1]), ROLL_AT + RT + 5_000).timerRemainingMs === 0);
+
+  check("time's up needs the module", throws(() => timeUp(roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1])), /real-time/i));
+  check("time's up needs a round in play", throws(() => timeUp(rt()), /not running/i));
+  check("Real-Time is selectable in the lobby", SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["realTime"] }).success);
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

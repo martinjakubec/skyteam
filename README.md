@@ -45,6 +45,10 @@ fails on any move the UI offers but the server rejects, a stalled game,
 mismatched screens, or page errors. `REPEAT=3 ONLY="Intern,Kerosene+Intern"`
 narrows it; failure screenshots go to `sim-output/`.
 
+`scripts/realtime.sh` checks the Real-Time clock the same way, in real time
+(~2.5 min): time's up with and without the Axis/Engines set, and a disconnect
+pausing the clock until the player is back.
+
 ## Running it
 
 Everything runs in containers, so you don't need Node installed locally.
@@ -122,7 +126,13 @@ landing checks).
   **Wind** (the Wind Ring's airplane starts on +3; after each Axis phase it
   turns one space per pip the plane is tilted — left when tilted toward the
   Pilot — and the wind it points at is added to the Engine total every round,
-  the landing round included).
+  the landing round included), and **Real-Time** (each round has 60 seconds
+  from the roll; when time's up no more dice can be placed — unplaced dice
+  and anything pending are dropped — and an empty Axis or Engine space loses.
+  The reducer stays clock-free: the server stamps each roll with its clock,
+  runs the timeout and issues `timeUp`; it pauses the clock while a seat is
+  disconnected, and placing is refused until it resumes. Messages carry
+  `serverTime` so each device maps the deadline onto its own clock).
 - **Game setup.** The host picks the airport (`SCENARIOS`), modules and Special
   Abilities in the lobby (`room:setup`); the server builds the game from
   `scenarioForSetup`. Only modules listed in `IMPLEMENTED_MODULES` can be

@@ -12,12 +12,14 @@ import {
   SetReadyPayload,
   SetSetupPayload,
   createInitialGameState,
+  hasModule,
   redactGameStateFor,
   reduce,
   scenarioForSetup,
   type ClientToServerEvents,
   type DieValue,
   type GameCommand,
+  type GameState,
   type ReduceCommand,
   type ServerToClientEvents,
   type SocketData,
@@ -43,6 +45,15 @@ type IOSocket = Socket<ClientToServerEvents, ServerToClientEvents, DefaultEvents
  */
 const graceTimers = new Map<string, NodeJS.Timeout>();
 const timerKey = (roomId: string, playerId: string) => `${roomId}:${playerId}`;
+
+/**
+ * Real-Time module: each room's running countdown, keyed by room id. The
+ * deadline itself lives in the game state (`timerEndsAt`); this is just the
+ * timeout that fires `timeUp` at it. `syncClock` re-arms it after every change
+ * — and on reconnect, which also covers a server restart (timers are lost,
+ * the deadline in Redis is not).
+ */
+const clockTimers = new Map<string, NodeJS.Timeout>();
 
 export function attachSocket(server: http.Server): IOServer {
   const io: IOServer = new Server(server, {
@@ -94,6 +105,7 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   // Full resync to the (re)joining client; lobby update to everyone else.
   socket.emit("room:state", toSnapshot(room, playerId));
   broadcastState(io, room, socket.id);
+  await syncClock(io, room); // Real-Time: resume once both seats are back
 }
 
 async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
@@ -154,13 +166,14 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
+  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
 
   ack({ ok: true });
   broadcastState(io, room);
+  await syncClock(io, room);
 }
 
 /** Restart an in-progress or finished game from a fresh round 1 (same crew). */
@@ -177,13 +190,14 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   room.status = "in_progress";
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
+  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
 
   ack({ ok: true });
   broadcastState(io, room);
+  await syncClock(io, room);
 }
 
 /** The Intern tokens 1..6 in a random face-up order (Fisher–Yates). */
@@ -221,19 +235,18 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
         ? { type: "anticipate", dieId: command.dieId, value: randomInt(1, 7) as DieValue }
         : command;
 
+  // Real-Time: a command that arrives after the deadline (before the timeout
+  // got to run) is too late — the round ends now instead.
+  const endsAt = room.game.timerEndsAt;
+  if (endsAt !== null && Date.now() >= endsAt) {
+    await onTimeUp(io, room.id, endsAt);
+    return ack({ ok: false, error: "Time's up." });
+  }
+
   try {
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
-    let game = reduce(room.game, rcmd, playerId).state;
-    // Synchronisation: roll the Traffic die the reducer asked for (server entropy).
-    while (game.trafficPending && !game.outcome) {
-      const value = TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)];
-      game = reduce(game, { type: "rollTraffic", value }, "").state;
-    }
-    // Ending a round leaves the game "rolling"; deal the next round's dice.
-    while (game.phase === "rolling" && !game.outcome) {
-      game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
-    }
+    const game = settle(reduce(room.game, rcmd, playerId).state);
     room.game = game;
     room.version += 1;
     if (game.outcome) room.status = "finished";
@@ -243,9 +256,78 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
     emitGameEvent(io, room, command, playerId);
     // On game end, also push a fresh room:state so the lobby/status UI updates.
     if (room.status === "finished") broadcastState(io, room);
+    await syncClock(io, room);
   } catch (e) {
     ack({ ok: false, error: e instanceof GameRuleError ? e.message : "Command rejected." });
   }
+}
+
+/**
+ * Supply what the reducer asked the server for after a command: Traffic die
+ * rolls (Synchronisation) and, once a round has ended, the next round's dice —
+ * stamped with the clock so a Real-Time countdown starts from the roll.
+ */
+function settle(game: GameState): GameState {
+  while (game.trafficPending && !game.outcome) {
+    const value = TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)];
+    game = reduce(game, { type: "rollTraffic", value }, "").state;
+  }
+  while (game.phase === "rolling" && !game.outcome) {
+    game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
+  }
+  return game;
+}
+
+/**
+ * Real-Time: bring a room's countdown in line with its seats, then (re)arm the
+ * timeout. The clock pauses while either seat is disconnected and resumes when
+ * both are back; a pause/resume is a state change everyone is sent.
+ */
+async function syncClock(io: IOServer, room: Room): Promise<void> {
+  clearClock(room.id);
+  const game = room.game;
+  if (!game || room.status !== "in_progress" || game.phase !== "placement" || !hasModule(game, "realTime")) return;
+
+  const away = room.seats.some((s) => !s.connected);
+  const now = Date.now();
+  const change =
+    away && game.timerEndsAt !== null ? ({ type: "pauseTimer", at: now } as const)
+    : !away && game.timerRemainingMs !== null ? ({ type: "resumeTimer", at: now } as const)
+    : null;
+  if (change) {
+    room.game = reduce(game, change, "").state;
+    room.version += 1;
+    await saveRoom(room);
+    broadcastState(io, room);
+  }
+
+  const endsAt = room.game!.timerEndsAt;
+  if (endsAt !== null) {
+    clockTimers.set(room.id, setTimeout(() => void onTimeUp(io, room.id, endsAt), Math.max(0, endsAt - now)));
+  }
+}
+
+function clearClock(roomId: string) {
+  const t = clockTimers.get(roomId);
+  if (t) {
+    clearTimeout(t);
+    clockTimers.delete(roomId);
+  }
+}
+
+/** The countdown that ended at `endsAt` ran out: end the round (or the game). */
+async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<void> {
+  clockTimers.delete(roomId);
+  const room = await getRoom(roomId);
+  // Stale: the round already ended, the clock was paused, or a newer one runs.
+  if (!room?.game || room.status !== "in_progress" || room.game.timerEndsAt !== endsAt) return;
+
+  room.game = settle(reduce(room.game, { type: "timeUp" }, "").state);
+  room.version += 1;
+  if (room.game.outcome) room.status = "finished";
+  await saveRoom(room);
+  broadcastState(io, room);
+  await syncClock(io, room);
 }
 
 /** Emit a game event to each participant with the game state redacted for them
@@ -259,6 +341,7 @@ function emitGameEvent(io: IOServer, room: Room, command: GameCommand, byPlayerI
       command,
       byPlayerId,
       game: redactGameStateFor(room.game, sock.data.playerId),
+      serverTime: Date.now(),
     });
   }
 }
@@ -274,6 +357,7 @@ async function onDisconnect(io: IOServer, socket: IOSocket) {
   if (seat) seat.connected = false;
   await saveRoom(room);
   broadcastState(io, room);
+  await syncClock(io, room); // Real-Time: pause while the seat is empty
 
   // Hold the seat for a grace period, then abandon if still gone.
   clearGrace(roomId, playerId);
@@ -289,6 +373,7 @@ async function abandonIfStillGone(io: IOServer, roomId: string, playerId: string
   const seat = room.seats.find((s) => s.playerId === playerId);
   if (seat && !seat.connected) {
     room.status = "abandoned";
+    clearClock(roomId);
     await saveRoom(room);
     broadcastState(io, room);
   }

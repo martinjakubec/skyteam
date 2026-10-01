@@ -184,6 +184,9 @@ export interface RoomSnapshot {
   game: GameState | null;
   /** Who the recipient is, so the UI knows which seat is "me". */
   you: { playerId: PlayerId; kind: ParticipantKind; role?: SeatRole };
+  /** The server's clock when this was sent (epoch ms), so a client can map a
+   *  Real-Time deadline onto its own clock. */
+  serverTime: number;
 }
 
 /** Incremental notification that a command was applied. Includes the full game
@@ -193,6 +196,8 @@ export interface GameEventMsg {
   command: GameCommand;
   byPlayerId: PlayerId;
   game: GameState;
+  /** The server's clock when this was sent (see RoomSnapshot.serverTime). */
+  serverTime: number;
 }
 
 // ---------------------------------------------------------------------------

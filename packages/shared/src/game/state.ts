@@ -100,6 +100,12 @@ export interface GameState {
   kerosene: number; // KEROSENE_START..0 — 0 means the tank ran dry (loss)
   keroseneSlot: { value: DieValue; crew: Crew } | null; // this round's die, either crew
 
+  // --- Real-Time module ---
+  /** When this round's countdown ends (server epoch ms), while it's running. */
+  timerEndsAt: number | null;
+  /** Time left while the countdown is paused (a seat disconnected). */
+  timerRemainingMs: number | null;
+
   // --- Wind module ---
   /** Index into WIND_RING the blue Airplane token points at (0 = the white +3 at the top). */
   windPosition: number;
@@ -197,6 +203,8 @@ export function createInitialGameState(
     kerosene: KEROSENE_START,
     keroseneSlot: null,
     windPosition: 0,
+    timerEndsAt: null,
+    timerRemainingMs: null,
     iceBrakeSlots: emptyIceBrakeSlots(),
     internTokens: internOn
       ? (setup.internTokens ?? (Array.from({ length: INTERN_TOKEN_COUNT }, (_, i) => i + 1) as DieValue[]))

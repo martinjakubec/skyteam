@@ -18,6 +18,9 @@ interface GameStore {
   connected: boolean;
   snapshot: RoomSnapshot | null;
   lastError: string | null;
+  /** Server clock − this device's clock (ms), from the latest message: maps a
+   *  Real-Time deadline onto local time. */
+  clockOffset: number;
 
   connect: (roomId: string) => void;
   setReady: (ready: boolean) => void;
@@ -32,6 +35,7 @@ export const useGame = create<GameStore>((set, get) => ({
   connected: false,
   snapshot: null,
   lastError: null,
+  clockOffset: 0,
 
   connect: (roomId) => {
     if (get().socket) return; // guard against React StrictMode double-invoke
@@ -61,10 +65,17 @@ export const useGame = create<GameStore>((set, get) => ({
       join();
     });
     socket.on("disconnect", () => set({ connected: false }));
-    socket.on("room:state", (snapshot) => set({ snapshot }));
+    // Each message re-measures the server clock offset, but network delay makes
+    // it jitter by a few ms — adopt a new value only when it really moved, so
+    // the Real-Time bar doesn't twitch on every move.
+    const offset = (serverTime: number) => {
+      const fresh = serverTime - Date.now();
+      return Math.abs(fresh - get().clockOffset) > 250 ? fresh : get().clockOffset;
+    };
+    socket.on("room:state", (snapshot) => set({ snapshot, clockOffset: offset(snapshot.serverTime) }));
     socket.on("game:event", (msg) => {
       const snap = get().snapshot;
-      if (snap) set({ snapshot: { ...snap, game: msg.game, version: msg.version } });
+      if (snap) set({ snapshot: { ...snap, game: msg.game, version: msg.version }, clockOffset: offset(msg.serverTime) });
     });
 
     set({ socket });
