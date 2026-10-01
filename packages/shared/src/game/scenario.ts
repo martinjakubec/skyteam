@@ -6,10 +6,10 @@
  * reducer means a new airport is a new `Scenario` object — the rules engine
  * doesn't change.
  *
- * ⚠ CONFIRM AGAINST PHYSICAL BOARD: a few numbers are printed on the physical
- * components (the slide-in Approach Track strip, the Altitude Track, the Axis
- * disc) and are NOT written out in the rulebook text. They are marked below.
- * The defaults are reasonable but should be verified against the real YUL board.
+ * ⚠ CONFIRM AGAINST PHYSICAL BOARD: the Approach Track's per-space traffic is
+ * printed on the slide-in strip, not in the rulebook text, and is still a
+ * placeholder (marked below). The Altitude Track's reroll rounds and the Axis
+ * spin threshold have been confirmed.
  */
 
 /** A die always shows 1..6. */
@@ -114,17 +114,15 @@ export interface Scenario {
   /**
    * 1-based rounds at the start of which a Reroll token is granted (the rounds
    * whose Altitude space carries a Reroll icon). Round 1 (6,000 ft) always has
-   * one per the rulebook.
-   *
-   * ⚠ CONFIRM AGAINST PHYSICAL BOARD: which other space carries the 2nd token.
+   * one per the rulebook; the others depend on the scenario's difficulty
+   * (YUL: round 4).
    */
   rerollRounds: number[];
 
   /**
    * The Axis goes from -axisSpinAt .. +axisSpinAt. Reaching or passing
-   * ±axisSpinAt means the plane spins (instant loss). 0 is horizontal.
-   *
-   * ⚠ CONFIRM AGAINST PHYSICAL BOARD: the disc's spin threshold.
+   * ±axisSpinAt means the plane spins (instant loss). 0 is horizontal. Always
+   * 3 on the physical disc; kept as data for completeness.
    */
   axisSpinAt: number;
 
@@ -206,7 +204,7 @@ export const YUL_MONTREAL: Scenario = {
   rounds: 7,
   startAltitudeFeet: 6000,
   feetPerRound: 1000,
-  rerollRounds: [1, 4], // round 1 confirmed by rulebook; 2nd is a placeholder
+  rerollRounds: [1, 4], // confirmed: round 1 (rulebook) and round 4 (YUL's difficulty)
   // The plane may sit at most 2 pips off-centre; reaching the 3rd pip (±3) spins out.
   axisSpinAt: 3,
   aeroBlueStart: AERO_BLUE_START,

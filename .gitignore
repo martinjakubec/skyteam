@@ -3,6 +3,7 @@ node_modules/
 dist/
 **/dist/
 *.log
+sim-output/
 .env
 .env.local
 .DS_Store

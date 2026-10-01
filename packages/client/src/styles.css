@@ -1710,6 +1710,31 @@ ul {
     height: auto;
   }
 }
+/* Phones narrower than the board's natural width: the dial column (Speed
+   gauge, Axis cluster) is ~422px and the module strip / tracks ~390px, all
+   built on fixed 68px spaces and pixel-tuned leads. Rather than re-derive that
+   geometry per size, scale the whole stage down in steps so it always fits
+   (natural width incl. padding ~454px; each step's zoom <= its min width /
+   454). Pointer overlays render outside the stage (see Cockpit), so drag
+   tracking is unaffected. */
+@media (max-width: 453px) {
+  .stage { zoom: 0.95; }
+}
+@media (max-width: 430px) {
+  .stage { zoom: 0.9; }
+}
+@media (max-width: 408px) {
+  .stage { zoom: 0.85; }
+}
+@media (max-width: 385px) {
+  .stage { zoom: 0.8; }
+}
+@media (max-width: 363px) {
+  .stage { zoom: 0.75; }
+}
+@media (max-width: 340px) {
+  .stage { zoom: 0.7; }
+}
 @media (prefers-reduced-motion: reduce) {
   .plane-svg {
     transition: none;

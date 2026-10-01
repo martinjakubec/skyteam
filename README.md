@@ -38,6 +38,13 @@ npm test   # rules + unit suites (run inside a node:22 container; see below)
 `scripts/validate.mjs` is an end-to-end check against a running server
 (`BASE=http://server:3001` on the compose network).
 
+`scripts/simulate.sh` plays real games in two browsers (Pilot on desktop,
+Co-Pilot on a phone-sized window) against the running dev stack — one per
+combination of the modules the lobby offers, skipping exclusive pairs — and
+fails on any move the UI offers but the server rejects, a stalled game,
+mismatched screens, or page errors. `REPEAT=3 ONLY="Intern,Kerosene+Intern"`
+narrows it; failure screenshots go to `sim-output/`.
+
 ## Running it
 
 Everything runs in containers, so you don't need Node installed locally.

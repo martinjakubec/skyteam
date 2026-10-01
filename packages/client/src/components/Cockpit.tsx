@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ICE_BRAKE_VALUES, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label, previewModule } from "../util";
@@ -601,17 +602,25 @@ export function Cockpit({
           </ul>
         </section>
 
-        {hoverRect && (
-          <div
-            className="drop-ring"
-            style={{ left: hoverRect.x, top: hoverRect.y, width: hoverRect.w, height: hoverRect.h }}
-            aria-hidden="true"
-          />
-        )}
-        {drag && (
-          <div className={`drag-die ${drag.dieId === INTERN_TOKEN ? "intern" : drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
-            {drag.value}
-          </div>
+        {/* Pointer-positioned overlays live on <body>, outside the board: on
+            phones the stage is CSS-zoomed, and fixed positions inside a zoomed
+            subtree would be scaled away from the pointer's coordinates. */}
+        {createPortal(
+          <>
+            {hoverRect && (
+              <div
+                className="drop-ring"
+                style={{ left: hoverRect.x, top: hoverRect.y, width: hoverRect.w, height: hoverRect.h }}
+                aria-hidden="true"
+              />
+            )}
+            {drag && (
+              <div className={`drag-die ${drag.dieId === INTERN_TOKEN ? "intern" : drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+                {drag.value}
+              </div>
+            )}
+          </>,
+          document.body,
         )}
       </div>
     </InternPlacedContext.Provider>
