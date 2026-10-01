@@ -51,7 +51,8 @@ export type ReduceCommand =
   | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
   | { type: "placeIntern"; target: PlacementTarget }
   | { type: "adapt"; dieId: number }
-  | { type: "anticipate"; dieId: number; value: DieValue };
+  | { type: "anticipate"; dieId: number; value: DieValue }
+  | { type: "swap"; dieId: number };
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -75,6 +76,8 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handleAdapt(draft, command, byPlayerId);
     case "anticipate":
       return handleAnticipate(draft, command, byPlayerId);
+    case "swap":
+      return handleSwap(draft, command, byPlayerId);
     default:
       return assertNever(command);
   }
@@ -115,6 +118,8 @@ function handleRoll(
   s.internHeld = null;
   s.internPlaced = [];
   s.anticipated = false;
+  s.pendingSwap = null;
+  s.swappedThisRound = false;
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -146,6 +151,7 @@ function handleReroll(
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("You can only reroll during placement.");
   if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
+  requireNoSwap(s);
   if (cmd.dieIds.length !== cmd.values.length) throw new GameRuleError("Invalid reroll.");
   const crew = requireCrew(s, byPlayerId);
 
@@ -210,6 +216,7 @@ function handlePlaceDie(
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
   if (s.pendingReroll !== null) throw new GameRuleError("A reroll is in progress.");
   if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
+  requireNoSwap(s);
   const crew = requireCrew(s, byPlayerId);
   if (s.turn !== crew) throw new GameRuleError("It is not your turn.");
 
@@ -272,6 +279,7 @@ function handlePlaceDie(
 function handlePlaceIntern(s: GameState, cmd: { target: PlacementTarget }, byPlayerId: PlayerId): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
   const crew = requireCrew(s, byPlayerId);
+  requireNoSwap(s);
   const held = s.internHeld;
   if (!held || held.crew !== crew) throw new GameRuleError("You have no Intern token to place.");
   checkInternTarget(s, crew, cmd.target);
@@ -364,6 +372,7 @@ function handleAdapt(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId)
   if (s.phase !== "placement") throw new GameRuleError("You can only adapt a die during placement.");
   if (!hasAbility(s, "adaptation")) throw new GameRuleError("Adaptation is not in play.");
   if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+  requireNoSwap(s);
   const crew = requireCrew(s, byPlayerId);
   if (s.adaptationUsed[crew]) throw new GameRuleError("You have already used Adaptation.");
   const die = s.dice[crew].find((d) => d.id === cmd.dieId);
@@ -380,6 +389,7 @@ function handleAnticipate(s: GameState, cmd: { dieId: number; value: DieValue },
   if (s.phase !== "placement") throw new GameRuleError("You can only anticipate during placement.");
   if (!hasAbility(s, "anticipation")) throw new GameRuleError("Anticipation is not in play.");
   if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+  requireNoSwap(s);
   const crew = requireCrew(s, byPlayerId);
   if (crew !== firstPlayerForRound(s.round)) throw new GameRuleError("Only the First Player can anticipate.");
   if (s.anticipated) throw new GameRuleError("Anticipation is already used this round.");
@@ -390,6 +400,42 @@ function handleAnticipate(s: GameState, cmd: { dieId: number; value: DieValue },
   s.anticipated = true;
   s.log.push(`${crewLabel(crew)} used Anticipation (rerolled one die).`);
   return { state: s, description: "Die rerolled." };
+}
+
+/**
+ * Working Together (once per round): the active player offers one unplaced die;
+ * the other player must answer with one of theirs; the two values swap and both
+ * dice stay in their owners' hands. A two-step handshake like the joint reroll:
+ * `pendingSwap` locks every other action until the answer arrives.
+ */
+function handleSwap(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId): ReduceResult {
+  if (s.phase !== "placement") throw new GameRuleError("You can only work together during placement.");
+  if (!hasAbility(s, "workingTogether")) throw new GameRuleError("Working Together is not in play.");
+  const crew = requireCrew(s, byPlayerId);
+  const die = s.dice[crew].find((d) => d.id === cmd.dieId);
+  if (!die || die.value === undefined || die.placed) throw new GameRuleError("Pick one of your unplaced dice.");
+
+  if (s.pendingSwap === null) {
+    if (s.turn !== crew) throw new GameRuleError("Only the active player can start Working Together.");
+    if (s.swappedThisRound) throw new GameRuleError("Working Together is already used this round.");
+    if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+    if (s.dice[other(crew)].every((d) => d.placed)) throw new GameRuleError("The other player has no dice to swap.");
+    s.pendingSwap = { from: crew, dieId: die.id };
+    s.swappedThisRound = true;
+    s.log.push(`${crewLabel(crew)} asks to work together.`);
+    return { state: s, description: "Swap offered." };
+  }
+  if (crew === s.pendingSwap.from) throw new GameRuleError("Waiting for the other player to answer.");
+  const offered = s.dice[s.pendingSwap.from].find((d) => d.id === s.pendingSwap!.dieId)!;
+  [offered.value, die.value] = [die.value, offered.value];
+  s.pendingSwap = null;
+  s.log.push("Working Together: two dice swapped values.");
+  return { state: s, description: "Dice swapped." };
+}
+
+/** While a Working Together offer awaits its answer, nothing else may happen. */
+function requireNoSwap(s: GameState): void {
+  if (s.pendingSwap) throw new GameRuleError("A Working Together swap is in progress.");
 }
 
 // --- placement dispatch -----------------------------------------------------

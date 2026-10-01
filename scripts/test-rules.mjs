@@ -729,6 +729,35 @@ console.log("24) Anticipation");
   check("round 2: anticipation resets and the Co-Pilot (now leading) may use it", !r2.anticipated && ant(r2, C, 0, 6).dice.copilot[0].value === 6);
 }
 
+// 25) Working Together ------------------------------------------------------------
+console.log("25) Working Together");
+{
+  const swap = (st, who, dieId) => reduce(st, { type: "swap", dieId }, who).state;
+  const wscn = scn({ rounds: 7, rerollRounds: [1], abilities: ["workingTogether", "adaptation"] });
+  const s0 = roll(init(wscn), [1, 2, 3, 4], [6, 5, 4, 3]);
+  expectThrow("only the active player starts it", () => swap(s0, C, 0));
+  const s1 = swap(s0, P, 0); // Pilot offers its 1
+  check("the offer waits for the other player", s1.pendingSwap?.from === "pilot" && s1.dice.pilot[0].value === 1);
+  expectThrow("no placements while the swap is pending", () => place(s1, P, 2, { kind: "axis" }));
+  expectThrow("no reroll while the swap is pending", () => reroll(s1, P, [1], [5]));
+  expectThrow("no Adaptation while the swap is pending", () => reduce(s1, { type: "adapt", dieId: 1 }, C));
+  expectThrow("the offering player can't answer it", () => swap(s1, P, 1));
+  const s2 = swap(s1, C, 0); // Co-Pilot answers with its 6
+  check("values swap, dice return unplaced", s2.dice.pilot[0].value === 6 && s2.dice.copilot[0].value === 1 && !s2.dice.pilot[0].placed && !s2.dice.copilot[0].placed);
+  check("turn is unchanged", s2.turn === "pilot" && s2.pendingSwap === null);
+  expectThrow("once per round", () => swap(s2, P, 1));
+  const placed = place(place(s0, P, 1, { kind: "axis" }), C, 3, { kind: "axis" }); // tilt -2, game goes on
+  check("(setup: still in placement, Pilot's turn)", placed.phase === "placement" && placed.turn === "pilot");
+  expectThrow("not with a placed die", () => swap(placed, P, 0));
+  const empty = roll(init(wscn), [1, 1, 1, 1], [1, 1, 1, 1]);
+  empty.dice.copilot.forEach((d) => (d.placed = true));
+  expectThrow("refused when the other player has no dice", () => swap(empty, P, 0));
+  check("…and leaves nothing pending", empty.pendingSwap == null);
+  expectThrow("not without the card", () => swap(roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]), P, 0));
+  const r2 = roll(Object.assign(structuredClone(s2), { phase: "rolling", round: 2 }), [1, 1, 1, 1], [2, 2, 2, 2]);
+  check("usable again next round", swap(r2, C, 0).pendingSwap?.from === "copilot");
+}
+
 // 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play

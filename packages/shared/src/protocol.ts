@@ -80,6 +80,13 @@ export const GameCommand = z.discriminatedUnion("type", [
     dieId: z.number().int().min(0).max(3),
   }),
   z.object({
+    /** Working Together (Special Ability): the active player offers one of their
+     *  unplaced dice (once per round); the other player must answer with one of
+     *  theirs; the two values swap. */
+    type: z.literal("swap"),
+    dieId: z.number().int().min(0).max(3),
+  }),
+  z.object({
     type: z.literal("reroll"),
     /** Indices of the player's own dice to reroll. The active player initiates a
      *  joint reroll (≥1 die, spends one token); the other player is then prompted

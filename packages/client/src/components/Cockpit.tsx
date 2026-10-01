@@ -91,8 +91,9 @@ export function Cockpit({
   // on either player's turn, so in pick mode the dice are tappable regardless
   // of whose turn it is. Anticipation (First Player rerolls one die before
   // their first placement, once per round).
-  const has = (id: "adaptation" | "anticipation") => game.scenario.abilities?.includes(id) ?? false;
-  const noPendingAction = game.phase === "placement" && game.pendingReroll === null && !internHeld;
+  const has = (id: "adaptation" | "anticipation" | "workingTogether") => game.scenario.abilities?.includes(id) ?? false;
+  const noPendingAction =
+    game.phase === "placement" && game.pendingReroll === null && !internHeld && game.pendingSwap === null;
   const canAdapt =
     myCrew !== null && has("adaptation") && !game.adaptationUsed[myCrew] && noPendingAction && myDice.some((d) => !d.placed);
   const canAnticipate =
@@ -103,20 +104,37 @@ export function Cockpit({
     myDice.length > 0 &&
     myDice.every((d) => !d.placed) &&
     noPendingAction;
-  const [pickMode, setPickMode] = useState<"adapt" | "anticipate" | null>(null);
-  const pickActive =
-    !rerollActive && ((pickMode === "adapt" && canAdapt) || (pickMode === "anticipate" && canAnticipate)) ? pickMode : null;
+  // Working Together: the active player offers a die (once per round); the
+  // other player must then answer with one of theirs — their tray switches to
+  // pick mode on its own.
+  const canOfferSwap =
+    myTurn && has("workingTogether") && !game.swappedThisRound && noPendingAction && myDice.some((d) => !d.placed);
+  const mustAnswerSwap = game.pendingSwap !== null && myCrew !== null && game.pendingSwap.from !== myCrew;
+  const waitingForSwap = game.pendingSwap !== null && game.pendingSwap.from === myCrew;
+  const [pickMode, setPickMode] = useState<"adapt" | "anticipate" | "swap" | null>(null);
+  const pickActive = mustAnswerSwap
+    ? "swap"
+    : !rerollActive &&
+        ((pickMode === "adapt" && canAdapt) || (pickMode === "anticipate" && canAnticipate) || (pickMode === "swap" && canOfferSwap))
+      ? pickMode
+      : null;
   useEffect(() => {
     if (pickMode && !pickActive) setPickMode(null);
   }, [pickMode, pickActive]);
   const pickDie = (dieId: number) => {
-    onCommand(pickActive === "adapt" ? { type: "adapt", dieId } : { type: "anticipate", dieId });
+    onCommand(
+      pickActive === "adapt"
+        ? { type: "adapt", dieId }
+        : pickActive === "anticipate"
+          ? { type: "anticipate", dieId }
+          : { type: "swap", dieId },
+    );
     setPickMode(null);
     setSelected(null);
     setCoffeeDelta(0);
   };
   // The card's button: start picking, or cancel while picking.
-  const pickButton = (mode: "adapt" | "anticipate", label: string, enabled: boolean, hint: string) =>
+  const pickButton = (mode: "adapt" | "anticipate" | "swap", label: string, enabled: boolean, hint: string) =>
     pickActive === mode ? (
       <button onClick={() => setPickMode(null)} title={hint}>
         Tap a die · Cancel
@@ -199,6 +217,23 @@ export function Cockpit({
         (space === "bottom" || myCrew === "pilot"),
     ) && valOk([ICE_BRAKE_VALUES[i]]);
 
+  // The status line under the dial: the most pressing thing for this viewer.
+  const calloutText = (): string => {
+    if (game.outcome) return game.outcome.result === "won" ? "Smooth landing — the passengers applaud." : game.outcome.reason;
+    if (mustAnswerSwap) return `Working Together — tap one of your dice to swap with the ${label(game.pendingSwap!.from)}'s.`;
+    if (waitingForSwap) return `Working Together — waiting for the ${label(myCrew === "pilot" ? "copilot" : "pilot")} to pick a die…`;
+    if (internHeld) {
+      return internHeldMine
+        ? `Intern trained — place the ${internHeld.value} token on a panel space.`
+        : `Waiting for the ${label(internHeld.crew)} to place the Intern token…`;
+    }
+    if (waitingForReroll) return `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`;
+    if (iMustRespond) return "Reroll offered — pick any of your dice to reroll, or Skip.";
+    if (!myCrew) return "Spectating the approach.";
+    if (!myTurn) return `Silence. Waiting for the ${label(game.turn)}…`;
+    return rerollMode ? "Reroll — pick the dice to reroll, then Confirm." : "Your turn — drag a die onto a panel space.";
+  };
+
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
   // Flaps deploy strictly in order: only the first undeployed section is legal.
   const nextFlap = game.flapsGreen.findIndex((g) => !g);
@@ -210,7 +245,7 @@ export function Cockpit({
   // A panel space is a live drop/click target when it's my turn, the space is
   // free, and I'm either holding a selected die or mid-drag.
   const can = (free: boolean) =>
-    myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && !rerollMode;
+    myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && game.pendingSwap === null && !rerollMode;
   // Holding (selected or dragging) the Intern token rather than a die.
   const holdingToken = selected === INTERN_TOKEN || drag?.dieId === INTERN_TOKEN;
 
@@ -424,25 +459,7 @@ export function Cockpit({
           </div>
 
         <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
-          {game.outcome
-            ? game.outcome.result === "won"
-              ? "Smooth landing — the passengers applaud."
-              : game.outcome.reason
-            : internHeld
-              ? internHeldMine
-                ? `Intern trained — place the ${internHeld.value} token on a panel space.`
-                : `Waiting for the ${label(internHeld.crew)} to place the Intern token…`
-              : waitingForReroll
-                ? `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`
-                : iMustRespond
-                  ? "Reroll offered — pick any of your dice to reroll, or Skip."
-                  : myCrew
-                    ? myTurn
-                      ? rerollMode
-                        ? "Reroll — pick the dice to reroll, then Confirm."
-                        : "Your turn — drag a die onto a panel space."
-                      : `Silence. Waiting for the ${label(game.turn)}…`
-                    : "Spectating the approach."}
+          {calloutText()}
         </p>
 
         {/* Main deck: shared modules, styled like the crew-rail modules (one
@@ -583,14 +600,16 @@ export function Cockpit({
                       disabled={
                         rerollActive || pickActive
                           ? d.placed
-                          : d.placed || !myTurn || game.pendingReroll !== null || internHeldMine
+                          : d.placed || !myTurn || game.pendingReroll !== null || game.pendingSwap !== null || internHeldMine
                       }
                       title={
                         pickActive === "adapt" && d.value !== undefined
                           ? `Turn over → ${7 - d.value}`
                           : pickActive === "anticipate"
                             ? "Reroll this die"
-                            : undefined
+                            : pickActive === "swap"
+                              ? "Swap this die's value"
+                              : undefined
                       }
                       onPointerDown={rerollActive || pickActive ? undefined : (e) => startDrag(e, d)}
                       onClick={rerollActive ? () => toggleRerollDie(d.id) : pickActive ? () => pickDie(d.id) : undefined}
@@ -617,6 +636,15 @@ export function Cockpit({
                     ) : (
                       <span className="ability-used">used</span>
                     ),
+                  workingTogether: waitingForSwap ? (
+                    <span className="ability-used">waiting…</span>
+                  ) : mustAnswerSwap ? (
+                    <span className="ability-used">tap a die</span>
+                  ) : game.swappedThisRound ? (
+                    <span className="ability-used">used this round</span>
+                  ) : myTurn ? (
+                    pickButton("swap", "Swap a die", canOfferSwap, "Offer one of your dice; the other player must swap one back")
+                  ) : undefined,
                   anticipation:
                     myCrew === firstPlayerForRound(game.round)
                       ? game.anticipated

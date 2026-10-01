@@ -120,6 +120,10 @@ export interface GameState {
   adaptationUsed: Record<Crew, boolean>;
   // Anticipation: the First Player has rerolled a die this round.
   anticipated: boolean;
+  // Working Together: an offered die awaiting the other crew's answer (a lock,
+  // like pendingReroll), and whether the card was used this round.
+  pendingSwap: { from: Crew; dieId: number } | null;
+  swappedThisRound: boolean;
   // A joint reroll is in flight: the active player has rerolled and we are now
   // waiting on this crew to reroll (or decline). null = no reroll pending. While
   // set, every other command is rejected — this is the no-race lock.
@@ -194,6 +198,8 @@ export function createInitialGameState(
     rerollSpent: 0,
     adaptationUsed: { pilot: false, copilot: false },
     anticipated: false,
+    pendingSwap: null,
+    swappedThisRound: false,
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
