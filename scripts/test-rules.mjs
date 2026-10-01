@@ -1,8 +1,7 @@
 // Deterministic unit tests for the SkyTeam rules reducer (pure, no server).
-// Run inside a container after building shared:
-//   node:22-alpine, repo bind-mounted: `npm run build:shared && node scripts/test-rules.mjs`
-// Imported from source; run with tsx (the dist build uses extensionless ESM
-// imports that bare `node` can't resolve).
+// Run with `npm test` (inside a node:22 container, repo bind-mounted).
+// Imported from source via tsx (the dist build uses extensionless ESM imports
+// that bare `node` can't resolve).
 import { createInitialGameState, reduce } from "../packages/shared/src/index.ts";
 
 let failures = 0;
@@ -333,6 +332,97 @@ console.log("12) Joint reroll: one token, initiator picks dice, the other player
   s6 = reroll(s6, C, [lastC], [5]); // pilot (the responder) has nothing to reroll
   check("auto-completed -> nothing left pending", s6.pendingReroll === null);
   check("auto-complete still spent the token", s6.rerollTokens === 0);
+}
+
+// Shared driver for the remaining sections: play one full round with the given
+// Axis/Engine values; every crew's two spare dice (6s) go on harmless spaces
+// (Radio past the end of the track, Concentration).
+function playRound(s, { pilot, copilot }) {
+  s = roll(s, [pilot[0], pilot[1], 6, 6], [copilot[0], copilot[1], 6, 6]);
+  const moves = {
+    [P]: [[pilot[0], { kind: "axis" }], [pilot[1], { kind: "engine" }], [6, { kind: "radio", slot: 0 }], [6, { kind: "concentration", slot: 0 }]],
+    [C]: [[copilot[0], { kind: "axis" }], [copilot[1], { kind: "engine" }], [6, { kind: "radio", slot: 0 }], [6, { kind: "radio", slot: 1 }]],
+  };
+  let who = s.turn === "pilot" ? P : C;
+  for (let i = 0; i < 8 && s.phase === "placement"; i++) {
+    const [value, target] = moves[who].shift();
+    s = place(s, who, value, target);
+    who = who === P ? C : P;
+  }
+  return s;
+}
+
+// A one-round game already on the airport with every switch deployed and the
+// first brake (2) set, so each landing test can break exactly one condition.
+function readyToLand(mutate = () => {}) {
+  const s = init(scn({ rounds: 1, approachTrack: [{ traffic: 0 }, { traffic: 0, airport: true }] }));
+  s.position = 1;
+  s.gearGreen = s.gearGreen.map(() => true);
+  s.flapsGreen = s.flapsGreen.map(() => true);
+  s.brakesDeployed = 1;
+  mutate(s);
+  return s;
+}
+const level = (speedP, speedC) => ({ pilot: [3, speedP], copilot: [3, speedC] });
+const lostFor = (s, re) => s.phase === "lost" && re.test(s.outcome?.reason ?? "");
+
+// 13) Landing conditions --------------------------------------------------------
+console.log("13) Landing: each unmet condition fails the landing");
+{
+  check("baseline: all conditions met -> won", playRound(readyToLand(), level(1, 1)).phase === "won");
+  check("speed above brakes -> lost", lostFor(playRound(readyToLand(), level(1, 2)), /speed too high/));
+  check("no brakes deployed -> lost", lostFor(playRound(readyToLand((s) => (s.brakesDeployed = 0)), level(1, 1)), /speed too high/));
+  check(
+    "speed equal to max brakes (6) -> won",
+    playRound(readyToLand((s) => (s.brakesDeployed = 3)), level(3, 3)).phase === "won",
+  );
+  check("plane tilted -> lost", lostFor(playRound(readyToLand(), { pilot: [4, 1], copilot: [3, 1] }), /not level/));
+  check("airplane left on track -> lost", lostFor(playRound(readyToLand((s) => (s.airplanes[0] = 1)), level(1, 1)), /airplanes still/));
+  check("not on the airport -> lost", lostFor(playRound(readyToLand((s) => (s.position = 0)), level(1, 1)), /did not reach/));
+  check("gear incomplete -> lost", lostFor(playRound(readyToLand((s) => (s.gearGreen[2] = false)), level(1, 1)), /landing gear/));
+  check("flaps incomplete -> lost", lostFor(playRound(readyToLand((s) => (s.flapsGreen[3] = false)), level(1, 1)), /flaps/));
+  const multi = playRound(readyToLand((s) => ((s.flapsGreen[0] = false), (s.brakesDeployed = 0))), level(1, 1));
+  check("multiple failures are all reported", lostFor(multi, /flaps/) && /speed too high/.test(multi.outcome.reason));
+}
+
+// 14) Reroll tokens across rounds ----------------------------------------------
+console.log("14) Reroll tokens: granted on each listed round, unused tokens carry over");
+{
+  let s = init(scn({ rounds: 7, rerollRounds: [1, 3] }));
+  s = playRound(s, level(1, 1));
+  check("round 1 grants a token", s.rerollTokens === 1);
+  s = playRound(s, level(1, 1));
+  check("round 2 grants none", s.rerollTokens === 1);
+  s = roll(s, [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("round 3 grants a second token (carried over)", s.round === 3 && s.rerollTokens === 2);
+}
+
+// 15) Illegal commands ----------------------------------------------------------
+console.log("15) Illegal commands are rejected");
+{
+  const fresh = init(scn({ rounds: 7, rerollRounds: [1] }));
+  expectThrow("reroll before the dice are rolled", () => reroll(fresh, P, [0], [3]));
+  expectThrow("placeDie before the dice are rolled", () =>
+    reduce(fresh, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P),
+  );
+  const s = roll(fresh, [1, 2, 3, 4], [1, 2, 3, 4]);
+  expectThrow("a second roll mid-round", () => roll(s, [1, 1, 1, 1], [1, 1, 1, 1]));
+  expectThrow("a roll with the wrong dice count", () => roll(fresh, [1, 1, 1], [1, 1, 1, 1]));
+  expectThrow("spending Coffee you don't have", () => place(s, P, 1, { kind: "axis" }, 1));
+  expectThrow("placing out of turn", () => place(s, C, 1, { kind: "axis" }));
+  expectThrow("a non-crew player placing", () =>
+    reduce(s, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, "stranger"),
+  );
+  expectThrow("Co-Pilot deploying Landing Gear", () => place(place(s, P, 1, { kind: "axis" }), C, 1, { kind: "landingGear", slot: 0 }));
+  expectThrow("Pilot deploying Flaps", () => place(s, P, 1, { kind: "flaps", slot: 0 }));
+  expectThrow("rerolling a placed die", () => reroll(place(place(s, P, 1, { kind: "axis" }), C, 1, { kind: "axis" }), P, [0], [5]));
+  const noTokens = roll(init(scn({ rounds: 7 })), [1, 2, 3, 4], [1, 2, 3, 4]);
+  expectThrow("reroll with no tokens", () => reroll(noTokens, P, [0], [3]));
+  const won = playRound(readyToLand(), level(1, 1));
+  expectThrow("placing after the game is over", () =>
+    reduce(won, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P),
+  );
+  check("reducer never mutates its input", fresh.phase === "rolling" && fresh.dice.pilot.length === 0);
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);
