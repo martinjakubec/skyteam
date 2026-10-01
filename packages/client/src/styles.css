@@ -1551,6 +1551,38 @@ ul {
   display: inline-flex;
   gap: 3px;
 }
+/* Special Ability cards in the tray: one chip per card, with an action button
+   on the active ones. */
+.abilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.4rem;
+}
+.ability-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.66rem;
+  color: var(--ink);
+  cursor: help;
+}
+.ability-chip.active {
+  padding-right: 0.2rem;
+}
+.ability-chip button {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.66rem;
+  border-radius: 999px;
+}
+
 .controls {
   display: flex;
   gap: 0.6rem;

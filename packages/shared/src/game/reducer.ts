@@ -4,6 +4,7 @@ import {
   crewOf,
   emptyIceBrakeSlots,
   firstPlayerForRound,
+  hasAbility,
   hasModule,
   nextInternToken,
   placementKey,
@@ -155,6 +156,7 @@ function initiateReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; value
 
   applyReroll(s, crew, cmd);
   s.rerollTokens -= 1;
+  s.rerollSpent += 1;
   s.log.push(`${crewLabel(crew)} spent a Reroll token (${cmd.dieIds.length} dice).`);
 
   // Hand the (free) reroll to the other crew. If they have no dice left to
@@ -390,6 +392,11 @@ function resolveAxis(s: GameState): void {
     s.axis.offset += p > c ? p - c : -(c - p); // + toward Pilot, − toward Co-Pilot
   }
   s.log.push(`Axis: ${p} vs ${c} → tilt ${s.axis.offset >= 0 ? "+" : ""}${s.axis.offset}.`);
+  // Control (Special Ability): matching Axis dice earn a Coffee (capped).
+  if (hasAbility(s, "control") && p === c && s.coffee < MAX_COFFEE) {
+    s.coffee += 1;
+    s.log.push("Control: matching Axis dice — gained a Coffee.");
+  }
   if (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt) {
     lose(s, "The plane went into a spin!");
   }
@@ -406,6 +413,13 @@ function placeEngine(s: GameState, crew: Crew, value: DieValue): void {
 function resolveEngines(s: GameState): void {
   const speed = s.engines.pilot! + s.engines.copilot!;
   s.lastSpeed = speed;
+
+  // Mastery (Special Ability): matching Engine dice regain a spent Reroll token.
+  if (hasAbility(s, "mastery") && s.engines.pilot === s.engines.copilot && s.rerollSpent > 0) {
+    s.rerollSpent -= 1;
+    s.rerollTokens += 1;
+    s.log.push("Mastery: matching Engine dice — regained a Reroll token.");
+  }
 
   // Kerosene Leak: the Engine dice drain the tank by their difference + 1, the
   // moment both are seated — every round, the landing round included. A dry

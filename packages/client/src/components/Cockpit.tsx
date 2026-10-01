@@ -10,6 +10,7 @@ import {
   GEAR_LABEL,
   GEAR_RANGES,
 } from "../constants";
+import { Abilities } from "./Abilities";
 import { Altitude } from "./Altitude";
 import { Approach } from "./Approach";
 import { BrakesGauge } from "./BrakesGauge";
@@ -555,6 +556,7 @@ export function Cockpit({
                   </span>
                 </span>
               </div>
+              <Abilities abilities={game.scenario.abilities ?? []} />
               <div className="controls">
                 {rerollActive ? (
                   <span className="reroll-pick">

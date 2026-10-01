@@ -660,6 +660,39 @@ console.log("20) Intern: train with a die ≠ next token, place the token at onc
   check("fully trained -> landed", playRound(readyToLand(withIntern(null)), level(1, 1)).phase === "won");
 }
 
+// 22) Control & Mastery (Special Abilities, passive) --------------------------------
+console.log("22) Control & Mastery");
+{
+  const ab = (abilities) => scn({ rounds: 7, abilities });
+  let s = roll(init(ab(["control"])), [3, 1, 1, 1], [3, 1, 1, 1]);
+  s = place(s, P, 3, { kind: "axis" });
+  s = place(s, C, 3, { kind: "axis" });
+  check("Control: matching Axis dice give a Coffee", s.coffee === 1);
+  const noCtl = place(place(roll(init(scn({ rounds: 7 })), [3, 1, 1, 1], [3, 1, 1, 1]), P, 3, { kind: "axis" }), C, 3, { kind: "axis" });
+  check("…not without the card", noCtl.coffee === 0);
+  const unequal = place(place(roll(init(ab(["control"])), [3, 1, 1, 1], [2, 1, 1, 1]), P, 3, { kind: "axis" }), C, 2, { kind: "axis" });
+  check("…not for different values", unequal.coffee === 0);
+  const full = roll(init(ab(["control"])), [3, 1, 1, 1], [3, 1, 1, 1]);
+  full.coffee = 3;
+  check("…capped at 3", place(place(full, P, 3, { kind: "axis" }), C, 3, { kind: "axis" }).coffee === 3);
+
+  let m = roll(init(ab(["mastery"])), [1, 1, 1, 1], [2, 1, 1, 1]);
+  m.rerollTokens = 1;
+  m = reroll(m, P, [0], [1]); // spend the token → back in the supply
+  m = reroll(m, C, [], []); // co-pilot declines
+  check("spending a Reroll puts it back in the supply", m.rerollTokens === 0 && m.rerollSpent === 1);
+  m = place(m, P, 1, { kind: "engine" });
+  m = place(m, C, 1, { kind: "engine" });
+  check("Mastery: matching Engine dice regain the spent Reroll", m.rerollTokens === 1 && m.rerollSpent === 0);
+  let m2 = roll(init(ab(["mastery"])), [1, 1, 1, 1], [1, 1, 1, 1]);
+  m2 = place(place(m2, P, 1, { kind: "engine" }), C, 1, { kind: "engine" });
+  check("…but only if a token is in the supply", m2.rerollTokens === 0);
+  let m3 = roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]);
+  m3.rerollSpent = 1;
+  m3 = place(place(m3, P, 1, { kind: "engine" }), C, 1, { kind: "engine" });
+  check("…and only with the card", m3.rerollTokens === 0);
+}
+
 // 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play
