@@ -4,6 +4,7 @@ import { Server, type DefaultEventsMap, type Socket } from "socket.io";
 import {
   DICE_PER_PLAYER,
   INTERN_TOKEN_COUNT,
+  TRAFFIC_DIE_FACES,
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
@@ -224,6 +225,11 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
     let game = reduce(room.game, rcmd, playerId).state;
+    // Synchronisation: roll the Traffic die the reducer asked for (server entropy).
+    while (game.trafficPending && !game.outcome) {
+      const value = TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)];
+      game = reduce(game, { type: "rollTraffic", value }, "").state;
+    }
     // Ending a round leaves the game "rolling"; deal the next round's dice.
     while (game.phase === "rolling" && !game.outcome) {
       game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;

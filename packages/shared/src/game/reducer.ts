@@ -52,7 +52,9 @@ export type ReduceCommand =
   | { type: "placeIntern"; target: PlacementTarget }
   | { type: "adapt"; dieId: number }
   | { type: "anticipate"; dieId: number; value: DieValue }
-  | { type: "swap"; dieId: number };
+  | { type: "swap"; dieId: number }
+  | { type: "rollTraffic"; value: DieValue }
+  | { type: "placeTraffic"; target: PlacementTarget };
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -78,6 +80,10 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handleAnticipate(draft, command, byPlayerId);
     case "swap":
       return handleSwap(draft, command, byPlayerId);
+    case "rollTraffic":
+      return handleRollTraffic(draft, command);
+    case "placeTraffic":
+      return handlePlaceTraffic(draft, command, byPlayerId);
     default:
       return assertNever(command);
   }
@@ -120,6 +126,10 @@ function handleRoll(
   s.anticipated = false;
   s.pendingSwap = null;
   s.swappedThisRound = false;
+  s.syncDone = false;
+  s.trafficPending = false;
+  s.trafficHeld = null;
+  s.trafficPlaced = [];
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -151,7 +161,7 @@ function handleReroll(
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("You can only reroll during placement.");
   if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
-  requireNoSwap(s);
+  requireIdle(s);
   if (cmd.dieIds.length !== cmd.values.length) throw new GameRuleError("Invalid reroll.");
   const crew = requireCrew(s, byPlayerId);
 
@@ -216,10 +226,11 @@ function handlePlaceDie(
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
   if (s.pendingReroll !== null) throw new GameRuleError("A reroll is in progress.");
   if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
-  requireNoSwap(s);
+  requireIdle(s);
   const crew = requireCrew(s, byPlayerId);
   if (s.turn !== crew) throw new GameRuleError("It is not your turn.");
 
+  requireOwnSide(cmd.target, crew);
   const die = s.dice[crew].find((d) => d.id === cmd.dieId);
   if (!die || die.value === undefined) throw new GameRuleError("No such die.");
   if (die.placed) throw new GameRuleError("That die has already been placed.");
@@ -251,37 +262,44 @@ function handlePlaceDie(
   if (delta !== 0) s.log.push(`${crewLabel(crew)} used ${spend} Coffee (die → ${value}).`);
   s.placedThisRound += 1;
 
-  // Intern training: the crew now holds a token and must place it before the
-  // turn passes (or the round ends) — see handlePlaceIntern.
-  if (s.internHeld) return { state: s, description: "Intern trained — place the token." };
+  checkSynchronisation(s);
+  return afterPlacement(s, "Die placed.");
+}
 
-  // A mid-round effect (spin / collision / overshoot) may have ended the game.
+/**
+ * Wrap up a placement. A mid-round effect (spin / collision / overshoot) may
+ * have ended the game. Otherwise, while an extra is pending — an Intern token
+ * to place, a Traffic die to roll or place — the turn waits (`s.turn` doesn't
+ * change meanwhile). Then the round ends if every die is down, else the turn
+ * passes.
+ */
+function afterPlacement(s: GameState, description: string): ReduceResult {
   if (s.outcome) {
     s.phase = "lost";
     return { state: s, description: lossText(s) };
   }
-
+  if (s.internHeld || s.trafficPending || s.trafficHeld) return { state: s, description };
   if (s.placedThisRound >= DICE_PER_PLAYER * 2) {
     endOfRound(s);
     return { state: s, description: endText(s) };
   }
-
-  s.turn = other(crew);
-  return { state: s, description: "Die placed." };
+  s.turn = other(s.turn);
+  return { state: s, description };
 }
 
 /**
  * Intern module: place the token just trained, as a die of its number for the
  * crew that trained it. Any normal space except Concentration (and the Intern
- * board); no Coffee. Then the turn passes — or the round ends, if that was the
- * last die's training.
+ * board); no Coffee. Then the turn passes (from `s.turn`) — or the round ends,
+ * if that was the last die's training.
  */
 function handlePlaceIntern(s: GameState, cmd: { target: PlacementTarget }, byPlayerId: PlayerId): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
   const crew = requireCrew(s, byPlayerId);
-  requireNoSwap(s);
+  requireIdle(s);
   const held = s.internHeld;
   if (!held || held.crew !== crew) throw new GameRuleError("You have no Intern token to place.");
+  requireOwnSide(cmd.target, crew);
   checkInternTarget(s, crew, cmd.target);
 
   applyPlacement(s, crew, held.value, cmd.target);
@@ -289,16 +307,8 @@ function handlePlaceIntern(s: GameState, cmd: { target: PlacementTarget }, byPla
   s.internHeld = null;
   s.log.push(`${crewLabel(crew)}'s Intern placed a ${held.value}.`);
 
-  if (s.outcome) {
-    s.phase = "lost";
-    return { state: s, description: lossText(s) };
-  }
-  if (s.placedThisRound >= DICE_PER_PLAYER * 2) {
-    endOfRound(s);
-    return { state: s, description: endText(s) };
-  }
-  s.turn = other(crew);
-  return { state: s, description: "Intern token placed." };
+  checkSynchronisation(s);
+  return afterPlacement(s, "Intern token placed.");
 }
 
 /** Where an Intern token may go: not Concentration or the Intern board, and —
@@ -316,9 +326,11 @@ function checkInternTarget(s: GameState, crew: Crew, target: PlacementTarget): v
  * Intern module: training. Any die of a different value than the crew's next
  * token goes on the crew's own training space (once per round); the crew takes
  * that token and must place it at once. Training is refused if the token would
- * have nowhere legal to go, so the game can never get stuck on it.
+ * have nowhere legal to go, so the game can never get stuck on it. `fromHand`
+ * is false when the Traffic die (Synchronisation) does the training: no die
+ * leaves the crew's hand then.
  */
-function trainIntern(s: GameState, crew: Crew, value: DieValue): void {
+function trainIntern(s: GameState, crew: Crew, value: DieValue, fromHand = true): void {
   if (!hasModule(s, "intern")) throw new GameRuleError("The Intern module is not in play.");
   if (s.internSlots[crew] !== null) throw new GameRuleError("You have already trained the Intern this round.");
   const i = nextInternToken(s, crew);
@@ -328,7 +340,7 @@ function trainIntern(s: GameState, crew: Crew, value: DieValue): void {
 
   s.internSlots[crew] = value;
   s.internTokens[i] = null;
-  if (!tokenHasSpace(s, crew, token)) {
+  if (!dieHasSpace(s, crew, token, { inHandAdjust: fromHand ? -1 : 0 })) {
     throw new GameRuleError(`The Intern's ${token} would have nowhere to go.`);
   }
   s.internHeld = { crew, value: token };
@@ -347,21 +359,124 @@ const ALL_TARGETS: PlacementTarget[] = [
   ...[0, 1, 2, 3].flatMap((slot) => (["top", "bottom"] as const).map((space) => ({ kind: "iceBrakes" as const, slot, space }))),
 ];
 
-/** Whether a just-trained token of `value` has at least one legal space. The
- *  training die is still unplaced in `s`, hence the `- 1` on dice in hand. */
-function tokenHasSpace(s: GameState, crew: Crew, value: DieValue): boolean {
-  return ALL_TARGETS.some((target) => {
+/** Every space the Traffic die could fill: any colour (both crews' per-crew
+ *  spaces), plus Concentration and the Intern board. */
+const TRAFFIC_TARGETS: PlacementTarget[] = [
+  ...(["pilot", "copilot"] as const).flatMap((side) => [
+    { kind: "axis" as const, side },
+    { kind: "engine" as const, side },
+    ...[0, 1].map((slot) => ({ kind: "radio" as const, slot, side })),
+    { kind: "intern" as const, side },
+  ]),
+  ...ALL_TARGETS.filter((t) => t.kind !== "axis" && t.kind !== "engine" && t.kind !== "radio"),
+  ...[0, 1].map((slot) => ({ kind: "concentration" as const, slot })),
+];
+
+/**
+ * Whether a die of `value` has at least one legal space, tried on a copy of the
+ * state. A crew's own extra (Intern token) also respects its Axis/Engine
+ * reservation; `inHandAdjust` corrects the dice-in-hand count (-1 while the
+ * training die is still unplaced in `s`). `anyColour` checks the Traffic die,
+ * which goes on any empty space for the space's owner and isn't reserved.
+ */
+function dieHasSpace(
+  s: GameState,
+  crew: Crew,
+  value: DieValue,
+  { inHandAdjust = 0, anyColour = false }: { inHandAdjust?: number; anyColour?: boolean } = {},
+): boolean {
+  return (anyColour ? TRAFFIC_TARGETS : ALL_TARGETS).some((target) => {
     const trial = structuredClone(s);
-    const inHand = unplacedDice(trial, crew) - 1;
-    if (target.kind !== "axis" && target.kind !== "engine" && inHand < openMandatory(trial, crew)) return false;
+    if (!anyColour) {
+      const inHand = unplacedDice(trial, crew) + inHandAdjust;
+      if (target.kind !== "axis" && target.kind !== "engine" && inHand < openMandatory(trial, crew)) return false;
+    }
     try {
-      applyPlacement(trial, crew, value, target);
+      placeAs(trial, anyColour ? spaceOwner(target, crew) : crew, value, target, !anyColour);
       return true;
     } catch (e) {
       if (e instanceof GameRuleError) return false;
       throw e;
     }
   });
+}
+
+/** Which crew a space belongs to, for a die placed "regardless of colour". */
+function spaceOwner(target: PlacementTarget, placer: Crew): Crew {
+  switch (target.kind) {
+    case "axis":
+    case "engine":
+    case "radio":
+    case "intern":
+      return target.side ?? placer;
+    case "landingGear":
+    case "brakes":
+      return "pilot";
+    case "flaps":
+      return "copilot";
+    case "iceBrakes":
+      return target.space === "top" ? "pilot" : placer;
+    default:
+      return placer; // shared spaces: Concentration, Kerosene
+  }
+}
+
+/** applyPlacement, except that the Intern board is trained by an extra die
+ *  (Traffic die) without spending a die from the owner's hand. */
+function placeAs(s: GameState, owner: Crew, value: DieValue, target: PlacementTarget, fromHand: boolean): void {
+  if (target.kind === "intern") return trainIntern(s, owner, value, fromHand);
+  applyPlacement(s, owner, value, target);
+}
+
+/** A crew's own die or token may only name its own side of a per-crew space. */
+function requireOwnSide(target: PlacementTarget, crew: Crew): void {
+  if ("side" in target && target.side && target.side !== crew) {
+    throw new GameRuleError("That space belongs to the other crew.");
+  }
+}
+
+/**
+ * Synchronisation (Special Ability): once per round, as soon as there's a die
+ * on Landing Gear and one on Flaps, the Traffic die must be rolled. The server
+ * answers `trafficPending` with a rollTraffic command.
+ */
+function checkSynchronisation(s: GameState): void {
+  if (!hasAbility(s, "synchronisation") || s.syncDone) return;
+  if (s.gearSlots.some((v) => v !== null) && s.flapSlots.some((v) => v !== null)) {
+    s.syncDone = true;
+    s.trafficPending = true;
+    s.log.push("Synchronisation: Gear and Flaps are in — rolling the Traffic die.");
+  }
+}
+
+/** Server-supplied Traffic die roll. With no legal space at all it's discarded,
+ *  so the game can't get stuck on it. */
+function handleRollTraffic(s: GameState, cmd: { value: DieValue }): ReduceResult {
+  if (!s.trafficPending) throw new GameRuleError("There is no Traffic die to roll.");
+  s.trafficPending = false;
+  if (!dieHasSpace(s, "copilot", cmd.value, { anyColour: true })) {
+    s.log.push(`Synchronisation: the Traffic die (${cmd.value}) has nowhere to go.`);
+    return afterPlacement(s, "Traffic die discarded.");
+  }
+  s.trafficHeld = { value: cmd.value };
+  s.log.push(`Synchronisation: Traffic die rolled ${cmd.value} — the Co-Pilot places it.`);
+  return { state: s, description: "Traffic die rolled." };
+}
+
+/** The Co-Pilot places the Traffic die on any empty space, regardless of colour,
+ *  where it acts as a normal die for that space's crew. An extra action. */
+function handlePlaceTraffic(s: GameState, cmd: { target: PlacementTarget }, byPlayerId: PlayerId): ReduceResult {
+  if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
+  const crew = requireCrew(s, byPlayerId);
+  const held = s.trafficHeld;
+  if (!held) throw new GameRuleError("There is no Traffic die to place.");
+  if (crew !== "copilot") throw new GameRuleError("Placing the Traffic die is the Co-Pilot's duty.");
+  const owner = spaceOwner(cmd.target, crew);
+  placeAs(s, owner, held.value, cmd.target, false);
+  s.trafficPlaced.push(placementKey(owner, cmd.target));
+  s.trafficHeld = null;
+  s.log.push(`The Co-Pilot placed the Traffic die (${held.value}).`);
+  return afterPlacement(s, "Traffic die placed.");
 }
 
 // --- Special Abilities ------------------------------------------------------
@@ -372,7 +487,7 @@ function handleAdapt(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId)
   if (s.phase !== "placement") throw new GameRuleError("You can only adapt a die during placement.");
   if (!hasAbility(s, "adaptation")) throw new GameRuleError("Adaptation is not in play.");
   if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
-  requireNoSwap(s);
+  requireIdle(s);
   const crew = requireCrew(s, byPlayerId);
   if (s.adaptationUsed[crew]) throw new GameRuleError("You have already used Adaptation.");
   const die = s.dice[crew].find((d) => d.id === cmd.dieId);
@@ -389,7 +504,7 @@ function handleAnticipate(s: GameState, cmd: { dieId: number; value: DieValue },
   if (s.phase !== "placement") throw new GameRuleError("You can only anticipate during placement.");
   if (!hasAbility(s, "anticipation")) throw new GameRuleError("Anticipation is not in play.");
   if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
-  requireNoSwap(s);
+  requireIdle(s);
   const crew = requireCrew(s, byPlayerId);
   if (crew !== firstPlayerForRound(s.round)) throw new GameRuleError("Only the First Player can anticipate.");
   if (s.anticipated) throw new GameRuleError("Anticipation is already used this round.");
@@ -419,6 +534,7 @@ function handleSwap(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId):
     if (s.turn !== crew) throw new GameRuleError("Only the active player can start Working Together.");
     if (s.swappedThisRound) throw new GameRuleError("Working Together is already used this round.");
     if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+    requireNoTraffic(s);
     if (s.dice[other(crew)].every((d) => d.placed)) throw new GameRuleError("The other player has no dice to swap.");
     s.pendingSwap = { from: crew, dieId: die.id };
     s.swappedThisRound = true;
@@ -433,9 +549,15 @@ function handleSwap(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId):
   return { state: s, description: "Dice swapped." };
 }
 
-/** While a Working Together offer awaits its answer, nothing else may happen. */
-function requireNoSwap(s: GameState): void {
+/** While a Working Together offer awaits its answer, or a Traffic die waits to
+ *  be rolled or placed, nothing else may happen. */
+function requireIdle(s: GameState): void {
   if (s.pendingSwap) throw new GameRuleError("A Working Together swap is in progress.");
+  requireNoTraffic(s);
+}
+
+function requireNoTraffic(s: GameState): void {
+  if (s.trafficPending || s.trafficHeld) throw new GameRuleError("The Co-Pilot must place the Traffic die first.");
 }
 
 // --- placement dispatch -----------------------------------------------------

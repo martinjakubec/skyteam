@@ -124,6 +124,12 @@ export interface GameState {
   // like pendingReroll), and whether the card was used this round.
   pendingSwap: { from: Crew; dieId: number } | null;
   swappedThisRound: boolean;
+  // Synchronisation: triggered this round; awaiting the server's Traffic die
+  // roll; the rolled die the Co-Pilot must place; spaces it filled this round.
+  syncDone: boolean;
+  trafficPending: boolean;
+  trafficHeld: { value: DieValue } | null;
+  trafficPlaced: string[];
   // A joint reroll is in flight: the active player has rerolled and we are now
   // waiting on this crew to reroll (or decline). null = no reroll pending. While
   // set, every other command is rejected — this is the no-race lock.
@@ -200,6 +206,10 @@ export function createInitialGameState(
     anticipated: false,
     pendingSwap: null,
     swappedThisRound: false,
+    syncDone: false,
+    trafficPending: false,
+    trafficHeld: null,
+    trafficPlaced: [],
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
@@ -212,13 +222,17 @@ export function emptyIceBrakeSlots(): GameState["iceBrakeSlots"] {
 }
 
 /**
- * Stable key for one board space, as filled by `crew`. Axis, Engine and Radio
- * exist once per crew, so the crew is part of their key; every other space is
- * unique on the board. Marks spaces filled by Intern tokens (`internPlaced`).
+ * Stable key for one board space, as filled by `crew` (the space's owner).
+ * Axis, Engine and Radio exist once per crew, so the crew is part of their key;
+ * every other space is unique on the board. Marks spaces filled by Intern
+ * tokens (`internPlaced`) and the Traffic die (`trafficPlaced`).
  */
 export function placementKey(crew: Crew, target: PlacementTarget): string {
-  const perCrew = target.kind === "axis" || target.kind === "engine" || target.kind === "radio";
-  return `${perCrew ? `${crew}:` : ""}${JSON.stringify(target)}`;
+  // `side` is dropped: the owner is already the prefix, so a slot rendered
+  // without `side` still finds its mark.
+  const { side: _side, ...space } = target as PlacementTarget & { side?: Crew };
+  const perCrew = space.kind === "axis" || space.kind === "engine" || space.kind === "radio";
+  return `${perCrew ? `${crew}:` : ""}${JSON.stringify(space)}`;
 }
 
 /** Index of the Intern token `crew` would take next (Pilot: leftmost, Co-Pilot:

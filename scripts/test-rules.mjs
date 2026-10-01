@@ -758,6 +758,91 @@ console.log("25) Working Together");
   check("usable again next round", swap(r2, C, 0).pendingSwap?.from === "copilot");
 }
 
+// 26) Synchronisation (Traffic die) --------------------------------------------------
+console.log("26) Synchronisation");
+{
+  const sync = (modules = []) => scn({ rounds: 7, abilities: ["synchronisation"], modules });
+  const rollT = (st, value) => reduce(st, { type: "rollTraffic", value }, "").state;
+  const placeT = (st, target, who = C) => reduce(st, { type: "placeTraffic", target }, who).state;
+
+  let s = roll(init(sync()), [1, 1, 1, 1], [1, 1, 1, 1]);
+  s = place(s, P, 1, { kind: "landingGear", slot: 0 });
+  check("Gear alone doesn't trigger", !s.trafficPending);
+  s = place(s, C, 1, { kind: "flaps", slot: 0 });
+  check("Gear + Flaps: the Traffic die must be rolled; the turn waits", s.trafficPending && s.turn === "copilot");
+  expectThrow("nothing else happens before it's rolled", () => place(s, C, 1, { kind: "axis" }));
+  s = rollT(s, 4);
+  check("the Co-Pilot holds it", s.trafficHeld?.value === 4 && !s.trafficPending);
+  expectThrow("nothing else happens until it's placed", () => place(s, C, 1, { kind: "axis" }));
+  expectThrow("the Pilot can't place it", () => placeT(s, { kind: "axis", side: "pilot" }, P));
+  s = placeT(s, { kind: "axis", side: "pilot" }); // the Pilot's Axis, regardless of colour
+  check("placed on the Pilot's Axis as a 4", s.axis.pilot === 4 && s.trafficPlaced.includes('pilot:{"kind":"axis"}'));
+  check("an extra action: the triggering turn then passes as usual", s.turn === "pilot" && s.trafficHeld === null);
+  check("once per round", !place(s, P, 1, { kind: "radio", slot: 0 }).trafficPending);
+  expectThrow("a die can't name the other crew's side", () => place(s, P, 1, { kind: "radio", slot: 0, side: "copilot" }));
+
+  // Triggered on the Pilot's turn: the Co-Pilot places, then it's the Co-Pilot's turn.
+  let q = roll(init(sync()), [1, 1, 1, 1], [1, 1, 1, 1]);
+  q = place(q, P, 1, { kind: "radio", slot: 0 });
+  q = place(q, C, 1, { kind: "flaps", slot: 0 });
+  q = place(q, P, 1, { kind: "landingGear", slot: 0 });
+  check("Pilot-triggered: rolled on the Pilot's turn", q.trafficPending && q.turn === "pilot");
+  q = placeT(rollT(q, 3), { kind: "radio", slot: 0, side: "copilot" });
+  check("…placed by the Co-Pilot, then the turn passes to the Co-Pilot", q.radioCopilot[0] === 3 && q.turn === "copilot");
+  check("the Pilot's Gear can take it too (any colour)",
+    placeT(rollT((() => { let t = roll(init(sync()), [1, 1, 1, 1], [1, 1, 1, 1]); t = place(t, P, 1, { kind: "landingGear", slot: 0 }); return place(t, C, 1, { kind: "flaps", slot: 0 }); })(), 3), { kind: "landingGear", slot: 1 }).gearGreen[1]);
+
+  // On Concentration, and on the Intern board (user rule).
+  const triggered = (modules) => { let t = roll(init(sync(modules)), [1, 1, 1, 1], [1, 1, 1, 1]); t = place(t, P, 1, { kind: "landingGear", slot: 0 }); return rollT(place(t, C, 1, { kind: "flaps", slot: 0 }), 4); };
+  const conc = placeT(triggered(), { kind: "concentration", slot: 0 });
+  check("on Concentration: a Coffee", conc.coffee === 1 && conc.concentrationSlots[0]?.value === 4);
+  const tr = placeT(triggered(["intern"]), { kind: "intern", side: "pilot" }); // tokens 1..6: Pilot's next is 1
+  check("on the Pilot's Intern space: trains the Pilot's Intern", tr.internSlots.pilot === 4 && tr.internHeld?.crew === "pilot" && tr.internHeld.value === 1);
+  check("…the turn waits for that token", tr.turn === "copilot");
+  const tr2 = reduce(tr, { type: "placeIntern", target: { kind: "radio", slot: 0 } }, P).state;
+  check("…then passes from the Co-Pilot as usual", tr2.radioPilot === 1 && tr2.turn === "pilot");
+
+  // The round's 8th die triggers it: the round ends only after the Traffic die.
+  let e = roll(init(sync()), [1, 1, 1, 6], [1, 1, 6, 6]);
+  e = place(e, P, 1, { kind: "axis" });
+  e = place(e, C, 1, { kind: "axis" });
+  e = place(e, P, 1, { kind: "engine" });
+  e = place(e, C, 1, { kind: "engine" });
+  e = place(e, P, 1, { kind: "landingGear", slot: 0 });
+  e = place(e, C, 6, { kind: "radio", slot: 0 });
+  e = place(e, P, 6, { kind: "radio", slot: 0 });
+  e = place(e, C, 6, { kind: "radio", slot: 1 });
+  check("(no flaps yet: round 1 ended normally)", e.round === 2);
+  let f = roll(init(sync()), [1, 1, 1, 6], [1, 1, 6, 6]);
+  f = place(f, P, 1, { kind: "axis" });
+  f = place(f, C, 1, { kind: "axis" });
+  f = place(f, P, 1, { kind: "engine" });
+  f = place(f, C, 1, { kind: "engine" });
+  f = place(f, P, 1, { kind: "landingGear", slot: 0 });
+  f = place(f, C, 6, { kind: "radio", slot: 0 });
+  f = place(f, P, 6, { kind: "radio", slot: 0 });
+  f.flapSlots[0] = 1; // as if a Flaps die were down: the 8th die completes the condition
+  f = place(f, C, 6, { kind: "radio", slot: 1 });
+  check("8th die triggers: the round waits", f.round === 1 && f.trafficPending);
+  f = placeT(rollT(f, 2), { kind: "concentration", slot: 0 });
+  check("…and ends once the Traffic die is placed", f.round === 2 && f.phase === "rolling");
+
+  // No empty space: discarded rather than deadlocking.
+  let z = roll(init(sync()), [1, 1, 1, 1], [1, 1, 1, 1]);
+  z.gearSlots[0] = 1; z.flapSlots[0] = 1;
+  z.trafficPending = true; z.syncDone = true;
+  z.axis = { pilot: 1, copilot: 1, offset: 0 }; z.engines = { pilot: 1, copilot: 1 };
+  z.radioPilot = 1; z.radioCopilot = [1, 1]; z.concentrationSlots = [{ value: 1, crew: "pilot" }, { value: 1, crew: "copilot" }];
+  z.gearGreen = [true, true, true]; z.flapsGreen = [true, true, false, false]; z.brakesDeployed = 3;
+  z = rollT(z, 5);
+  check("no legal space: the Traffic die is discarded", z.trafficHeld === null && !z.trafficPending && z.log.at(-1).includes("nowhere"));
+
+  const plain = roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("not without the card", !place(place(plain, P, 1, { kind: "landingGear", slot: 0 }), C, 1, { kind: "flaps", slot: 0 }).trafficPending);
+  const rr = roll(Object.assign(structuredClone(s), { phase: "rolling", round: 2 }), [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("resets next round", !rr.syncDone && rr.trafficPlaced.length === 0);
+}
+
 // 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play

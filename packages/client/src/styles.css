@@ -1022,6 +1022,19 @@ ul {
   color: #1e2a12;
   text-shadow: none;
 }
+/* Same for a space filled by Synchronisation's Traffic die: a white die. */
+.slot.dice.taken.traffic,
+.slot.held.traffic,
+.slot.taken.traffic:not(.dice) {
+  background: radial-gradient(circle at 35% 30%, #ffffff, #d6dbe1 80%);
+  border: 2px solid #868d96;
+}
+.slot.dice.taken.traffic .slot-face,
+.slot.held.traffic .slot-face,
+.slot.taken.traffic:not(.dice) .slot-face {
+  color: #1b2129;
+  text-shadow: none;
+}
 /* A legal target during selection/drag: a steady yellow border, no pulsing */
 .slot.open {
   cursor: pointer;
@@ -1494,6 +1507,15 @@ ul {
   background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
   border: 2px solid #8d8466;
 }
+.drag-die.traffic {
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+  color: #1b2129;
+  text-shadow: none;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #d6dbe1 80%);
+  border: 2px solid #868d96;
+}
 .drag-die.pilot {
   background: linear-gradient(155deg, #4a90d9, var(--blue-d));
 }
@@ -1522,6 +1544,20 @@ ul {
   background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
   border: 2px solid #8d8466;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.7), inset 0 -3px 5px rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.4);
+  align-self: center;
+}
+
+/* Synchronisation's Traffic die waiting in the Co-Pilot's tray: white, the
+   same size as the held Intern token. */
+.die.traffic-die {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  color: #1b2129;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #d6dbe1 80%);
+  border: 2px solid #868d96;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.8), inset 0 -3px 5px rgba(0, 0, 0, 0.2), 0 3px 5px rgba(0, 0, 0, 0.4);
   align-self: center;
 }
 

@@ -19,12 +19,14 @@ import { IceBrakes } from "./IceBrakes";
 import { Intern } from "./Intern";
 import { Kerosene } from "./Kerosene";
 import { Module } from "./Module";
-import { InternPlacedContext, Slot } from "./Slot";
+import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
 
-/** Selection/drag id for the held Intern token (crew dice are 0..3). */
+/** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
+ *  and Synchronisation's Traffic die. */
 const INTERN_TOKEN = -1;
+const TRAFFIC_DIE = -2;
 
 export function Cockpit({
   snapshot,
@@ -45,6 +47,12 @@ export function Cockpit({
   // anything else. While it's mine, it's the only thing I can place.
   const internHeld = game.internHeld ?? null;
   const internHeldMine = internHeld !== null && internHeld.crew === myCrew;
+  // Synchronisation: the rolled Traffic die is the Co-Pilot's to place, on any
+  // empty space of either colour; everything else waits for it.
+  const trafficHeld = game.trafficHeld ?? null;
+  const trafficHeldMine = trafficHeld !== null && myCrew === "copilot";
+  // Holding an extra (Intern token / Traffic die) lets me act off-turn.
+  const extraHeldMine = internHeldMine || trafficHeldMine;
 
   const [selected, setSelected] = useState<number | null>(null);
   const [coffeeDelta, setCoffeeDelta] = useState(0);
@@ -64,6 +72,10 @@ export function Cockpit({
       ? internHeldMine
         ? internHeld.value
         : null
+      : selected === TRAFFIC_DIE
+        ? trafficHeldMine
+          ? trafficHeld.value
+          : null
       : selDie?.value !== undefined
         ? clamp(selDie.value + coffeeDelta, 1, 6)
         : null;
@@ -78,6 +90,14 @@ export function Cockpit({
       setSelected((s) => (s === INTERN_TOKEN ? null : s));
     }
   }, [internHeldMine]);
+  useEffect(() => {
+    if (trafficHeldMine) {
+      setSelected(TRAFFIC_DIE);
+      setCoffeeDelta(0);
+    } else {
+      setSelected((s) => (s === TRAFFIC_DIE ? null : s));
+    }
+  }, [trafficHeldMine]);
 
   // The server prompts the *other* crew via pendingReroll. iMustRespond = it's my
   // turn to reroll-or-decline; waitingForReroll = I initiated and am waiting.
@@ -93,7 +113,7 @@ export function Cockpit({
   // their first placement, once per round).
   const has = (id: "adaptation" | "anticipation" | "workingTogether") => game.scenario.abilities?.includes(id) ?? false;
   const noPendingAction =
-    game.phase === "placement" && game.pendingReroll === null && !internHeld && game.pendingSwap === null;
+    game.phase === "placement" && game.pendingReroll === null && !internHeld && game.pendingSwap === null && !trafficHeld;
   const canAdapt =
     myCrew !== null && has("adaptation") && !game.adaptationUsed[myCrew] && noPendingAction && myDice.some((d) => !d.placed);
   const canAnticipate =
@@ -155,6 +175,7 @@ export function Cockpit({
   const place = (target: Target) => {
     if (selected === null) return;
     if (selected === INTERN_TOKEN) onCommand({ type: "placeIntern", target });
+    else if (selected === TRAFFIC_DIE) onCommand({ type: "placeTraffic", target });
     else onCommand({ type: "placeDie", dieId: selected, target, coffeeDelta: coffeeDelta || undefined });
     setSelected(null);
     setCoffeeDelta(0);
@@ -189,20 +210,27 @@ export function Cockpit({
   const internInPlay = game.scenario.modules?.includes("intern") ?? false;
   const internOn = internInPlay || previewModule("intern");
   const internTokens = internInPlay ? game.internTokens : [3, 1, 5, 6, 2, 4];
-  // My next token: the Pilot trains from the left, the Co-Pilot from the right.
-  const myNextToken =
-    myCrew === "copilot" ? [...internTokens].reverse().find((v) => v !== null) : internTokens.find((v) => v !== null);
-  // Training: my own space, once per round, with a die that differs from my
-  // next token. Exempt from the mandatory reservation — the token it yields can
-  // fill the Axis/Engine itself. Never while a token is in hand.
+  // A crew's next token: the Pilot trains from the left, the Co-Pilot from the right.
+  const nextTokenFor = (crew: Crew) =>
+    crew === "copilot" ? [...internTokens].reverse().find((v) => v !== null) : internTokens.find((v) => v !== null);
+  // Training: once per round per space, with a die that differs from that
+  // side's next token — my own space, or either while I hold the Traffic die.
+  // Exempt from the mandatory reservation (the token can fill the Axis/Engine
+  // itself). Never while a token is in hand.
   const canTrain = (crew: Crew) =>
-    crew === myCrew &&
+    mine(crew) &&
     !internHeld &&
-    can(internInPlay && game.internSlots[crew] === null && myNextToken != null) &&
-    activeValue !== myNextToken;
-  // Spaces filled by Intern tokens this round render in the Intern's colours.
+    !holdingToken &&
+    can(internInPlay && game.internSlots[crew] === null && nextTokenFor(crew) != null) &&
+    activeValue !== nextTokenFor(crew);
+  // Spaces filled by an Intern token or the Traffic die this round are drawn in
+  // that extra's colours.
   const internPlaced = new Set(internInPlay ? game.internPlaced : []);
-  const filledByIntern = (crew: Crew, target: Target) => internPlaced.has(placementKey(crew, target));
+  const trafficPlaced = new Set(game.trafficPlaced ?? []);
+  const filledByExtra = (crew: Crew, target: Target) => {
+    const key = placementKey(crew, target);
+    return internPlaced.has(key) ? "intern" : trafficPlaced.has(key) ? "traffic" : null;
+  };
 
   // Ice Brakes replaces the Brakes row (dev `?preview=` shows it disabled).
   const iceInPlay = game.scenario.modules?.includes("iceBrakes") ?? false;
@@ -214,7 +242,7 @@ export function Cockpit({
       iceInPlay &&
         i === game.brakesDeployed &&
         game.iceBrakeSlots[i]?.[space] == null &&
-        (space === "bottom" || myCrew === "pilot"),
+        (space === "bottom" || mine("pilot")),
     ) && valOk([ICE_BRAKE_VALUES[i]]);
 
   // The status line under the dial: the most pressing thing for this viewer.
@@ -222,6 +250,11 @@ export function Cockpit({
     if (game.outcome) return game.outcome.result === "won" ? "Smooth landing — the passengers applaud." : game.outcome.reason;
     if (mustAnswerSwap) return `Working Together — tap one of your dice to swap with the ${label(game.pendingSwap!.from)}'s.`;
     if (waitingForSwap) return `Working Together — waiting for the ${label(myCrew === "pilot" ? "copilot" : "pilot")} to pick a die…`;
+    if (trafficHeld) {
+      return trafficHeldMine
+        ? `Synchronisation — place the Traffic die (${trafficHeld.value}) on any empty space, any colour.`
+        : "Synchronisation — waiting for the Co-Pilot to place the Traffic die…";
+    }
     if (internHeld) {
       return internHeldMine
         ? `Intern trained — place the ${internHeld.value} token on a panel space.`
@@ -245,9 +278,18 @@ export function Cockpit({
   // A panel space is a live drop/click target when it's my turn, the space is
   // free, and I'm either holding a selected die or mid-drag.
   const can = (free: boolean) =>
-    myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && game.pendingSwap === null && !rerollMode;
-  // Holding (selected or dragging) the Intern token rather than a die.
+    (myTurn || extraHeldMine) &&
+    (selected !== null || dragging) &&
+    free &&
+    game.pendingReroll === null &&
+    game.pendingSwap === null &&
+    !rerollMode;
+  // Holding (selected or dragging) the Intern token / Traffic die rather than a die.
   const holdingToken = selected === INTERN_TOKEN || drag?.dieId === INTERN_TOKEN;
+  const holdingTraffic = selected === TRAFFIC_DIE || drag?.dieId === TRAFFIC_DIE;
+  // Whether a crew-coloured space is mine to fill: my own colour, or any colour
+  // while I hold the Traffic die.
+  const mine = (spaceCrew: Crew) => myCrew === spaceCrew || holdingTraffic;
 
   // Mandatory spots: every round a crew must seat one die on its Axis and one on
   // its Engine. Those dice are reserved — when the dice still in hand are all
@@ -261,7 +303,8 @@ export function Cockpit({
   const diceLeft = myDice.filter((d) => !d.placed).length;
   // A die in hand counts itself among `diceLeft`; the Intern token doesn't, so
   // it may go on a free space as long as the dice left can still cover them.
-  const lockToMandatory = holdingToken ? diceLeft < openMandatory : diceLeft <= openMandatory;
+  // The Traffic die is an extra for any space: no reservation applies to it.
+  const lockToMandatory = holdingTraffic ? false : holdingToken ? diceLeft < openMandatory : diceLeft <= openMandatory;
   // Axis/Engine keep using `can` (always legal when free); every non-mandatory
   // space additionally requires that we're not holding the last dice in reserve.
   const canFree = (free: boolean) => can(free) && !lockToMandatory;
@@ -366,19 +409,21 @@ export function Cockpit({
     if (slot?.dataset.target) {
       const target = JSON.parse(slot.dataset.target) as Target;
       if (g.dieId === INTERN_TOKEN) onCommand({ type: "placeIntern", target });
+      else if (g.dieId === TRAFFIC_DIE) onCommand({ type: "placeTraffic", target });
       else onCommand({ type: "placeDie", dieId: g.dieId, target, coffeeDelta: g.coffee || undefined });
       setSelected(null);
       setCoffeeDelta(0);
     } else {
       // Dropped nowhere valid: a die returns to the tray unselected; the Intern
       // token stays selected, since it must be placed next anyway.
-      setSelected(g.dieId === INTERN_TOKEN ? INTERN_TOKEN : null);
+      setSelected(g.dieId === INTERN_TOKEN || g.dieId === TRAFFIC_DIE ? g.dieId : null);
     }
   };
   const startDrag = (e: React.PointerEvent, die: { id: number; value?: number; placed?: boolean }) => {
-    // While an Intern token is in hand, only the token itself can be dragged.
-    const isToken = die.id === INTERN_TOKEN;
-    if (die.placed || !myTurn || !myCrew || game.pendingReroll !== null || rerollMode || internHeldMine !== isToken) return;
+    // While an extra (Intern token / Traffic die) is in hand, only that extra
+    // can be dragged — even off-turn.
+    const isExtra = die.id === INTERN_TOKEN || die.id === TRAFFIC_DIE;
+    if (die.placed || !myCrew || !(myTurn || extraHeldMine) || game.pendingReroll !== null || rerollMode || extraHeldMine !== isExtra) return;
     e.preventDefault();
     const base = die.value ?? 1;
     const coffee = selected === die.id ? coffeeDelta : 0;
@@ -396,7 +441,7 @@ export function Cockpit({
   };
 
   return (
-    <InternPlacedContext.Provider value={filledByIntern}>
+    <ExtraDieContext.Provider value={filledByExtra}>
       <div className={`board${keroseneOn ? " with-kerosene" : ""}`}>
         {/* Full-width status tracks above the console: approach path + altitude */}
         <section className="tracks">
@@ -415,15 +460,15 @@ export function Cockpit({
               <span className="axis-lead d-left" aria-hidden="true" />
               <span className="axis-lead h-right" aria-hidden="true" />
               <span className="axis-lead d-right" aria-hidden="true" />
-              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
+              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis", side: "pilot" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis", side: "pilot" })} enabled={can(mine("pilot") && game.axis.pilot === null)} />
               <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
-              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
+              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis", side: "copilot" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis", side: "copilot" })} enabled={can(mine("copilot") && game.axis.copilot === null)} />
             </div>
             <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
             <div className="engines">
-              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
+              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine", side: "pilot" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine", side: "pilot" })} enabled={can(mine("pilot") && game.engines.pilot === null)} />
               <span className="engine-plus" aria-hidden="true">+</span>
-              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
+              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine", side: "copilot" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine", side: "copilot" })} enabled={can(mine("copilot") && game.engines.copilot === null)} />
             </div>
             <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />
             {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
@@ -451,7 +496,7 @@ export function Cockpit({
                 {game.brakeSlots.map((taken, i) => (
                   <Fragment key={i}>
                     {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
-                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(mine("pilot") && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
                   </Fragment>
                 ))}
               </div>
@@ -498,7 +543,7 @@ export function Cockpit({
               tokens={internTokens}
               trainers={game.internSlots}
               canTrain={canTrain}
-              onTrain={() => place({ kind: "intern" })}
+              onTrain={(crew) => place({ kind: "intern", side: crew })}
             />
           )}
         </section>
@@ -521,7 +566,7 @@ export function Cockpit({
           )}
           <Module title="Radio" tone="blue" className="mod-radio-pilot">
             <div className="slots-row">
-              <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
+              <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0, side: "pilot" }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0, side: "pilot" })} enabled={canFree(mine("pilot") && game.radioPilot === null)} />
             </div>
           </Module>
           <Module title="Landing Gear" tone="blue" className="mod-gear">
@@ -536,7 +581,7 @@ export function Cockpit({
                   held={game.gearSlots[i]}
                   label={GEAR_LABEL[i]}
                   onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+                  enabled={canFree(mine("pilot") && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
                 />
               ))}
             </div>
@@ -546,7 +591,7 @@ export function Cockpit({
           <Module title="Radio" tone="orange" className="mod-radio-copilot">
             <div className="slots-col">
               {game.radioCopilot.map((val, i) => (
-                <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
+                <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i, side: "copilot" }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i, side: "copilot" })} enabled={canFree(mine("copilot") && val === null)} />
               ))}
             </div>
           </Module>
@@ -564,7 +609,7 @@ export function Cockpit({
                     held={game.flapSlots[i]}
                     label={FLAP_LABEL[i]}
                     onClick={() => place({ kind: "flaps", slot: i })}
-                    enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                    enabled={canFree(mine("copilot") && i === nextFlap) && valOk(FLAP_RANGES[i])}
                   />
                 </Fragment>
               ))}
@@ -582,6 +627,15 @@ export function Cockpit({
               <div className="dice">
                 {/* A freshly trained Intern token must be placed before any die:
                     it leads the tray, in the Intern's colours, a size down. */}
+                {trafficHeldMine && (
+                  <button
+                    className={`die traffic-die ${selected === TRAFFIC_DIE ? "sel" : ""} ${drag?.dieId === TRAFFIC_DIE ? "lifted" : ""}`}
+                    title="Traffic die (Synchronisation) — place it on any empty space, any colour"
+                    onPointerDown={(e) => startDrag(e, { id: TRAFFIC_DIE, value: trafficHeld.value })}
+                  >
+                    {trafficHeld.value}
+                  </button>
+                )}
                 {internHeldMine && (
                   <button
                     className={`die intern-die ${selected === INTERN_TOKEN ? "sel" : ""} ${drag?.dieId === INTERN_TOKEN ? "lifted" : ""}`}
@@ -600,7 +654,7 @@ export function Cockpit({
                       disabled={
                         rerollActive || pickActive
                           ? d.placed
-                          : d.placed || !myTurn || game.pendingReroll !== null || game.pendingSwap !== null || internHeldMine
+                          : d.placed || !myTurn || game.pendingReroll !== null || game.pendingSwap !== null || internHeldMine || trafficHeld !== null || internHeld !== null
                       }
                       title={
                         pickActive === "adapt" && d.value !== undefined
@@ -713,7 +767,7 @@ export function Cockpit({
               />
             )}
             {drag && (
-              <div className={`drag-die ${drag.dieId === INTERN_TOKEN ? "intern" : drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+              <div className={`drag-die ${drag.dieId === INTERN_TOKEN ? "intern" : drag.dieId === TRAFFIC_DIE ? "traffic" : drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
                 {drag.value}
               </div>
             )}
@@ -721,6 +775,6 @@ export function Cockpit({
           document.body,
         )}
       </div>
-    </InternPlacedContext.Provider>
+    </ExtraDieContext.Provider>
   );
 }

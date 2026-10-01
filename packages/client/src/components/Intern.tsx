@@ -36,7 +36,7 @@ export function Intern({
       noSwitch
       dice
       taken={trainers[crew] !== null}
-      target={{ kind: "intern" }}
+      target={{ kind: "intern", side: crew }}
       label={trainers[crew] !== null ? face(trainers[crew]) : "🎓"}
       onClick={() => onTrain(crew)}
       enabled={canTrain(crew)}

@@ -34,10 +34,15 @@ export type RoomStatus = z.infer<typeof RoomStatus>;
 
 /** Where on the Control Panel a die is being placed. Per-crew/number legality
  *  is enforced by the reducer; this only bounds the slot indices. */
+/** Which crew's copy of a per-crew space (Axis, Engine, Radio, Intern training).
+ *  Omitted = the placer's own; only the Traffic die (Synchronisation) may name
+ *  the other crew's. */
+const Side = z.enum(["pilot", "copilot"]).optional();
+
 export const PlacementTarget = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("axis") }),
-  z.object({ kind: z.literal("engine") }),
-  z.object({ kind: z.literal("radio"), slot: z.number().int().min(0).max(1) }),
+  z.object({ kind: z.literal("axis"), side: Side }),
+  z.object({ kind: z.literal("engine"), side: Side }),
+  z.object({ kind: z.literal("radio"), slot: z.number().int().min(0).max(1), side: Side }),
   z.object({ kind: z.literal("landingGear"), slot: z.number().int().min(0).max(2) }),
   z.object({ kind: z.literal("flaps"), slot: z.number().int().min(0).max(3) }),
   z.object({ kind: z.literal("brakes"), slot: z.number().int().min(0).max(2) }),
@@ -46,8 +51,8 @@ export const PlacementTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("kerosene") }),
   // Ice Brakes module: step 0..3 (values 2..5); top = Pilot only, bottom = either crew.
   z.object({ kind: z.literal("iceBrakes"), slot: z.number().int().min(0).max(3), space: z.enum(["top", "bottom"]) }),
-  // Intern module: the placing crew's own training space.
-  z.object({ kind: z.literal("intern") }),
+  // Intern module: a crew's training space (the placer's own unless `side`).
+  z.object({ kind: z.literal("intern"), side: Side }),
 ]);
 export type PlacementTarget = z.infer<typeof PlacementTarget>;
 
@@ -65,6 +70,13 @@ export const GameCommand = z.discriminatedUnion("type", [
      *  number (any normal space except Concentration / the Intern board; no
      *  Coffee). Your turn passes once it's placed. */
     type: z.literal("placeIntern"),
+    target: PlacementTarget,
+  }),
+  z.object({
+    /** Synchronisation (Special Ability): the Co-Pilot places the rolled Traffic
+     *  die on any empty space, regardless of colour (`side` picks the crew for
+     *  per-crew spaces). An extra action — it doesn't use up a turn. */
+    type: z.literal("placeTraffic"),
     target: PlacementTarget,
   }),
   z.object({
