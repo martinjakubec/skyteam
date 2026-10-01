@@ -68,6 +68,8 @@ async function main() {
   check("lobby snapshot carries the default setup", lobby.setup?.scenarioId === "YUL" && lobby.setup.modules.length === 0);
   check("guest setup change rejected", (await emit(b, "room:setup", { scenarioId: "YUL", modules: [] })).ok === false);
   check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["wind"] })).ok === false);
+  check("two Special Abilities accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [], abilities: ["control", "mastery"] })).ok === true);
+  check("three Special Abilities rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [], abilities: ["control", "mastery", "adaptation"] })).ok === false);
   check("Ice Brakes + Kerosene Leak accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["keroseneLeak", "iceBrakes"] })).ok === true);
   check("Kerosene + Kerosene Leak together rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["kerosene", "keroseneLeak"] })).ok === false);
   check("unknown airport rejected", (await emit(a, "room:setup", { scenarioId: "XXX", modules: [] })).ok === false);
@@ -100,6 +102,7 @@ async function main() {
   const guestGame = (await bStarted).game;
   check("guest sees an in-progress SkyTeam game", guestGame.round === 1 && guestGame.phase === "placement");
   check("pilot (host) leads round 1", guestGame.turn === "pilot");
+  check("Special Abilities reset by the later setups (none in play)", (guestGame.scenario.abilities ?? []).length === 0);
   check("game has Kerosene in play, tank full", guestGame.scenario.modules?.includes("kerosene") && guestGame.kerosene === 20);
 
   console.log("5) Hidden dice: each player only sees their own dice values");

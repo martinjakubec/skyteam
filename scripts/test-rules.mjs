@@ -3,6 +3,8 @@
 // Imported from source via tsx (the dist build uses extensionless ESM imports
 // that bare `node` can't resolve).
 import {
+  ABILITY_IDS,
+  DEFAULT_MAX_ABILITIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   SetSetupPayload,
@@ -843,13 +845,15 @@ console.log("26) Synchronisation");
   check("resets next round", !rr.syncDone && rr.trafficPlaced.length === 0);
 }
 
-// 21) Every module combination -----------------------------------------------------
+// 27) Every combination of modules and Special Abilities ---------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
-// (b) how to make a landing legal. Every allowed combination must validate, play
-// a quiet round with the burns adding up, and land; every combination holding an
-// excluded pair must be rejected. A new module without an entry fails loudly,
-// so it can't skip this matrix.
-console.log("21) Every combination of implemented modules");
+// (b) how to make a landing legal; each ability declares how many Coffee it adds
+// to a quiet round. Every allowed module combination × every allowed ability set
+// (up to the cap) must validate, play a quiet round with the effects adding up,
+// and land; every module combination holding an excluded pair, and every ability
+// set over the cap, must be rejected. A new module or ability without an entry
+// fails loudly, so it can't skip this matrix.
+console.log("27) Every combination of modules and Special Abilities");
 {
   const EXPECT = {
     kerosene: { quietBurn: 6, prep: () => {} }, // empty space: -6 per round
@@ -857,36 +861,61 @@ console.log("21) Every combination of implemented modules");
     iceBrakes: { quietBurn: 0, prep: (st) => (st.brakesDeployed = 4) }, // must be past the 5
     intern: { quietBurn: 0, prep: (st) => (st.internTokens = st.internTokens.map(() => null)) }, // all trained
   };
-  const missing = IMPLEMENTED_MODULES.filter((m) => !EXPECT[m]);
-  check(`every implemented module has matrix expectations${missing.length ? ` (missing: ${missing})` : ""}`, missing.length === 0);
+  // A quiet round (level(1,1)) plays Axis 3 vs 3 and Engines 1 vs 1 plus one
+  // Concentration die, and touches no Gear/Flaps and no Reroll tokens.
+  const ABILITY_EXPECT = {
+    control: { quietCoffee: 1 }, // matching Axis dice
+    mastery: { quietCoffee: 0 }, // matching Engines, but no spent Reroll to regain
+    adaptation: { quietCoffee: 0 },
+    anticipation: { quietCoffee: 0 },
+    workingTogether: { quietCoffee: 0 },
+    synchronisation: { quietCoffee: 0 }, // no Gear/Flaps → never triggers
+  };
+  const missing = [...IMPLEMENTED_MODULES.filter((m) => !EXPECT[m]), ...ABILITY_IDS.filter((a) => !ABILITY_EXPECT[a])];
+  check(`every module and ability has matrix expectations${missing.length ? ` (missing: ${missing})` : ""}`, missing.length === 0);
 
-  const combos = IMPLEMENTED_MODULES.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]);
+  const subsets = (items) => items.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]);
+  const moduleCombos = subsets(IMPLEMENTED_MODULES);
+  const abilitySets = subsets(ABILITY_IDS);
   const excluded = (c) => EXCLUSIVE_MODULE_GROUPS.some((g) => g.filter((m) => c.includes(m)).length > 1);
-  let allowed = 0, rejected = 0, bad = [];
-  for (const combo of combos) {
-    const name = combo.length ? combo.join("+") : "base";
-    const valid = SetSetupPayload.safeParse({ scenarioId: "YUL", modules: combo }).success;
-    if (excluded(combo)) {
-      rejected++;
-      if (valid) bad.push(`${name}: excluded combination was accepted`);
-      continue;
-    }
-    allowed++;
-    if (!valid) { bad.push(`${name}: allowed combination was rejected`); continue; }
-    try {
-      const quiet = playRound(init(scn({ rounds: 7, modules: combo })), level(1, 1));
-      const burn = combo.reduce((n, m) => n + (EXPECT[m]?.quietBurn ?? 0), 0);
-      if (quiet.phase !== "rolling" || quiet.round !== 2) bad.push(`${name}: quiet round didn't complete (${quiet.outcome?.reason})`);
-      if (quiet.kerosene !== 20 - burn) bad.push(`${name}: kerosene ${quiet.kerosene}, expected ${20 - burn}`);
-      const landing = playRound(readyToLand((st) => { st.scenario.modules = [...combo]; combo.forEach((m) => EXPECT[m]?.prep(st)); }), level(1, 1));
-      if (landing.phase !== "won") bad.push(`${name}: legal landing failed (${landing.outcome?.reason})`);
-    } catch (e) {
-      bad.push(`${name}: threw ${e.message}`);
+  let allowed = 0, rejected = 0;
+  const bad = [];
+  for (const modules of moduleCombos) {
+    for (const abilities of abilitySets) {
+      const name = [...modules, ...abilities].join("+") || "base";
+      const valid = SetSetupPayload.safeParse({ scenarioId: "YUL", modules, abilities }).success;
+      if (excluded(modules) || abilities.length > DEFAULT_MAX_ABILITIES) {
+        rejected++;
+        if (valid) bad.push(`${name}: excluded setup was accepted`);
+        continue;
+      }
+      allowed++;
+      if (!valid) { bad.push(`${name}: allowed setup was rejected`); continue; }
+      try {
+        const quiet = playRound(init(scn({ rounds: 7, modules, abilities })), level(1, 1));
+        const burn = modules.reduce((n, m) => n + EXPECT[m].quietBurn, 0);
+        const coffee = 1 + abilities.reduce((n, a) => n + ABILITY_EXPECT[a].quietCoffee, 0);
+        if (quiet.phase !== "rolling" || quiet.round !== 2) bad.push(`${name}: quiet round didn't complete (${quiet.outcome?.reason})`);
+        if (quiet.kerosene !== 20 - burn) bad.push(`${name}: kerosene ${quiet.kerosene}, expected ${20 - burn}`);
+        if (quiet.coffee !== coffee) bad.push(`${name}: coffee ${quiet.coffee}, expected ${coffee}`);
+        const landing = playRound(
+          readyToLand((st) => {
+            st.scenario.modules = [...modules];
+            st.scenario.abilities = [...abilities];
+            modules.forEach((m) => EXPECT[m].prep(st));
+          }),
+          level(1, 1),
+        );
+        if (landing.phase !== "won") bad.push(`${name}: legal landing failed (${landing.outcome?.reason})`);
+      } catch (e) {
+        bad.push(`${name}: threw ${e.message}`);
+      }
     }
   }
-  check(`${allowed} allowed combinations play a round and land`, !bad.some((b) => !b.includes("excluded")));
-  check(`${rejected} excluded combinations are rejected`, !bad.some((b) => b.includes("excluded")));
-  bad.forEach((b) => console.log(`     ↳ ${b}`));
+  check(`${allowed} allowed setups play a round and land`, !bad.some((b) => !b.includes("excluded")));
+  check(`${rejected} excluded setups are rejected`, !bad.some((b) => b.includes("excluded")));
+  bad.slice(0, 12).forEach((b) => console.log(`     ↳ ${b}`));
+  if (bad.length > 12) console.log(`     ↳ … and ${bad.length - 12} more`);
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

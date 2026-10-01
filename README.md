@@ -119,10 +119,23 @@ landing checks).
   **Intern** (train with a die ≠ your next token to take it — Pilot from the
   left, Co-Pilot from the right — then place it at once like a die of its
   number, not on Concentration, no Coffee; all 6 trained to land).
-- **Game setup.** The host picks the airport (`SCENARIOS`) and modules in the
-  lobby (`room:setup`); the server builds the game from `scenarioForSetup`. Only
-  modules listed in `IMPLEMENTED_MODULES` can be selected — add a module's id
-  there once its rules are in the reducer.
+- **Game setup.** The host picks the airport (`SCENARIOS`), modules and Special
+  Abilities in the lobby (`room:setup`); the server builds the game from
+  `scenarioForSetup`. Only modules listed in `IMPLEMENTED_MODULES` can be
+  selected — add a module's id there once its rules are in the reducer.
+- **Special Abilities** (`game/abilities.ts`), up to the scenario's limit
+  (`maxAbilities`, 2 for YUL for now):
+  - **Working Together** — once per round the active player offers a die; the
+    other must answer with one of theirs; the values swap.
+  - **Synchronisation** — once there's a die on Landing Gear and on Flaps, the
+    server rolls the Traffic die (2,3,3,4,4,5) and the Co-Pilot places it on any
+    empty space of either colour (Concentration and the Intern board included).
+  - **Mastery** — matching Engine dice regain a spent Reroll token.
+  - **Control** — matching Axis dice gain a Coffee.
+  - **Anticipation** — each round, before their first die, the First Player may
+    reroll one die.
+  - **Adaptation** — once per game per player, turn a die to its opposite face
+    (on either player's turn).
 - **Dice are hidden and random.** Each player rolls behind a screen; the reducer
   stays pure, so the **server** generates dice values and threads them in, and
   `redactGameStateFor` hides the opponent's unplaced dice before state is sent.

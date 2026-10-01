@@ -6,7 +6,9 @@
 //
 // Every combination of the modules the lobby offers is played, except those the
 // lobby refuses to tick together (e.g. Kerosene + Kerosene Leak) — so a new
-// module is covered automatically. Each turn the active player taps every die
+// module is covered automatically. Each Special Ability is then played alone
+// and alongside Kerosene + Ice Brakes + Intern; the bot uses the active ones
+// (Anticipation, Adaptation, Working Together) and places the Traffic die. Each turn the active player taps every die
 // to read which spaces the UI opens, scores only those moves with a simple
 // heuristic, and plays the best one; Intern tokens are dragged (with edge
 // auto-scroll). It plays to explore, not to win — losses are normal.
@@ -56,7 +58,7 @@ async function player(width) {
 
 const ticked = (p) =>
   p.page.evaluate(() =>
-    [...document.querySelectorAll(".setup-modules label")].filter((l) => l.querySelector("input").checked).map((l) => l.textContent),
+    [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].filter((l) => l.querySelector("input").checked).map((l) => l.textContent),
   );
 
 /** Move heuristic. Legality comes from the UI; this only ranks legal moves. */
@@ -115,11 +117,12 @@ function score(g, crew, v, t) {
 const openTargets = (p) =>
   p.page.evaluate(() => [...new Set([...document.querySelectorAll('.slot[data-open="1"]')].map((e) => e.dataset.target))]);
 
-/** Drag the held Intern token onto `slot` like a person: hold at a screen edge
- *  until the page auto-scrolls the space into view, then aim where it is now. */
-async function dragToken(p, slot) {
-  await p.page.locator(".hand .intern-die").scrollIntoViewIfNeeded();
-  const from = await p.page.locator(".hand .intern-die").boundingBox();
+/** Drag a held extra (Intern token / Traffic die, `chip` selector) onto `slot`
+ *  like a person: hold at a screen edge until the page auto-scrolls the space
+ *  into view, then aim where it is now. */
+async function dragToken(p, slot, chip = ".hand .intern-die") {
+  await p.page.locator(chip).scrollIntoViewIfNeeded();
+  const from = await p.page.locator(chip).boundingBox();
   const vw = p.page.viewportSize();
   await p.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await p.page.mouse.down();
@@ -145,20 +148,67 @@ async function dragToken(p, slot) {
   await p.page.mouse.up();
 }
 
+/**
+ * Use an active Special Ability through its tray chip, once where it makes
+ * sense, so their UI paths are exercised: Anticipation (First Player rerolls
+ * its die furthest from 3.5), Adaptation (turn a 6 into a 1), Working Together
+ * (offer the highest die, once per game). Returns true if it acted.
+ */
+async function useAbility(p, crew) {
+  const g = p.game;
+  const has = (id) => g.scenario.abilities?.includes(id);
+  const hand = g.dice[crew].filter((d) => !d.placed);
+  const dieBtn = (id) => p.page.locator(".hand .dice > button.die:not(.intern-die):not(.traffic-die)").nth(id);
+  const tryButton = async (name, die, label) => {
+    const btn = p.page.getByRole("button", { name, exact: true });
+    if (!(await btn.count()) || (await btn.isDisabled())) return false;
+    await btn.click();
+    await dieBtn(die.id).click();
+    p.lastAbility = { value: die.value, t: JSON.stringify({ kind: label }) };
+    return true;
+  };
+  if (has("anticipation") && !g.anticipated && hand.length === 4) {
+    const far = hand.reduce((m, d) => (Math.abs(d.value - 3.5) > Math.abs(m.value - 3.5) ? d : m), hand[0]);
+    if (await tryButton("Reroll a die", far, "anticipate")) return true;
+  }
+  const six = hand.find((d) => d.value === 6);
+  if (has("adaptation") && six && !g.adaptationUsed[crew] && g.engines[crew] === null) {
+    if (await tryButton("Flip a die", six, "adapt")) return true;
+  }
+  if (has("workingTogether") && !g.swappedThisRound && !p.swapped && hand.length >= 2) {
+    const high = hand.reduce((m, d) => (d.value > m.value ? d : m), hand[0]);
+    if (await tryButton("Swap a die", high, "swap")) { p.swapped = true; return true; }
+  }
+  return false;
+}
+
 /** Play the active crew's best legal move; throws if the server doesn't take it. */
 async function act(p, crew, log) {
   const g = p.game;
   const v0 = p.version;
   let best = null;
-  if (g.internHeld?.crew === crew) {
+  const held = g.internHeld?.crew === crew ? { ...g.internHeld, chip: ".hand .intern-die", kind: "Intern token" }
+    : g.trafficHeld && crew === "copilot" ? { ...g.trafficHeld, chip: ".hand .traffic-die", kind: "Traffic die" }
+    : null;
+  if (held) {
     for (const t of await openTargets(p)) {
-      const s = score(g, crew, g.internHeld.value, JSON.parse(t));
-      if (!best || s > best.s) best = { s, token: true, value: g.internHeld.value, t };
+      const target = JSON.parse(t);
+      // Score from the space owner's point of view (the Traffic die may fill the Pilot's).
+      const s = score(g, target.side ?? crew, held.value, target);
+      if (!best || s > best.s) best = { s, token: true, value: held.value, t };
     }
-    if (!best) throw new Error("an Intern token is held but the UI opens no space for it");
-    await dragToken(p, p.page.locator(`.slot[data-open="1"][data-target='${best.t}']`).first());
+    if (!best) throw new Error(`a ${held.kind} is held but the UI opens no space for it`);
+    await dragToken(p, p.page.locator(`.slot[data-open="1"][data-target='${best.t}']`).first(), held.chip);
+  } else if (g.pendingSwap && g.pendingSwap.from !== crew) {
+    // Working Together: answer the offer with our lowest die (the tray is in pick mode).
+    const hand = g.dice[crew].filter((d) => !d.placed);
+    const die = hand.reduce((m, d) => (d.value < m.value ? d : m), hand[0]);
+    await p.page.locator(".hand .dice > button.die:not(.intern-die):not(.traffic-die)").nth(die.id).click();
+    best = { value: die.value, t: JSON.stringify({ kind: "swap" }) };
+  } else if (await useAbility(p, crew)) {
+    best = p.lastAbility;
   } else {
-    const dice = p.page.locator(".hand .dice > button.die:not(.intern-die)");
+    const dice = p.page.locator(".hand .dice > button.die:not(.intern-die):not(.traffic-die)");
     const n = await dice.count();
     // Hold back the lowest die for an open Engine and the most level-friendly
     // one for an open Axis, so spare spaces don't eat them (fewer early crashes).
@@ -183,9 +233,10 @@ async function act(p, crew, log) {
   for (let k = 0; k < 120 && p.version === v0; k++) await sleep(50);
   if (p.version === v0) {
     const err = (await p.page.locator("p.error").count()) ? await p.page.locator("p.error").textContent() : "no response";
-    throw new Error(`${crew} ${best.token ? "Intern token" : "die"} ${best.value} → ${best.t} not applied: ${err}`);
+    throw new Error(`${crew} ${best.token ? "extra die" : "die"} ${best.value} → ${best.t} not applied: ${err}`);
   }
-  log.push(`${crew === "pilot" ? "P" : "C"}${best.token ? "🎓" : ""}${best.value}→${JSON.parse(best.t).kind}`);
+  log.push(`${crew === "pilot" ? "P" : "C"}${best.token ? "+" : ""}${best.value}→${JSON.parse(best.t).kind}`);
+  return JSON.parse(best.t);
 }
 
 /** Play one game with `combo`; returns a result, or null if the lobby refuses the combination. */
@@ -199,7 +250,7 @@ async function playGame(combo, tag) {
     await b.page.getByRole("button", { name: "Ready up" }).waitFor();
     for (const m of combo) {
       await a.page.getByLabel(m, { exact: true }).click();
-      await b.page.waitForFunction((m) => [...document.querySelectorAll(".setup-modules label")].some((l) => l.textContent === m && l.querySelector("input").checked), m);
+      await b.page.waitForFunction((m) => [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].some((l) => l.textContent === m && l.querySelector("input").checked), m);
     }
     await sleep(300);
     if ((await ticked(a)).length !== combo.length) return null; // an exclusive pair unticked one
@@ -215,18 +266,23 @@ async function playGame(combo, tag) {
     try {
       while (!a.game.outcome && moves < MAX_MOVES) {
         const g = a.game;
-        const crew = g.internHeld ? g.internHeld.crew : g.turn;
-        const wasToken = !!g.internHeld;
+        const crew = g.internHeld ? g.internHeld.crew
+          : g.trafficHeld ? "copilot"
+          : g.pendingSwap ? (g.pendingSwap.from === "pilot" ? "copilot" : "pilot")
+          : g.turn;
+        const wasToken = !!g.internHeld || !!g.trafficHeld;
+        const extraClass = g.internHeld ? "intern" : "traffic";
         const round = g.round;
-        await act(crew === "pilot" ? a : b, crew, log);
+        const target = await act(crew === "pilot" ? a : b, crew, log);
         moves++;
         for (let k = 0; k < 100 && b.version !== a.version; k++) await sleep(50);
-        // A token placed mid-round must be drawn in Intern colours on both screens.
-        // (If it ended the round, the next round has rightly cleared the marks.)
-        if (wasToken && !a.game.outcome && a.game.round === round) {
+        // An extra placed mid-round must be drawn in its colours on both screens.
+        // (If it ended the round, the next round has rightly cleared the marks.
+        // A Traffic die on an Intern space trains it instead: no mark.)
+        if (wasToken && target.kind !== "intern" && !a.game.outcome && a.game.round === round) {
           tokens++;
           await sleep(150);
-          const marked = await Promise.all([a, b].map((x) => x.page.locator(".slot.taken.intern").count()));
+          const marked = await Promise.all([a, b].map((x) => x.page.locator(`.slot.taken.${extraClass}`).count()));
           if (marked.some((c) => c < 1)) unmarked++;
         }
       }
@@ -243,7 +299,7 @@ async function playGame(combo, tag) {
       ca !== cb && `screens disagree: "${ca}" vs "${cb}"`,
       a.pageError && `pilot page error: ${a.pageError}`,
       b.pageError && `co-pilot page error: ${b.pageError}`,
-      unmarked && `${unmarked} Intern-filled space(s) not drawn in Intern colours`,
+      unmarked && `${unmarked} space(s) filled by an extra die not drawn in its colours`,
     ].filter(Boolean);
     return {
       ok: problems.length === 0,
@@ -252,6 +308,7 @@ async function playGame(combo, tag) {
       round: g.round,
       moves,
       tokens,
+      abilitiesUsed: a.game.log.filter((l) => /Anticipation|Adaptation|work together|Synchronisation:|Mastery:|Control:/.test(l)).length,
     };
   } finally {
     await a.ctx.close();
@@ -259,7 +316,8 @@ async function playGame(combo, tag) {
   }
 }
 
-// Discover the selectable modules from the lobby, then build every combination.
+// Discover the selectable modules and Special Abilities from the lobby, then
+// build every module combination plus each ability alone and with a full set.
 const probe = await player(1280);
 await probe.page.goto(BASE);
 await probe.page.getByRole("button", { name: "Create a room" }).click();
@@ -267,9 +325,18 @@ await probe.page.locator(".setup-modules").waitFor();
 const modules = await probe.page.evaluate(() =>
   [...document.querySelectorAll(".setup-modules label")].filter((l) => !l.querySelector("input").disabled).map((l) => l.textContent),
 );
+const abilities = await probe.page.evaluate(() =>
+  [...document.querySelectorAll(".setup-abilities label")].map((l) => l.textContent),
+);
 await probe.ctx.close();
-const combos = ONLY ?? modules.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]);
-console.log(`Modules offered: ${modules.join(", ")} — ${combos.length} combination(s) × ${REPEAT}`);
+const rich = ["Kerosene", "Ice Brakes", "Intern"].filter((m) => modules.includes(m));
+const combos =
+  ONLY ??
+  [
+    ...modules.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]),
+    ...abilities.flatMap((ab) => [[ab], [...rich, ab]]),
+  ];
+console.log(`Modules offered: ${modules.join(", ")}; abilities: ${abilities.join(", ")} — ${combos.length} combination(s) × ${REPEAT}`);
 
 let ran = 0;
 let failed = 0;
@@ -285,7 +352,7 @@ for (const combo of combos) {
     }
     ran++;
     if (!res.ok) failed++;
-    const detail = res.ok ? `${res.outcome} · round ${res.round} · ${res.moves} moves${res.tokens ? ` · ${res.tokens} Intern tokens` : ""}` : `${res.problem}${res.tail ? ` | last: ${res.tail}` : ""}`;
+    const detail = res.ok ? `${res.outcome} · round ${res.round} · ${res.moves} moves${res.tokens ? ` · ${res.tokens} extra dice` : ""}${res.abilitiesUsed ? ` · ${res.abilitiesUsed} ability events` : ""}` : `${res.problem}${res.tail ? ` | last: ${res.tail}` : ""}`;
     console.log(`${res.ok ? "✅" : "❌"} ${name}${REPEAT > 1 ? ` #${r}` : ""} — ${detail}`);
   }
 }
