@@ -425,5 +425,51 @@ console.log("15) Illegal commands are rejected");
   check("reducer never mutates its input", fresh.phase === "rolling" && fresh.dice.pilot.length === 0);
 }
 
+// 16) Kerosene module -----------------------------------------------------------
+console.log("16) Kerosene: either crew burns a die's value; empty space burns 6; dry tank loses");
+{
+  const kscn = (over) => scn({ rounds: 7, modules: ["kerosene"], ...over });
+  const lostKero = (s) => lostFor(s, /kerosene/i);
+
+  let s = roll(init(kscn()), [1, 1, 3, 6], [1, 1, 2, 6]);
+  check("tank starts at 20", s.kerosene === 20 && s.keroseneSlot === null);
+  s = place(s, P, 3, { kind: "kerosene" });
+  check("pilot's 3 burns 3 at once", s.kerosene === 17 && s.keroseneSlot?.value === 3 && s.keroseneSlot.crew === "pilot");
+  expectThrow("space holds one die per round", () => place(s, C, 2, { kind: "kerosene" }));
+
+  // Finish the round with the space used: no idle burn on top.
+  s = place(s, C, 1, { kind: "axis" });
+  s = place(s, P, 1, { kind: "axis" });
+  s = place(s, C, 1, { kind: "engine" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 6, { kind: "radio", slot: 0 });
+  s = place(s, P, 6, { kind: "concentration", slot: 0 });
+  s = place(s, C, 2, { kind: "concentration", slot: 1 });
+  check("used space -> no idle burn", s.round === 2 && s.kerosene === 17);
+  s = roll(s, [1, 1, 1, 1], [5, 1, 1, 1]);
+  check("space is free again next round", s.keroseneSlot === null);
+  const byCopilot = place(s, C, 5, { kind: "kerosene" }); // round 2: co-pilot leads
+  check("co-pilot may use it too", byCopilot.kerosene === 12 && byCopilot.keroseneSlot?.crew === "copilot");
+
+  check("empty space burns 6 at round end", playRound(init(kscn()), level(1, 1)).kerosene === 14);
+
+  const noModule = roll(init(scn({ rounds: 7 })), [3, 1, 1, 1], [1, 1, 1, 1]);
+  expectThrow("rejected when the module is not in play", () => place(noModule, P, 3, { kind: "kerosene" }));
+  check("no idle burn without the module", playRound(init(scn({ rounds: 7 })), level(1, 1)).kerosene === 20);
+
+  const nearlyDry = roll(init(kscn()), [3, 1, 1, 1], [1, 1, 1, 1]);
+  nearlyDry.kerosene = 3;
+  const dry = place(nearlyDry, P, 3, { kind: "kerosene" });
+  check("a die that empties the tank loses immediately", lostKero(dry) && dry.kerosene === 0);
+
+  const six = init(kscn());
+  six.kerosene = 6;
+  check("idle burn that empties the tank loses", lostKero(playRound(six, level(1, 1))));
+
+  const withKero = (fuel) => (st) => ((st.scenario.modules = ["kerosene"]), (st.kerosene = fuel));
+  check("final round: idle burn to empty beats a good landing", lostKero(playRound(readyToLand(withKero(6)), level(1, 1))));
+  check("final round: fuel to spare -> landing still counts", playRound(readyToLand(withKero(7)), level(1, 1)).phase === "won");
+}
+
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

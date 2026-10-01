@@ -3,6 +3,7 @@ import {
   airportIndex,
   crewOf,
   firstPlayerForRound,
+  hasModule,
   type GameState,
 } from "./state";
 import {
@@ -10,6 +11,7 @@ import {
   CONCENTRATION_SLOTS,
   DICE_PER_PLAYER,
   FLAPS_VALUES,
+  KEROSENE_IDLE_BURN,
   LANDING_GEAR_VALUES,
   MAX_COFFEE,
   RADIO_COPILOT_SLOTS,
@@ -92,6 +94,7 @@ function handleRoll(
   s.radioPilot = null;
   s.radioCopilot = s.radioCopilot.map(() => null);
   s.concentrationSlots = s.concentrationSlots.map(() => null);
+  s.keroseneSlot = null;
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -252,6 +255,8 @@ function applyPlacement(s: GameState, crew: Crew, value: DieValue, target: Place
       return placeBrakes(s, crew, value, target.slot);
     case "concentration":
       return placeConcentration(s, crew, value, target.slot);
+    case "kerosene":
+      return placeKerosene(s, crew, value);
     default:
       return assertNever(target);
   }
@@ -400,6 +405,21 @@ function placeConcentration(s: GameState, crew: Crew, value: DieValue, slot: num
   }
 }
 
+/** Kerosene module: either crew may seat one die per round; the marker drops by
+ *  its value straight away, and hitting the empty space loses at once. */
+function placeKerosene(s: GameState, crew: Crew, value: DieValue): void {
+  if (!hasModule(s, "kerosene")) throw new GameRuleError("The Kerosene module is not in play.");
+  if (s.keroseneSlot != null) throw new GameRuleError("The Kerosene space is taken.");
+  s.keroseneSlot = { value, crew };
+  burnKerosene(s, value, `${crewLabel(crew)} burned ${value} Kerosene`);
+}
+
+function burnKerosene(s: GameState, amount: number, what: string): void {
+  s.kerosene = Math.max(0, s.kerosene - amount);
+  s.log.push(`${what} (${s.kerosene} left).`);
+  if (s.kerosene <= 0) lose(s, "Ran out of kerosene!");
+}
+
 // --- end of round / landing -------------------------------------------------
 
 function endOfRound(s: GameState): void {
@@ -413,6 +433,16 @@ function endOfRound(s: GameState): void {
     lose(s, "A mandatory Axis or Engine die was missing at the end of the round.");
     s.phase = "lost";
     return;
+  }
+
+  // Kerosene: an empty Kerosene space still burns fuel — even in the final
+  // round, so a dry tank beats the landing check.
+  if (hasModule(s, "kerosene") && s.keroseneSlot == null) {
+    burnKerosene(s, KEROSENE_IDLE_BURN, `Kerosene space left empty: burned ${KEROSENE_IDLE_BURN}`);
+    if (s.outcome) {
+      s.phase = "lost";
+      return;
+    }
   }
 
   if (isFinalRound(s)) {

@@ -3,10 +3,12 @@ import {
   BRAKE_VALUES,
   CONCENTRATION_SLOTS,
   FLAPS_COUNT,
+  KEROSENE_START,
   LANDING_GEAR_COUNT,
   RADIO_COPILOT_SLOTS,
   type Crew,
   type DieValue,
+  type ModuleId,
   type Scenario,
 } from "./scenario";
 
@@ -91,6 +93,10 @@ export interface GameState {
   // seated-die colour). Kept visible until the round resets, like gear/flap slots.
   concentrationSlots: ({ value: DieValue; crew: Crew } | null)[]; // length CONCENTRATION_SLOTS
 
+  // --- Kerosene module (only used when scenario.modules includes "kerosene") ---
+  kerosene: number; // KEROSENE_START..0 — 0 means the tank ran dry (loss)
+  keroseneSlot: { value: DieValue; crew: Crew } | null; // this round's die, either crew
+
   coffee: number; // 0..MAX_COFFEE
   rerollTokens: number;
   // A joint reroll is in flight: the active player has rerolled and we are now
@@ -149,12 +155,19 @@ export function createInitialGameState(
     radioPilot: null,
     radioCopilot: Array(RADIO_COPILOT_SLOTS).fill(null),
     concentrationSlots: Array(CONCENTRATION_SLOTS).fill(null),
+    kerosene: KEROSENE_START,
+    keroseneSlot: null,
     coffee: 0,
     rerollTokens: 0,
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
   };
+}
+
+/** Whether an advanced module is switched on for this game. */
+export function hasModule(state: GameState, id: ModuleId): boolean {
+  return state.scenario.modules?.includes(id) ?? false;
 }
 
 /** Which crew a player is, or null if they are not seated in this game. */

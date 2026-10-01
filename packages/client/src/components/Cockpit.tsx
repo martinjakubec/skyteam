@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { GameCommand, RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
-import { clamp, face, label } from "../util";
+import { clamp, face, label, previewModule } from "../util";
 import {
   BRAKE_VAL,
   FLAP_LABEL,
@@ -13,6 +13,7 @@ import { Altitude } from "./Altitude";
 import { Approach } from "./Approach";
 import { BrakesGauge } from "./BrakesGauge";
 import { Headset } from "./icons";
+import { Kerosene } from "./Kerosene";
 import { Module } from "./Module";
 import { Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
@@ -84,6 +85,11 @@ export function Cockpit({
     setRerollMode(false);
     setRerollPick([]);
   };
+
+  // Advanced modules switched on for this game. `?preview=` (dev only) shows a
+  // module's UI without it being in play — its spaces stay disabled then.
+  const keroseneInPlay = game.scenario.modules?.includes("kerosene") ?? false;
+  const keroseneOn = keroseneInPlay || previewModule("kerosene");
 
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
   // Flaps deploy strictly in order: only the first undeployed section is legal.
@@ -238,7 +244,7 @@ export function Cockpit({
   };
 
   return (
-    <div className="board">
+    <div className={`board${keroseneOn ? " with-kerosene" : ""}`}>
       {/* Full-width status tracks above the console: approach path + altitude */}
       <section className="tracks">
         <Approach game={game} airportIdx={airportIdx} />
@@ -344,12 +350,22 @@ export function Cockpit({
           panel on narrow screens; on wide screens the .board grid places the
           pilot rail left of the dial and the co-pilot rail right of it. */}
       <div className="rail rail-pilot">
-        <Module title="Radio" tone="blue">
+        {/* Kerosene runs down the left of the Radio + Landing Gear (rail grid:
+            see .with-kerosene). Either crew may use it. */}
+        {keroseneOn && (
+          <Kerosene
+            level={game.kerosene}
+            seated={game.keroseneSlot}
+            enabled={canFree(keroseneInPlay && game.keroseneSlot == null)}
+            onClick={() => place({ kind: "kerosene" })}
+          />
+        )}
+        <Module title="Radio" tone="blue" className="mod-radio-pilot">
           <div className="slots-row">
             <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
           </div>
         </Module>
-        <Module title="Landing Gear" tone="blue">
+        <Module title="Landing Gear" tone="blue" className="mod-gear">
           <div className="slots-col">
             {game.gearGreen.map((green, i) => (
               <Slot
@@ -368,14 +384,14 @@ export function Cockpit({
         </Module>
       </div>
       <div className="rail rail-copilot">
-        <Module title="Radio" tone="orange">
+        <Module title="Radio" tone="orange" className="mod-radio-copilot">
           <div className="slots-col">
             {game.radioCopilot.map((val, i) => (
               <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
             ))}
           </div>
         </Module>
-        <Module title="Flaps" tone="orange">
+        <Module title="Flaps" tone="orange" className="mod-flaps">
           {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
           <div className="slots-col">
             {game.flapsGreen.map((green, i) => (

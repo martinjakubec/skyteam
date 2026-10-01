@@ -260,7 +260,10 @@ ul {
    the rails reflow beneath the main panel on narrow screens (see media query). */
 .board {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* minmax(0, 1fr) — not plain 1fr, whose min is the content width — keeps the
+     two side columns exactly equal, so the dial stays centred however wide one
+     crew rail gets (e.g. with the Kerosene module added to the pilot side). */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   grid-template-areas:
     "tracks  tracks  tracks"
     "prail   dial    crail"
@@ -289,6 +292,28 @@ ul {
 }
 .board > .tray {
   grid-area: tray;
+}
+/* Kerosene module: the pilot rail becomes a 2-column grid with Kerosene running
+   down the left of both the Radio and the Landing Gear (top-aligned with the
+   Radio, bottom stretched to the gear's). Rail stays right-aligned. */
+.with-kerosene .rail-pilot {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "kero pradio"
+    "kero gear";
+  gap: 0.7rem;
+  align-items: start;
+}
+.with-kerosene .rail-pilot > .mod-kerosene {
+  grid-area: kero;
+  align-self: stretch;
+}
+.with-kerosene .rail-pilot > .mod-radio-pilot {
+  grid-area: pradio;
+}
+.with-kerosene .rail-pilot > .mod-gear {
+  grid-area: gear;
 }
 
 .callout {
@@ -738,6 +763,68 @@ ul {
   flex-direction: column;
   gap: 0.4rem;
 }
+
+/* ---- Kerosene module: dice space over a vertical fuel tube ---- */
+.kerosene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+.kerosene-space {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+.kerosene-hint {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.6rem;
+  opacity: 0.75;
+}
+.kerosene-gauge {
+  display: block;
+  overflow: visible;
+}
+/* Wide layout uses the vertical gauge; the stacked layout swaps in the
+   horizontal one (see the 900px media query). */
+.kerosene-gauge.horizontal {
+  display: none;
+}
+.kg-tube {
+  fill: var(--recess);
+  stroke: #090c11;
+  stroke-width: 1;
+}
+.kg-danger {
+  fill: rgba(214, 71, 59, 0.35);
+}
+/* All four geometry properties: the vertical gauge drains via y/height, the
+   horizontal one via width (x kept for symmetry). */
+.kg-fuel {
+  transition: x 0.4s ease, y 0.4s ease, width 0.4s ease, height 0.4s ease;
+}
+.kg-tick {
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  opacity: 0.7;
+}
+.kg-tick.major {
+  stroke-width: 1.8;
+  opacity: 0.9;
+}
+.kg-rung {
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+}
+.kg-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  fill: var(--ink);
+}
+
 
 /* ---- Recessed dice slot with switch ---- */
 .slot {
@@ -1368,16 +1455,16 @@ ul {
   .rail-copilot {
     display: contents;
   }
-  .rail-pilot > :first-child {
+  .mod-radio-pilot {
     grid-area: pradio;
   }
-  .rail-pilot > :last-child {
+  .mod-gear {
     grid-area: gear;
   }
-  .rail-copilot > :first-child {
+  .mod-radio-copilot {
     grid-area: cradio;
   }
-  .rail-copilot > :last-child {
+  .mod-flaps {
     grid-area: flaps;
   }
   /* panels only as wide as their content, aligned to the top of the strip */
@@ -1388,6 +1475,69 @@ ul {
   }
   .tray {
     grid-template-columns: 1fr;
+  }
+}
+/* With Kerosene the pilot rail is ~2 modules wide and no longer fits beside the
+   dial below ~900px, so stack earlier. Kerosene turns horizontal and gets its
+   own row spanning the module strip, above Radio · Landing Gear · Flaps ·
+   Radio. `.board.with-kerosene` outranks the 760px `.board` rule, so this
+   template also wins on the narrowest screens. */
+@media (max-width: 900px) {
+  .board.with-kerosene {
+    grid-template-columns: 1fr auto auto auto auto 1fr;
+    grid-template-areas:
+      "tracks  tracks  tracks tracks tracks  tracks"
+      "dial    dial    dial   dial   dial    dial"
+      "callout callout callout callout callout callout"
+      "deck    deck    deck   deck   deck    deck"
+      ".       kero    kero   kero   kero    ."
+      ".       pradio  gear   flaps  cradio  ."
+      "tray    tray    tray   tray   tray    tray";
+    gap: 0.9rem 0.5rem;
+  }
+  .with-kerosene .rail-pilot,
+  .with-kerosene .rail-copilot {
+    display: contents;
+  }
+  .with-kerosene .mod-kerosene {
+    grid-area: kero;
+  }
+  .with-kerosene .mod-radio-pilot {
+    grid-area: pradio;
+  }
+  .with-kerosene .mod-gear {
+    grid-area: gear;
+  }
+  .with-kerosene .mod-radio-copilot {
+    grid-area: cradio;
+  }
+  .with-kerosene .mod-flaps {
+    grid-area: flaps;
+  }
+  .with-kerosene .rail-pilot > *,
+  .with-kerosene .rail-copilot > * {
+    justify-self: center;
+    align-self: start;
+  }
+  /* Kerosene spans the strip: die space on the left, horizontal gauge filling
+     the rest (scaled to fit the width). */
+  .with-kerosene .rail-pilot > .mod-kerosene {
+    justify-self: stretch;
+  }
+  .with-kerosene .kerosene {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .with-kerosene .kerosene-gauge.vertical {
+    display: none;
+  }
+  .with-kerosene .kerosene-gauge.horizontal {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {

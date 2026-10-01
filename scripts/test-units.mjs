@@ -109,7 +109,9 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("default setup is valid", ok(DEFAULT_SETUP));
   check("unknown airport rejected", !ok({ scenarioId: "XXX", modules: [] }));
   check("unknown module rejected", !ok({ scenarioId: "YUL", modules: ["jetpack"] }));
-  check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["kerosene"] }));
+  check("implemented module accepted", ok({ scenarioId: "YUL", modules: ["kerosene"] }));
+  check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["intern"] }));
+  check("duplicate module rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "kerosene"] }));
   check("missing modules rejected", !ok({ scenarioId: "YUL" }));
 
   const scenario = scenarioForSetup({ scenarioId: "YUL", modules: [] });

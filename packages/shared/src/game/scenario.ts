@@ -52,7 +52,12 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = [];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene"];
+
+/** Kerosene module: the marker starts here; reaching 0 (the empty space) loses. */
+export const KEROSENE_START = 20;
+/** Kerosene burned at the end of a round in which the Kerosene space was left empty. */
+export const KEROSENE_IDLE_BURN = 6;
 
 /** One space on the Approach Track. */
 export interface ApproachSpace {

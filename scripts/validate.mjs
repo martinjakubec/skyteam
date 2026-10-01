@@ -67,7 +67,7 @@ async function main() {
   console.log("2b) Game setup: host-only, validated, broadcast in the snapshot");
   check("lobby snapshot carries the default setup", lobby.setup?.scenarioId === "YUL" && lobby.setup.modules.length === 0);
   check("guest setup change rejected", (await emit(b, "room:setup", { scenarioId: "YUL", modules: [] })).ok === false);
-  check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["kerosene"] })).ok === false);
+  check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["intern"] })).ok === false);
   check("unknown airport rejected", (await emit(a, "room:setup", { scenarioId: "XXX", modules: [] })).ok === false);
   check("host setup accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [] })).ok === true);
 
@@ -76,6 +76,18 @@ async function main() {
   const ready = waitFor(a, "room:state", (s) => s.status === "ready");
   await emit(b, "seat:ready", { ready: true });
   check("status becomes 'ready'", (await ready).status === "ready");
+
+  console.log("3b) Host enables Kerosene -> guest is un-readied and must confirm");
+  const unreadied = waitFor(b, "room:state", (s) => s.setup.modules.includes("kerosene"));
+  check("host enables Kerosene", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["kerosene"] })).ok === true);
+  const afterSetup = await unreadied;
+  const guestSeat = afterSetup.seats.find((s) => s.role === "guest");
+  const hostSeat = afterSetup.seats.find((s) => s.role === "host");
+  check("guest un-readied, host still ready", !guestSeat.ready && hostSeat.ready && afterSetup.status === "lobby");
+  check("host can't start until the guest re-confirms", (await emit(a, "game:start")).ok === false);
+  const readyAgain = waitFor(a, "room:state", (s) => s.status === "ready");
+  await emit(b, "seat:ready", { ready: true });
+  check("guest re-readies -> status 'ready'", (await readyAgain).status === "ready");
 
   console.log("4) Only host can start; game initialises");
   check("guest start rejected", (await emit(b, "game:start")).ok === false);
@@ -86,6 +98,7 @@ async function main() {
   const guestGame = (await bStarted).game;
   check("guest sees an in-progress SkyTeam game", guestGame.round === 1 && guestGame.phase === "placement");
   check("pilot (host) leads round 1", guestGame.turn === "pilot");
+  check("game has Kerosene in play, tank full", guestGame.scenario.modules?.includes("kerosene") && guestGame.kerosene === 20);
 
   console.log("5) Hidden dice: each player only sees their own dice values");
   check("host sees its own (pilot) dice values", hostGame.dice.pilot.every((d) => typeof d.value === "number"));
@@ -112,6 +125,15 @@ async function main() {
   check("observer command rejected", obsCmd.ok === false);
   const outOfTurn = await emit(a, "game:command", { commandId: "y", command: { type: "placeDie", dieId: 1, target: { kind: "engine" } } });
   check("pilot acting out of turn rejected", outOfTurn.ok === false);
+
+  console.log("7b) Kerosene: the co-pilot burns a die's value");
+  const keroDie = evt.game.dice.copilot.find((d) => !d.placed);
+  const hostSawKero = waitFor(a, "game:event", (m) => m.game.keroseneSlot !== null);
+  const keroAck = await emit(b, "game:command", { commandId: "k1", command: { type: "placeDie", dieId: keroDie.id, target: { kind: "kerosene" } } });
+  check("kerosene placement ack ok", keroAck.ok === true);
+  const keroEvt = await hostSawKero;
+  check("tank dropped by the die's value", keroEvt.game.kerosene === 20 - keroDie.value);
+  check("seated die is public to the pilot", keroEvt.game.keroseneSlot.value === keroDie.value && keroEvt.game.keroseneSlot.crew === "copilot");
 
   console.log("8) Reconnect: guest drops and resyncs with game intact");
   const hostSeesDisconnect = waitFor(a, "room:state", (s) =>
