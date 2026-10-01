@@ -172,8 +172,10 @@ console.log("5) Overshoot: advancing while already on the airport");
   check("overshoot -> lost", s.phase === "lost" && /overshot/i.test(s.outcome?.reason ?? ""));
 }
 
-// 6) Mandatory Axis/Engine loss ---------------------------------------------
-console.log("6) Mandatory loss: a round ends without filling Engines");
+// 6) Mandatory Axis/Engine reservation --------------------------------------
+// The reducer refuses any placement that would strand an open Axis/Engine spot,
+// so the end-of-round "mandatory missing" loss can't be reached by legal play.
+console.log("6) Mandatory reservation: last dice must go on the Axis and Engine");
 {
   let s = init(scn({ rounds: 7 }));
   s = roll(s, [1, 2, 1, 5], [1, 1, 2, 3]);
@@ -183,9 +185,12 @@ console.log("6) Mandatory loss: a round ends without filling Engines");
   s = place(s, C, 1, { kind: "flaps", slot: 0 }); // 1/2
   s = place(s, P, 1, { kind: "radio", slot: 0 });
   s = place(s, C, 2, { kind: "flaps", slot: 1 }); // 2/3
-  s = place(s, P, 5, { kind: "landingGear", slot: 2 }); // 5/6
-  s = place(s, C, 3, { kind: "flaps", slot: 2 }); // 3/4 -> 8th die, engines never filled
-  check("mandatory unmet -> lost", s.phase === "lost" && /mandatory/i.test(s.outcome?.reason ?? ""));
+  // Pilot holds one die with the Engine still open: it must go on the Engine.
+  expectThrow("non-mandatory placement that strands the Engine rejected", () =>
+    place(s, P, 5, { kind: "landingGear", slot: 2 }),
+  );
+  s = place(s, P, 5, { kind: "engine" });
+  check("engine placement still allowed", s.engines.pilot === 5);
 }
 
 // 7) Radio clears the correct space -----------------------------------------
