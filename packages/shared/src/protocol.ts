@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
-import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, type GameSetup } from "./game/scenario";
+import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, SCENARIOS, type GameSetup } from "./game/scenario";
+import { ABILITY_IDS, DEFAULT_MAX_ABILITIES } from "./game/abilities";
 
 // ---------------------------------------------------------------------------
 // Identity & enums
@@ -91,9 +92,10 @@ export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
 export const SetReadyPayload = z.object({ ready: z.boolean() });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
 
-/** Host-only lobby setting: which airport and modules the next game uses. Only
- *  implemented modules are accepted, each at most once, and never two from the
- *  same exclusive group (e.g. Kerosene + Kerosene Leak). */
+/** Host-only lobby setting: which airport, modules and Special Abilities the
+ *  next game uses. Only implemented modules are accepted, each at most once,
+ *  never two from the same exclusive group (e.g. Kerosene + Kerosene Leak);
+ *  abilities are unique and capped by the scenario. */
 export const SetSetupPayload = z.object({
   scenarioId: z.enum(SCENARIO_IDS),
   modules: z
@@ -105,7 +107,16 @@ export const SetSetupPayload = z.object({
       (m) => EXCLUSIVE_MODULE_GROUPS.every((group) => group.filter((id) => m.includes(id)).length <= 1),
       "Those modules can't be played together.",
     ),
-}) satisfies z.ZodType<GameSetup>;
+  abilities: z
+    .array(z.enum(ABILITY_IDS))
+    .refine((a) => new Set(a).size === a.length, "Duplicate ability.")
+    .default([]),
+}).superRefine((setup, ctx) => {
+  const max = SCENARIOS[setup.scenarioId].maxAbilities ?? DEFAULT_MAX_ABILITIES;
+  if (setup.abilities.length > max) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `This scenario allows at most ${max} Special Abilities.` });
+  }
+}) satisfies z.ZodType<GameSetup, z.ZodTypeDef, unknown>;
 export type SetSetupPayload = z.infer<typeof SetSetupPayload>;
 
 export const GameCommandPayload = z.object({

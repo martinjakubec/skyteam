@@ -12,6 +12,8 @@
  * spin threshold have been confirmed.
  */
 
+import type { AbilityId } from "./abilities";
+
 /** A die always shows 1..6. */
 export type DieValue = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -133,8 +135,11 @@ export interface Scenario {
 
   /** Advanced modules in play. Base game: empty. Reserved for "Flight Log". */
   modules?: ModuleId[];
-  /** Number of Special Ability cards dealt. Base game: 0. Reserved. */
-  specialAbilities?: number;
+  /** How many Special Ability cards this scenario lets the crew choose (the
+   *  Flight Log star). Unset = DEFAULT_MAX_ABILITIES. */
+  maxAbilities?: number;
+  /** The Special Abilities in play (copied from the lobby setup). */
+  abilities?: AbilityId[];
 }
 
 /**
@@ -220,16 +225,17 @@ export const SCENARIOS = {
 export type ScenarioId = keyof typeof SCENARIOS;
 export const SCENARIO_IDS = Object.keys(SCENARIOS) as [ScenarioId, ...ScenarioId[]];
 
-/** What the host picks in the lobby: the airport plus any advanced modules. */
+/** What the host picks in the lobby: the airport, advanced modules and Special Abilities. */
 export interface GameSetup {
   scenarioId: ScenarioId;
   modules: ModuleId[];
+  abilities: AbilityId[];
 }
 
-export const DEFAULT_SETUP: GameSetup = { scenarioId: "YUL", modules: [] };
+export const DEFAULT_SETUP: GameSetup = { scenarioId: "YUL", modules: [], abilities: [] };
 
 /** The concrete Scenario a game is created from: the airport's board data with
- *  the chosen modules switched on. */
+ *  the chosen modules and Special Abilities switched on. */
 export function scenarioForSetup(setup: GameSetup): Scenario {
-  return { ...SCENARIOS[setup.scenarioId], modules: [...setup.modules] };
+  return { ...SCENARIOS[setup.scenarioId], modules: [...setup.modules], abilities: [...(setup.abilities ?? [])] };
 }

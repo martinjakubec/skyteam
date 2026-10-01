@@ -40,6 +40,7 @@ export async function getRoom(id: string): Promise<Room | null> {
   const room = JSON.parse(raw) as Room;
   // Rooms persisted before game setup existed have none; give them the default.
   room.setup ??= structuredClone(DEFAULT_SETUP);
+  room.setup.abilities ??= []; // rooms saved before Special Abilities existed
   cache.set(id, room);
   return room;
 }

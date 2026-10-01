@@ -1,4 +1,8 @@
 import {
+  ABILITY_IDS,
+  ABILITY_LABELS,
+  ABILITY_TEXT,
+  DEFAULT_MAX_ABILITIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   conflictingModules,
@@ -6,6 +10,7 @@ import {
   MODULE_LABELS,
   SCENARIO_IDS,
   SCENARIOS,
+  type AbilityId,
   type GameSetup,
   type ModuleId,
   type RoomSnapshot,
@@ -53,6 +58,15 @@ function SetupPicker({
   editable: boolean;
   onChange: (setup: GameSetup) => void;
 }) {
+  // The scenario caps how many Special Abilities the crew may choose.
+  const maxAbilities = SCENARIOS[setup.scenarioId].maxAbilities ?? DEFAULT_MAX_ABILITIES;
+  const toggleAbility = (id: AbilityId, on: boolean) =>
+    onChange({
+      ...setup,
+      // Canonical ABILITY_IDS order, like modules, so equal picks compare equal.
+      abilities: ABILITY_IDS.filter((a) => (a === id ? on : setup.abilities.includes(a))),
+    });
+
   // Ticking a module unticks any it can't be played with (e.g. Kerosene vs
   // Kerosene Leak — one or the other).
   const toggle = (id: ModuleId, on: boolean) => {
@@ -98,6 +112,24 @@ function SetupPicker({
           );
         })}
       </fieldset>
+      <fieldset className="setup-abilities">
+        <legend className="setup-label">Special Abilities</legend>
+        {ABILITY_IDS.map((id) => {
+          const checked = setup.abilities.includes(id);
+          return (
+            <label key={id} title={ABILITY_TEXT[id]}>
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!editable || (!checked && setup.abilities.length >= maxAbilities)}
+                onChange={(e) => toggleAbility(id, e.target.checked)}
+              />
+              {ABILITY_LABELS[id]}
+            </label>
+          );
+        })}
+      </fieldset>
+      <p className="muted setup-note">Choose up to {maxAbilities} Special Abilities.</p>
       {EXCLUSIVE_MODULE_GROUPS.map((group) => (
         <p key={group.join()} className="muted setup-note">
           {group.map((m) => MODULE_LABELS[m]).join(" or ")} — one or the other, not both.

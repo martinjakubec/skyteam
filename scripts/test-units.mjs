@@ -3,11 +3,13 @@
 // uuid() fallback.
 // Run via `npm test` (builds shared first; the server imports its dist).
 import {
+  ABILITY_IDS,
   DEFAULT_SETUP,
   SCENARIOS,
   SetSetupPayload,
   conflictingModules,
   createInitialGameState,
+  hasAbility,
   reduce,
   redactGameStateFor,
   scenarioForSetup,
@@ -126,6 +128,16 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("Kerosene and Kerosene Leak exclude each other",
     conflictingModules("kerosene").join() === "keroseneLeak" && conflictingModules("keroseneLeak").join() === "kerosene");
   check("unrelated modules conflict with nothing", conflictingModules("intern").length === 0);
+
+  // Special Abilities (lobby selection).
+  check("abilities accepted", ok({ scenarioId: "YUL", modules: [], abilities: ["control", "mastery"] }));
+  check("unknown ability rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["teleport"] }));
+  check("duplicate ability rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["control", "control"] }));
+  check("more abilities than the scenario allows rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["control", "mastery", "adaptation"] }));
+  check("abilities default to none", SetSetupPayload.parse({ scenarioId: "YUL", modules: [] }).abilities.length === 0);
+  check("abilities copied onto the scenario", scenarioForSetup({ scenarioId: "YUL", modules: [], abilities: ["control"] }).abilities.join() === "control");
+  const legacy = createInitialGameState({ ...SCENARIOS.YUL }, "P", "C");
+  check("a game without abilities (old rooms) has none", ABILITY_IDS.every((id) => !hasAbility(legacy, id)));
 }
 
 // 3) CORS origin check -------------------------------------------------------

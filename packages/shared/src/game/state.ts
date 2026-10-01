@@ -1,4 +1,5 @@
 import type { PlacementTarget, PlayerId } from "../protocol";
+import type { AbilityId } from "./abilities";
 import {
   BRAKE_VALUES,
   CONCENTRATION_SLOTS,
@@ -212,6 +213,11 @@ export function nextInternToken(state: GameState, crew: Crew): number {
   if (crew === "pilot") return t.findIndex((v) => v !== null);
   for (let i = t.length - 1; i >= 0; i--) if (t[i] !== null) return i;
   return -1;
+}
+
+/** Whether a Special Ability card is in play for this game. */
+export function hasAbility(state: GameState, id: AbilityId): boolean {
+  return state.scenario.abilities?.includes(id) ?? false;
 }
 
 /** Whether an advanced module is switched on for this game. */
