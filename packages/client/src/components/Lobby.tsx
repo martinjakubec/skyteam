@@ -129,7 +129,11 @@ function SetupPicker({
           );
         })}
       </fieldset>
-      <p className="muted setup-note">Choose up to {maxAbilities} Special Abilities.</p>
+      <p className="muted setup-note">
+        {maxAbilities === 0
+          ? "This airport has no Special Abilities."
+          : `Choose up to ${maxAbilities} Special Abilities.`}
+      </p>
       {EXCLUSIVE_MODULE_GROUPS.map((group) => (
         <p key={group.join()} className="muted setup-note">
           {group.map((m) => MODULE_LABELS[m]).join(" or ")} — one or the other, not both.

@@ -123,8 +123,14 @@ landing checks).
   Abilities in the lobby (`room:setup`); the server builds the game from
   `scenarioForSetup`. Only modules listed in `IMPLEMENTED_MODULES` can be
   selected — add a module's id there once its rules are in the reducer.
+- **Scenario cards** (`game/catalog.ts`). `SCENARIO_TEMPLATES` lists the
+  rulebook's 21 cards by difficulty (green Routine Landing, yellow Exceptional
+  Conditions, red Elite Pilots Only, black Heroic Landing) with each card's
+  modules and ★ ability count. A card's `board` (traffic, turns, Traffic die,
+  length) is null until it's entered; only green YUL has one so far.
 - **Special Abilities** (`game/abilities.ts`), up to the scenario's limit
-  (`maxAbilities`, 2 for YUL for now):
+  (`maxAbilities`; YUL has none, so they're unavailable until a ★ card is
+  playable):
   - **Working Together** — once per round the active player offers a die; the
     other must answer with one of theirs; the values swap.
   - **Synchronisation** — once there's a die on Landing Gear and on Flaps, the

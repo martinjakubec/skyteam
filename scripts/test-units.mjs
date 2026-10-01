@@ -5,7 +5,12 @@
 import {
   ABILITY_IDS,
   DEFAULT_SETUP,
+  DIFFICULTIES,
+  EXCLUSIVE_MODULE_GROUPS,
+  MODULE_IDS,
   SCENARIOS,
+  SCENARIO_TEMPLATES,
+  YUL_MONTREAL,
   SetSetupPayload,
   conflictingModules,
   createInitialGameState,
@@ -139,10 +144,11 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("unrelated modules conflict with nothing", conflictingModules("intern").length === 0);
 
   // Special Abilities (lobby selection).
-  check("abilities accepted", ok({ scenarioId: "YUL", modules: [], abilities: ["control", "mastery"] }));
-  check("unknown ability rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["teleport"] }));
-  check("duplicate ability rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["control", "control"] }));
-  check("more abilities than the scenario allows rejected", !ok({ scenarioId: "YUL", modules: [], abilities: ["control", "mastery", "adaptation"] }));
+  check("YUL allows no abilities", !ok({ scenarioId: "YUL", modules: [], abilities: ["control"] }));
+  // YUL refuses every ability, so these assert the specific error, not just a refusal.
+  const issues = (body) => (SetSetupPayload.safeParse(body).error?.issues ?? []).map((i) => `${i.path.join(".")}: ${i.message}`).join(" | ");
+  check("unknown ability rejected", /^abilities\.0: Invalid enum value/.test(issues({ scenarioId: "YUL", modules: [], abilities: ["teleport"] })));
+  check("duplicate ability rejected", issues({ scenarioId: "YUL", modules: [], abilities: ["control", "control"] }).includes("Duplicate ability."));
   check("abilities default to none", SetSetupPayload.parse({ scenarioId: "YUL", modules: [] }).abilities.length === 0);
   check("abilities copied onto the scenario", scenarioForSetup({ scenarioId: "YUL", modules: [], abilities: ["control"] }).abilities.join() === "control");
   const legacy = createInitialGameState({ ...SCENARIOS.YUL }, "P", "C");
@@ -162,6 +168,29 @@ console.log("2c) normalizeGameState fills fields missing from older saved games"
     fixed.adaptationUsed.pilot === false && Array.isArray(fixed.trafficPlaced) && fixed.kerosene === 20);
   check("existing fields are kept", fixed.round === fresh.round && fixed.axis.pilot === fresh.axis.pilot && fixed.dice.pilot[1].value === 2);
   check("an old game can still be played", reduce(fixed, { type: "placeDie", dieId: 1, target: { kind: "engine" } }, P).state.engines.pilot === 2);
+}
+
+// 2d) Scenario templates -----------------------------------------------------
+console.log("2d) SCENARIO_TEMPLATES match the rulebook's 21 scenario cards");
+{
+  const T = SCENARIO_TEMPLATES;
+  const count = (d) => T.filter((t) => t.difficulty === d).length;
+  check("21 cards: 6 green, 7 yellow, 5 red, 3 black", T.length === 21 && count("green") === 6 && count("yellow") === 7 && count("red") === 5 && count("black") === 3);
+  check("difficulties are listed easiest first", DIFFICULTIES.map((d) => d.id).join() === "green,yellow,red,black");
+  check("template ids are unique", new Set(T.map((t) => t.id)).size === T.length);
+  check("every module is a known module id", T.every((t) => t.modules.every((m) => MODULE_IDS.includes(m))));
+  check(
+    "no template combines exclusive modules",
+    T.every((t) => EXCLUSIVE_MODULE_GROUPS.every((g) => t.modules.filter((m) => g.includes(m)).length <= 1)),
+  );
+  check("ability counts are 0, 1 or 2", T.every((t) => [0, 1, 2].includes(t.abilityCount)));
+  const get = (id) => T.find((t) => t.id === id);
+  check("green YUL: no modules, no abilities, uses the YUL board", get("green-YUL")?.modules.length === 0 && get("green-YUL").abilityCount === 0 && get("green-YUL").board === YUL_MONTREAL);
+  check("green PRG: Kerosene, ★2", get("green-PRG")?.modules.join() === "kerosene" && get("green-PRG").abilityCount === 2);
+  check("yellow ATL: Kerosene Leak, ★1", get("yellow-ATL")?.modules.join() === "keroseneLeak" && get("yellow-ATL").abilityCount === 1);
+  check("red OSL: Kerosene Leak + Ice Brakes, ★2", get("red-OSL")?.modules.join() === "keroseneLeak,iceBrakes" && get("red-OSL").abilityCount === 2);
+  check("black KEF: Wind + Ice Brakes, ★2", get("black-KEF")?.modules.join() === "wind,iceBrakes" && get("black-KEF").abilityCount === 2);
+  check("boards other than YUL are still pending", T.filter((t) => t.board === null).length === 20);
 }
 
 // 3) CORS origin check -------------------------------------------------------

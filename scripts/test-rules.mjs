@@ -7,6 +7,7 @@ import {
   DEFAULT_MAX_ABILITIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
+  SCENARIOS,
   SetSetupPayload,
   createInitialGameState,
   reduce,
@@ -883,14 +884,16 @@ console.log("27) Every combination of modules and Special Abilities");
   for (const modules of moduleCombos) {
     for (const abilities of abilitySets) {
       const name = [...modules, ...abilities].join("+") || "base";
+      // The lobby check uses YUL's own cap (no abilities); the rules are
+      // exercised for every ability set a scenario card could allow.
       const valid = SetSetupPayload.safeParse({ scenarioId: "YUL", modules, abilities }).success;
+      const yulAllows = !excluded(modules) && abilities.length <= (SCENARIOS.YUL.maxAbilities ?? DEFAULT_MAX_ABILITIES);
+      if (valid !== yulAllows) bad.push(`${name}: excluded setup was ${valid ? "accepted" : "rejected"} by the YUL lobby check`);
       if (excluded(modules) || abilities.length > DEFAULT_MAX_ABILITIES) {
         rejected++;
-        if (valid) bad.push(`${name}: excluded setup was accepted`);
         continue;
       }
       allowed++;
-      if (!valid) { bad.push(`${name}: allowed setup was rejected`); continue; }
       try {
         const quiet = playRound(init(scn({ rounds: 7, modules, abilities })), level(1, 1));
         const burn = modules.reduce((n, m) => n + EXPECT[m].quietBurn, 0);

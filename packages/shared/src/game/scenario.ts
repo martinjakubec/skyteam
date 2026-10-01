@@ -214,6 +214,7 @@ export const YUL_MONTREAL: Scenario = {
   axisSpinAt: 3,
   aeroBlueStart: AERO_BLUE_START,
   aeroOrangeStart: AERO_ORANGE_START,
+  maxAbilities: 0, // the green YUL card has no Special Abilities
 };
 
 export const DEFAULT_SCENARIO = YUL_MONTREAL;
