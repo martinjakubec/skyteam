@@ -749,6 +749,12 @@ function resolveEngines(s: GameState): void {
   // finally lands on. Moving past the airport overshoots.
   const airport = airportIndex(s.scenario);
   for (let step = 0; step < advance; step++) {
+    // Turns: every space the plane advances off (the Current Position, and the
+    // one flown through on a 2-space advance) must permit the current tilt.
+    const allowed = s.scenario.approachTrack[s.position]?.axisAllowed;
+    if (allowed && !allowed.includes(s.axis.offset)) {
+      return lose(s, `Missed the turn: the Axis must be at ${allowed.map(axisText).join(" or ")} to fly on, not ${axisText(s.axis.offset)}.`);
+    }
     if (s.airplanes[s.position] > 0) {
       return lose(s, "Collision with traffic!");
     }
@@ -992,6 +998,12 @@ function requireSlot(slot: number, count: number): void {
 
 function other(crew: Crew): Crew {
   return crew === "pilot" ? "copilot" : "pilot";
+}
+
+/** An Axis position for messages: "level", or "2 toward the Pilot" etc. */
+function axisText(offset: number): string {
+  if (offset === 0) return "level";
+  return `${Math.abs(offset)} toward the ${offset > 0 ? "Pilot" : "Co-Pilot"}`;
 }
 
 function crewLabel(crew: Crew): string {

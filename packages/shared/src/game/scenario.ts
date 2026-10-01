@@ -33,7 +33,6 @@ export const MODULE_IDS = [
   "iceBrakes",
   "realTime",
   "trafficDie",
-  "turns",
 ] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
@@ -46,7 +45,6 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
   iceBrakes: "Ice Brakes",
   realTime: "Real Time",
   trafficDie: "Traffic Die",
-  turns: "Turns",
 };
 
 /**
@@ -99,8 +97,11 @@ export interface ApproachSpace {
   /** The airport sits on exactly one space — the last one. */
   airport?: boolean;
   /**
-   * Advanced "Turns" effect: axis offsets permitted when advancing onto/through
-   * this space. Undefined means no restriction (base game). Reserved for later.
+   * Turns (an Approach Track effect printed on the scenario's board): the Axis
+   * positions permitted when the plane advances off this space — from it, or
+   * through it on a 2-space advance. Any other tilt loses. Undefined = no turn.
+   * Positions as `axis.offset`: + toward the Pilot (banking left), − toward
+   * the Co-Pilot (banking right).
    */
   axisAllowed?: number[];
 }
@@ -229,11 +230,32 @@ export const YUL_MONTREAL: Scenario = {
   maxAbilities: 0, // the green YUL card has no Special Abilities
 };
 
+/**
+ * TEMPORARY — a YUL board with turns, to try the Turns effect from the lobby
+ * until real scenario boards land. Remove with its lobby entry and the
+ * "TEMPORARY" rule test once a scenario with turns is playable.
+ */
+export const YUL_TURNS_TEST: Scenario = {
+  ...YUL_MONTREAL,
+  name: "YUL Montréal — Turns test",
+  approachTrack: [
+    { traffic: 0 }, // 0: start
+    { traffic: 1, axisAllowed: [1, 2] }, // 1: left turn
+    { traffic: 2, axisAllowed: [0, 1] }, // 2: easing out of the left turn
+    { traffic: 1 }, // 3
+    { traffic: 2, axisAllowed: [-1, -2] }, // 4: right turn
+    { traffic: 1, axisAllowed: [-1, 0, 1] }, // 5: gentle
+    { traffic: 1 }, // 6
+    { traffic: 0, airport: true }, // 7: airport
+  ],
+};
+
 export const DEFAULT_SCENARIO = YUL_MONTREAL;
 
 /** Every playable airport, keyed by the id a room's setup refers to. */
 export const SCENARIOS = {
   YUL: YUL_MONTREAL,
+  YUL_TURNS: YUL_TURNS_TEST, // TEMPORARY (see YUL_TURNS_TEST)
 } as const satisfies Record<string, Scenario>;
 export type ScenarioId = keyof typeof SCENARIOS;
 export const SCENARIO_IDS = Object.keys(SCENARIOS) as [ScenarioId, ...ScenarioId[]];

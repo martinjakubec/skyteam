@@ -137,6 +137,14 @@ landing checks).
   Abilities in the lobby (`room:setup`); the server builds the game from
   `scenarioForSetup`. Only modules listed in `IMPLEMENTED_MODULES` can be
   selected — add a module's id there once its rules are in the reducer.
+- **Turns** (an Approach Track effect: board data, not a lobby module). A space
+  with `axisAllowed` only lets the plane advance off it — from it, or through
+  it on a 2-space advance — with the Axis in one of those positions; any other
+  tilt loses ("Missed the turn"). Not advancing needs no particular tilt. The
+  track draws the permitted positions as green ▼ on a small arc. *Temporary:*
+  the lobby's "YUL Montréal — Turns test" airport (`YUL_TURNS_TEST`) exists to
+  try it until a real board with turns is entered; `AIRPORT=YUL_TURNS
+  scripts/simulate.sh` plays it.
 - **Scenario cards** (`game/catalog.ts`). `SCENARIO_TEMPLATES` lists the
   rulebook's 21 cards by difficulty (green Routine Landing, yellow Exceptional
   Conditions, red Elite Pilots Only, black Heroic Landing) with each card's

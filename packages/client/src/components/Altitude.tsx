@@ -1,14 +1,17 @@
 import type { Game } from "../types";
+import { useFollow } from "../useFollow";
 
 export function Altitude({ game }: { game: Game }) {
   const { rounds, startAltitudeFeet, feetPerRound, rerollRounds } = game.scenario;
   const rows = Array.from({ length: rounds }, (_, i) => i + 1);
+  // On phones the track scrolls sideways; keep the current round in view.
+  const track = useFollow<HTMLDivElement>(game.round - 1);
   // Same horizontal track layout as the Approach panel, in the blue altimeter
   // palette: a tag above a left-to-right row of per-round altitude cells.
   return (
     <div className="approach altitude">
       <span className="approach-tag alt-tag">Altitude ✈</span>
-      <div className="approach-track">
+      <div className="approach-track scroll" ref={track}>
         {rows.map((r) => {
           const feet = startAltitudeFeet - (r - 1) * feetPerRound;
           return (

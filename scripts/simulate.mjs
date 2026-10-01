@@ -21,12 +21,14 @@
 // Env: BASE (client URL; an IP or host.docker.internal — Vite rejects other
 // hostnames), ONLY (comma-separated combos of "+"-joined lobby labels, e.g.
 // "Intern,Kerosene+Ice Brakes"; default: all), REPEAT (games per combo,
-// default 1), OUT (dir for failure screenshots).
+// default 1), OUT (dir for failure screenshots), AIRPORT (scenario id from the
+// lobby's airport list, e.g. "YUL_TURNS"; default: the lobby's default).
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://host.docker.internal:5173";
 const REPEAT = Number(process.env.REPEAT ?? 1);
 const OUT = process.env.OUT ?? ".";
+const AIRPORT = process.env.AIRPORT;
 const ONLY = process.env.ONLY?.split(",").map((c) => c.split("+").map((m) => m.trim()).filter(Boolean));
 const MAX_MOVES = 150;
 
@@ -75,11 +77,14 @@ function score(g, crew, v, t) {
     case "axis": {
       const o = g.axis.offset;
       const theirs = g.axis[other];
+      // Aim level — or, on a turn space, at the permitted tilt nearest level.
+      const turn = g.scenario.approachTrack[g.position]?.axisAllowed;
+      const aim = turn ? turn.reduce((m, t) => (Math.abs(t) < Math.abs(m) ? t : m), turn[0]) : 0;
       if (theirs !== null) {
         const n = o + (crew === "pilot" ? v - theirs : theirs - v);
-        return Math.abs(n) >= g.scenario.axisSpinAt ? -1000 : 60 - Math.abs(n) * 15;
+        return Math.abs(n) >= g.scenario.axisSpinAt ? -1000 : 60 - Math.abs(n - aim) * 15;
       }
-      return 30 - Math.abs(v - (crew === "pilot" ? 3.5 - o : 3.5 + o)) * 6;
+      return 30 - Math.abs(v - (crew === "pilot" ? 3.5 + aim - o : 3.5 + o - aim)) * 6;
     }
     case "engine": {
       const theirs = g.engines[other];
@@ -100,6 +105,9 @@ function score(g, crew, v, t) {
       for (let k = 0; k < adv; k++) {
         const at = g.position + k;
         if (g.airplanes[at] > 0 || at === airport) return -1000;
+        // Turns: every space advanced off must allow the current tilt.
+        const turn = g.scenario.approachTrack[at]?.axisAllowed;
+        if (turn && !turn.includes(g.axis.offset)) return -1000;
       }
       const want = (airport - g.position) / Math.max(1, g.scenario.rounds - g.round);
       return 50 - Math.abs(adv - want) * 20 - leak * 4;
@@ -260,6 +268,10 @@ async function playGame(combo, tag) {
     await a.page.getByRole("button", { name: "Create a room" }).click();
     await b.page.goto(await a.page.locator(".panel input").first().inputValue());
     await b.page.getByRole("button", { name: "Ready up" }).waitFor();
+    if (AIRPORT) {
+      await a.page.locator(".setup select").selectOption(AIRPORT);
+      await b.page.waitForFunction((id) => document.querySelector(".setup select")?.value === id, AIRPORT);
+    }
     for (const m of combo) {
       await a.page.getByLabel(m, { exact: true }).click();
       await b.page.waitForFunction((m) => [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].some((l) => l.textContent === m && l.querySelector("input").checked), m);

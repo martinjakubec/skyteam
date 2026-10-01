@@ -67,7 +67,7 @@ async function main() {
   console.log("2b) Game setup: host-only, validated, broadcast in the snapshot");
   check("lobby snapshot carries the default setup", lobby.setup?.scenarioId === "YUL" && lobby.setup.modules.length === 0);
   check("guest setup change rejected", (await emit(b, "room:setup", { scenarioId: "YUL", modules: [] })).ok === false);
-  check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["turns"] })).ok === false);
+  check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["trafficDie"] })).ok === false);
   check("two Special Abilities accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [], abilities: ["control", "mastery"] })).ok === true);
   check("three Special Abilities rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [], abilities: ["control", "mastery", "adaptation"] })).ok === false);
   check("Ice Brakes + Kerosene Leak accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["keroseneLeak", "iceBrakes"] })).ok === true);

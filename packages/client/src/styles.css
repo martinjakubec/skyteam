@@ -1543,6 +1543,25 @@ ul {
   background: linear-gradient(180deg, #235c39, #143620);
   border-color: var(--green);
 }
+/* Turns: the permitted Axis positions along the bottom of a turn space. */
+.turn-marks {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  transform: translateX(-50%);
+  width: 54px;
+  height: 17px;
+  pointer-events: none;
+}
+.turn-ok {
+  fill: #57d65f;
+  stroke: #0e3d12;
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+}
+.turn-no {
+  fill: rgba(220, 230, 240, 0.35);
+}
 .appr-cell .me {
   position: absolute;
   top: 50%;
@@ -2059,6 +2078,20 @@ ul {
     min-width: 0;
     width: 100%;
     height: auto;
+  }
+}
+/* Phones: the Approach and Altitude tracks keep roomy cells and scroll
+   sideways (following the plane / current round — see useFollow) instead of
+   squeezing every space into the screen width. */
+@media (max-width: 760px) {
+  .approach-track.scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #3a4a5e transparent;
+  }
+  .approach-track.scroll > .appr-cell {
+    flex: 0 0 76px;
   }
 }
 /* Phones narrower than the board's natural width: the dial column (Speed

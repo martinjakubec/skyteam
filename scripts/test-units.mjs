@@ -127,7 +127,7 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("unknown airport rejected", !ok({ scenarioId: "XXX", modules: [] }));
   check("unknown module rejected", !ok({ scenarioId: "YUL", modules: ["jetpack"] }));
   check("implemented module accepted", ok({ scenarioId: "YUL", modules: ["kerosene"] }));
-  check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["turns"] }));
+  check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["trafficDie"] }));
   check("Kerosene Leak accepted", ok({ scenarioId: "YUL", modules: ["keroseneLeak"] }));
   check("Ice Brakes combine with Kerosene", ok({ scenarioId: "YUL", modules: ["kerosene", "iceBrakes"] }));
   check("Kerosene + Kerosene Leak together rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "keroseneLeak"] }));

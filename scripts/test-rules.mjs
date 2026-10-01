@@ -907,6 +907,15 @@ console.log("27) Every combination of modules and Special Abilities");
         if (quiet.phase !== "rolling" || quiet.round !== 2) bad.push(`${name}: quiet round didn't complete (${quiet.outcome?.reason})`);
         if (quiet.kerosene !== 20 - burn) bad.push(`${name}: kerosene ${quiet.kerosene}, expected ${20 - burn}`);
         if (quiet.coffee !== coffee) bad.push(`${name}: coffee ${quiet.coffee}, expected ${coffee}`);
+        // Turns on the start space: a level quiet round passes a turn that allows
+        // level; a hard-bank-only turn stops exactly the setups that advance
+        // (Wind's +3 tail wind takes the quiet round's speed over the blue line).
+        const turnTrack = (allowed) => [{ traffic: 0, axisAllowed: allowed }, { traffic: 0, airport: true }];
+        const okTurn = playRound(init(scn({ rounds: 7, modules, abilities, approachTrack: turnTrack([0]) })), level(1, 1));
+        if (okTurn.outcome) bad.push(`${name}: a turn allowing level stopped a level round (${okTurn.outcome.reason})`);
+        const hardTurn = playRound(init(scn({ rounds: 7, modules, abilities, approachTrack: turnTrack([2]) })), level(1, 1));
+        const advances = modules.includes("wind");
+        if (lostFor(hardTurn, /turn/i) !== advances) bad.push(`${name}: hard turn ${advances ? "not enforced" : "enforced without advancing"}`);
         // Real-Time: the clock runs out once the Axis and Engines are set → the round ends cleanly.
         if (modules.includes("realTime")) {
           let t = roll(init(scn({ rounds: 7, modules, abilities })), [3, 1, 6, 6], [3, 1, 6, 6]);
@@ -1053,6 +1062,60 @@ console.log("29) Real-Time: a 60-second round, time's up, pause and resume");
   check("time's up needs the module", throws(() => timeUp(roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1])), /real-time/i));
   check("time's up needs a round in play", throws(() => timeUp(rt()), /not running/i));
   check("Real-Time is selectable in the lobby", SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["realTime"] }).success);
+}
+
+// 30) Turns (Approach Track effect) ---------------------------------------------
+console.log("30) Turns: advancing needs the Axis in a permitted position");
+{
+  // Space 0: a right turn (−1/−2, banked toward the Co-Pilot), space 2: left (+1/+2, toward the Pilot).
+  const track = [{ traffic: 0, axisAllowed: [-2, -1] }, { traffic: 0 }, { traffic: 0, axisAllowed: [1, 2] }, { traffic: 0 }, { traffic: 0, airport: true }];
+  const turns = (over = {}) => init(scn({ rounds: 7, approachTrack: track, axisSpinAt: 3, ...over }));
+  // Axis pilot vs copilot sets the tilt (+ toward the Pilot); Engines set the speed.
+  const go = (s, axis, engines) => playRound(s, { pilot: [axis[0], engines[0]], copilot: [axis[1], engines[1]] });
+
+  let s = go(turns(), [3, 4], [2, 3]); // tilt −1, speed 5 → advance 1
+  check("banked as the turn allows: the plane advances", s.position === 1 && !s.outcome);
+  s = go(turns(), [3, 3], [2, 3]); // level, speed 5
+  check("level through a right turn: lost", lostFor(s, /turn/i) && s.position === 0);
+  s = go(turns(), [4, 3], [2, 3]); // tilt +1
+  check("banked the wrong way: lost", lostFor(s, /turn/i));
+  s = turns();
+  s.axis.offset = -2;
+  s = go(s, [3, 3], [2, 3]);
+  check("an existing tilt counts even if the Axis didn't move", s.position === 1 && !s.outcome);
+  s = go(turns(), [3, 3], [1, 1]); // speed 2 → no advance
+  check("no advance: no constraint", s.position === 0 && !s.outcome && s.round === 2);
+
+  // Two spaces: both spaces flown through must allow the tilt.
+  s = turns();
+  s.position = 1;
+  s = go(s, [3, 4], [4, 5]); // tilt −1, speed 9 → advance 2 through spaces 1 and 2
+  check("advance 2: a turn on the second space flown through still counts", lostFor(s, /turn/i));
+  s = turns();
+  s.axis.offset = -1;
+  s = go(s, [3, 3], [4, 5]); // tilt −1 kept, advance 2 through 0 (right turn ✓) and 1 (free)
+  check("advance 2 through a turn and a free space", s.position === 2 && !s.outcome);
+  s = turns();
+  s.position = 1;
+  s.axis.offset = 1;
+  s = go(s, [3, 3], [2, 3]); // tilt +1, advance 1 from the free space onto the left turn
+  check("arriving on a turn space doesn't need the tilt yet", s.position === 2 && !s.outcome);
+
+  // The check uses the tilt when the Engines resolve.
+  s = roll(turns(), [3, 2, 6, 6], [4, 3, 6, 6]);
+  s = place(s, P, 2, { kind: "engine" });
+  s = place(s, C, 3, { kind: "engine" });
+  check("Engines resolved before the Axis use the tilt at that moment", lostFor(s, /turn/i));
+
+  s = playRound(readyToLand((st) => (st.scenario.approachTrack[1].axisAllowed = [2])), level(1, 1));
+  check("the landing round doesn't move: a turn on the airport space is ignored", s.phase === "won");
+
+  check("Turns are board data, not a lobby module", !SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["turns"] }).success);
+  const test = SCENARIOS.YUL_TURNS;
+  check(
+    "TEMPORARY: a YUL Turns test board is playable from the lobby",
+    !!test && test.approachTrack.some((sp) => sp.axisAllowed) && SetSetupPayload.safeParse({ scenarioId: "YUL_TURNS", modules: [] }).success,
+  );
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);
