@@ -1,5 +1,11 @@
-import type { ReactNode } from "react";
-import type { Target } from "../types";
+import { createContext, useContext, type ReactNode } from "react";
+import type { Crew, Target } from "../types";
+
+/**
+ * Answers "was this space filled by an Intern token?" for a taken slot, given
+ * the crew whose colour it shows. Provided by the Cockpit; defaults to never.
+ */
+export const InternPlacedContext = createContext<(crew: Crew, target: Target) => boolean>(() => false);
 
 export function Slot({
   taken,
@@ -34,11 +40,15 @@ export function Slot({
   // until the round resets so it's clear where the dice went. Otherwise show the
   // requirement label, or nothing once the section is deployed (green).
   const faceText = held != null ? held : green ? "" : label;
+  // A space filled by an Intern token is drawn in the Intern's colours, not the
+  // crew's. The occupant's crew is the slot's tone once it's taken.
+  const isFilledBy = useContext(InternPlacedContext);
+  const byIntern = taken && target != null && tone !== "neutral" && isFilledBy(tone === "blue" ? "pilot" : "copilot", target);
   // An empty slot with an icon shows the icon as a hint; a seated die takes over.
   const showIcon = icon != null && !taken;
   const button = (
     <button
-      className={`slot ${tone} ${green ? "green" : ""} ${taken ? "taken" : ""} ${enabled ? "open" : ""} ${dice ? "dice" : ""} ${held != null ? "held" : ""}`}
+      className={`slot ${tone} ${green ? "green" : ""} ${taken ? "taken" : ""} ${enabled ? "open" : ""} ${dice ? "dice" : ""} ${held != null ? "held" : ""} ${byIntern ? "intern" : ""}`}
       disabled={!enabled}
       onClick={onClick}
       data-open={enabled ? "1" : "0"}

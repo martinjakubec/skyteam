@@ -5,6 +5,8 @@ import {
   emptyIceBrakeSlots,
   firstPlayerForRound,
   hasModule,
+  nextInternToken,
+  placementKey,
   type GameState,
 } from "./state";
 import {
@@ -45,7 +47,8 @@ export class GameRuleError extends Error {
 export type ReduceCommand =
   | { type: "roll"; pilot: DieValue[]; copilot: DieValue[] }
   | { type: "reroll"; dieIds: number[]; values: DieValue[] }
-  | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number };
+  | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
+  | { type: "placeIntern"; target: PlacementTarget };
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -63,6 +66,8 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handleReroll(draft, command, byPlayerId);
     case "placeDie":
       return handlePlaceDie(draft, command, byPlayerId);
+    case "placeIntern":
+      return handlePlaceIntern(draft, command, byPlayerId);
     default:
       return assertNever(command);
   }
@@ -99,6 +104,9 @@ function handleRoll(
   s.keroseneSlot = null;
   // A half-filled Ice Brakes step's die is simply cleared: spent, no advance.
   s.iceBrakeSlots = emptyIceBrakeSlots();
+  s.internSlots = { pilot: null, copilot: null };
+  s.internHeld = null;
+  s.internPlaced = [];
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -129,6 +137,7 @@ function handleReroll(
   byPlayerId: PlayerId,
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("You can only reroll during placement.");
+  if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
   if (cmd.dieIds.length !== cmd.values.length) throw new GameRuleError("Invalid reroll.");
   const crew = requireCrew(s, byPlayerId);
 
@@ -191,6 +200,7 @@ function handlePlaceDie(
 ): ReduceResult {
   if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
   if (s.pendingReroll !== null) throw new GameRuleError("A reroll is in progress.");
+  if (s.internHeld) throw new GameRuleError("Place the Intern token first.");
   const crew = requireCrew(s, byPlayerId);
   if (s.turn !== crew) throw new GameRuleError("It is not your turn.");
 
@@ -202,11 +212,10 @@ function handlePlaceDie(
   // its Engine. Those dice are reserved — a non-mandatory placement is illegal
   // when the dice still in hand (this one included) are all needed to fill the
   // crew's still-open mandatory spots, otherwise a mandatory spot could be
-  // stranded. Mirrors the client's placement gating.
-  if (cmd.target.kind !== "axis" && cmd.target.kind !== "engine") {
-    const openMandatory = (s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0);
-    const diceLeft = s.dice[crew].filter((d) => !d.placed).length;
-    if (diceLeft <= openMandatory) {
+  // stranded. Mirrors the client's placement gating. Intern training is exempt:
+  // it swaps the die for a token that can fill a mandatory spot itself.
+  if (cmd.target.kind !== "axis" && cmd.target.kind !== "engine" && cmd.target.kind !== "intern") {
+    if (unplacedDice(s, crew) <= openMandatory(s, crew)) {
       throw new GameRuleError("Your remaining dice must go on the Axis and Engine.");
     }
   }
@@ -226,6 +235,10 @@ function handlePlaceDie(
   if (delta !== 0) s.log.push(`${crewLabel(crew)} used ${spend} Coffee (die → ${value}).`);
   s.placedThisRound += 1;
 
+  // Intern training: the crew now holds a token and must place it before the
+  // turn passes (or the round ends) — see handlePlaceIntern.
+  if (s.internHeld) return { state: s, description: "Intern trained — place the token." };
+
   // A mid-round effect (spin / collision / overshoot) may have ended the game.
   if (s.outcome) {
     s.phase = "lost";
@@ -239,6 +252,99 @@ function handlePlaceDie(
 
   s.turn = other(crew);
   return { state: s, description: "Die placed." };
+}
+
+/**
+ * Intern module: place the token just trained, as a die of its number for the
+ * crew that trained it. Any normal space except Concentration (and the Intern
+ * board); no Coffee. Then the turn passes — or the round ends, if that was the
+ * last die's training.
+ */
+function handlePlaceIntern(s: GameState, cmd: { target: PlacementTarget }, byPlayerId: PlayerId): ReduceResult {
+  if (s.phase !== "placement") throw new GameRuleError("The game is not awaiting dice.");
+  const crew = requireCrew(s, byPlayerId);
+  const held = s.internHeld;
+  if (!held || held.crew !== crew) throw new GameRuleError("You have no Intern token to place.");
+  checkInternTarget(s, crew, cmd.target);
+
+  applyPlacement(s, crew, held.value, cmd.target);
+  s.internPlaced.push(placementKey(crew, cmd.target));
+  s.internHeld = null;
+  s.log.push(`${crewLabel(crew)}'s Intern placed a ${held.value}.`);
+
+  if (s.outcome) {
+    s.phase = "lost";
+    return { state: s, description: lossText(s) };
+  }
+  if (s.placedThisRound >= DICE_PER_PLAYER * 2) {
+    endOfRound(s);
+    return { state: s, description: endText(s) };
+  }
+  s.turn = other(crew);
+  return { state: s, description: "Intern token placed." };
+}
+
+/** Where an Intern token may go: not Concentration or the Intern board, and —
+ *  like a die — not a free space while the crew's remaining dice are all needed
+ *  for its open Axis/Engine spots. */
+function checkInternTarget(s: GameState, crew: Crew, target: PlacementTarget): void {
+  if (target.kind === "concentration") throw new GameRuleError("An Intern token can't go on Concentration.");
+  if (target.kind === "intern") throw new GameRuleError("An Intern token can't go on the Intern board.");
+  if (target.kind !== "axis" && target.kind !== "engine" && unplacedDice(s, crew) < openMandatory(s, crew)) {
+    throw new GameRuleError("Your Intern token must go on the Axis or Engine.");
+  }
+}
+
+/**
+ * Intern module: training. Any die of a different value than the crew's next
+ * token goes on the crew's own training space (once per round); the crew takes
+ * that token and must place it at once. Training is refused if the token would
+ * have nowhere legal to go, so the game can never get stuck on it.
+ */
+function trainIntern(s: GameState, crew: Crew, value: DieValue): void {
+  if (!hasModule(s, "intern")) throw new GameRuleError("The Intern module is not in play.");
+  if (s.internSlots[crew] !== null) throw new GameRuleError("You have already trained the Intern this round.");
+  const i = nextInternToken(s, crew);
+  if (i === -1) throw new GameRuleError("The Intern is fully trained.");
+  const token = s.internTokens[i]!;
+  if (value === token) throw new GameRuleError(`The training die must differ from the next token (${token}).`);
+
+  s.internSlots[crew] = value;
+  s.internTokens[i] = null;
+  if (!tokenHasSpace(s, crew, token)) {
+    throw new GameRuleError(`The Intern's ${token} would have nowhere to go.`);
+  }
+  s.internHeld = { crew, value: token };
+  s.log.push(`${crewLabel(crew)} trained the Intern (took a ${token}).`);
+}
+
+/** Every space a crew could in principle fill, for the "nowhere to go" check. */
+const ALL_TARGETS: PlacementTarget[] = [
+  { kind: "axis" },
+  { kind: "engine" },
+  ...[0, 1].map((slot) => ({ kind: "radio" as const, slot })),
+  ...[0, 1, 2].map((slot) => ({ kind: "landingGear" as const, slot })),
+  ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps" as const, slot })),
+  ...[0, 1, 2].map((slot) => ({ kind: "brakes" as const, slot })),
+  { kind: "kerosene" },
+  ...[0, 1, 2, 3].flatMap((slot) => (["top", "bottom"] as const).map((space) => ({ kind: "iceBrakes" as const, slot, space }))),
+];
+
+/** Whether a just-trained token of `value` has at least one legal space. The
+ *  training die is still unplaced in `s`, hence the `- 1` on dice in hand. */
+function tokenHasSpace(s: GameState, crew: Crew, value: DieValue): boolean {
+  return ALL_TARGETS.some((target) => {
+    const trial = structuredClone(s);
+    const inHand = unplacedDice(trial, crew) - 1;
+    if (target.kind !== "axis" && target.kind !== "engine" && inHand < openMandatory(trial, crew)) return false;
+    try {
+      applyPlacement(trial, crew, value, target);
+      return true;
+    } catch (e) {
+      if (e instanceof GameRuleError) return false;
+      throw e;
+    }
+  });
 }
 
 // --- placement dispatch -----------------------------------------------------
@@ -263,6 +369,8 @@ function applyPlacement(s: GameState, crew: Crew, value: DieValue, target: Place
       return placeKerosene(s, crew, value);
     case "iceBrakes":
       return placeIceBrakes(s, crew, value, target.slot, target.space);
+    case "intern":
+      return trainIntern(s, crew, value);
     default:
       return assertNever(target);
   }
@@ -517,6 +625,7 @@ function evaluateLanding(s: GameState): void {
   // Ice Brakes: the marker must be past the 5 (every step done) to land at all.
   const ice = hasModule(s, "iceBrakes");
   if (ice && s.brakesDeployed < ICE_BRAKE_VALUES.length) reasons.push("ice brakes not fully deployed");
+  if (hasModule(s, "intern") && s.internTokens.some((t) => t !== null)) reasons.push("intern not fully trained");
   const brakeSteps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeValue = s.brakesDeployed > 0 ? brakeSteps[s.brakesDeployed - 1] : 0;
   const speed = s.lastSpeed ?? (s.engines.pilot ?? 0) + (s.engines.copilot ?? 0);
@@ -538,6 +647,16 @@ function lose(s: GameState, reason: string): void {
   if (s.outcome) return; // keep the first cause
   s.outcome = { result: "lost", reason };
   s.log.push(`💥 ${reason}`);
+}
+
+/** Dice still in a crew's hand this round. */
+function unplacedDice(s: GameState, crew: Crew): number {
+  return s.dice[crew].filter((d) => !d.placed).length;
+}
+
+/** The crew's Axis + Engine spots still to fill this round (0..2). */
+function openMandatory(s: GameState, crew: Crew): number {
+  return (s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0);
 }
 
 function requireCrew(s: GameState, playerId: PlayerId): Crew {

@@ -583,18 +583,96 @@ console.log("19) Ice Brakes + Kerosene Leak in one game");
   check("Ice Brakes short of the 5 still fails with the Leak on", lostFor(playRound(readyToLand(short), level(1, 1)), /ice brakes not fully deployed/));
 }
 
-// 20) Every module combination -----------------------------------------------------
+// 20) Intern module -------------------------------------------------------------------
+console.log("20) Intern: train with a die ≠ next token, place the token at once, all trained to land");
+{
+  const nscn = scn({ rounds: 7, modules: ["intern"] });
+  const initN = (tokens) => createInitialGameState(nscn, P, C, { internTokens: tokens });
+  const intern = (st, who, target) => reduce(st, { type: "placeIntern", target }, who).state;
+  const TOK = [3, 1, 5, 6, 2, 4];
+
+  let s = roll(initN(TOK), [2, 3, 1, 1], [4, 1, 6, 6]);
+  expectThrow("training die equal to the next token rejected", () => place(s, P, 3, { kind: "intern" }));
+  s = place(s, P, 2, { kind: "intern" });
+  check("Pilot takes the leftmost token and holds it", s.internTokens[0] === null && s.internHeld?.crew === "pilot" && s.internHeld.value === 3);
+  check("…the training die is spent, turn stays", s.internSlots.pilot === 2 && s.placedThisRound === 1 && s.turn === "pilot");
+  expectThrow("no die may be placed while the token is held", () => place(s, P, 1, { kind: "axis" }));
+  expectThrow("no reroll while the token is held", () => reroll(s, P, [1], [5]));
+  expectThrow("the other crew can't place it", () => intern(s, C, { kind: "axis" }));
+  expectThrow("not on Concentration", () => intern(s, P, { kind: "concentration", slot: 0 }));
+  expectThrow("not on the Intern board", () => intern(s, P, { kind: "intern" }));
+  s = intern(s, P, { kind: "radio", slot: 0 });
+  check("token placed as a 3 on the Pilot's Radio; marked as Intern-filled", s.radioPilot === 3 && s.internPlaced.includes('pilot:{"kind":"radio","slot":0}'));
+  check("then the turn passes", s.internHeld === null && s.turn === "copilot");
+  expectThrow("Co-Pilot's die equal to its next token (rightmost 4) rejected", () => place(s, C, 4, { kind: "intern" }));
+  s = place(s, C, 6, { kind: "intern" });
+  check("Co-Pilot takes the rightmost token", s.internTokens[5] === null && s.internHeld?.value === 4);
+  s = intern(s, C, { kind: "axis" });
+  check("a token can fill the Axis", s.axis.copilot === 4 && s.internPlaced.includes('copilot:{"kind":"axis"}'));
+  expectThrow("one training per crew per round", () => place(s, P, 3, { kind: "intern" }));
+
+  // The 8th die trains: the round only ends once the token is placed.
+  let e = roll(initN(TOK), [1, 1, 6, 6], [1, 1, 6, 6]);
+  e = place(e, P, 1, { kind: "axis" });
+  e = place(e, C, 1, { kind: "axis" });
+  e = place(e, P, 1, { kind: "engine" });
+  e = place(e, C, 1, { kind: "engine" });
+  e = place(e, P, 6, { kind: "radio", slot: 0 });
+  e = place(e, C, 6, { kind: "radio", slot: 0 });
+  e = place(e, P, 6, { kind: "concentration", slot: 0 });
+  e = place(e, C, 6, { kind: "intern" }); // 8th die; takes the 4
+  check("8th die trained: round waits for the token", e.round === 1 && e.phase === "placement" && e.internHeld?.value === 4);
+  e = intern(e, C, { kind: "radio", slot: 1 });
+  check("…placing it ends the round", e.round === 2 && e.phase === "rolling");
+  e = roll(e, [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("next round: training spaces and Intern marks reset, trained tokens stay gone",
+    e.internSlots.pilot === null && e.internSlots.copilot === null && e.internPlaced.length === 0 && e.internTokens[5] === null);
+
+  // The token respects the Axis/Engine reservation.
+  let r = roll(initN(TOK), [1, 1, 1, 1], [2, 6, 1, 1]);
+  r = place(r, P, 1, { kind: "radio", slot: 0 });
+  r = place(r, C, 1, { kind: "radio", slot: 0 });
+  r = place(r, P, 1, { kind: "concentration", slot: 0 });
+  r = place(r, C, 2, { kind: "intern" }); // Co-Pilot: 2 dice left + the token, Axis and Engine open
+  const r2 = intern(r, C, { kind: "radio", slot: 1 });
+  check("token may take a free space while the dice left still cover Axis + Engine", r2.radioCopilot[1] === 4);
+  let r3 = roll(initN(TOK), [1, 1, 1, 1], [2, 6, 1, 1]);
+  r3.turn = "copilot";
+  r3.dice.copilot.slice(2).forEach((d) => (d.placed = true)); // Co-Pilot down to its 2 and 6
+  r3 = place(r3, C, 2, { kind: "intern" }); // 1 die left + the token, Axis and Engine open
+  expectThrow("…but not when the dice left can't", () => intern(r3, C, { kind: "radio", slot: 0 }));
+  check("…then it must fill the Axis or Engine", intern(r3, C, { kind: "axis" }).axis.copilot === 4);
+
+  // Training is refused if the token would have nowhere to go.
+  const stuck = roll(initN([1, 2, 3, 4, 5, 6]), [1, 1, 1, 1], [1, 1, 1, 2]);
+  stuck.turn = "copilot";
+  stuck.axis.copilot = 1;
+  stuck.engines.copilot = 1;
+  stuck.radioCopilot = [1, 1];
+  stuck.dice.copilot.slice(0, 3).forEach((d) => (d.placed = true));
+  expectThrow("a 6 with no legal space (Concentration excluded) can't be trained", () => place(stuck, C, 2, { kind: "intern" }));
+
+  expectThrow("rejected when the module is not in play", () => place(roll(init(scn({ rounds: 7 })), [2, 1, 1, 1], [1, 1, 1, 1]), P, 2, { kind: "intern" }));
+
+  // Landing.
+  const withIntern = (left) => (st) => ((st.scenario.modules = ["intern"]), (st.internTokens = [null, null, null, null, null, left]));
+  check("untrained token at landing -> lost", lostFor(playRound(readyToLand(withIntern(5)), level(1, 1)), /intern not fully trained/));
+  check("fully trained -> landed", playRound(readyToLand(withIntern(null)), level(1, 1)).phase === "won");
+}
+
+// 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play
 // a quiet round with the burns adding up, and land; every combination holding an
 // excluded pair must be rejected. A new module without an entry fails loudly,
 // so it can't skip this matrix.
-console.log("20) Every combination of implemented modules");
+console.log("21) Every combination of implemented modules");
 {
   const EXPECT = {
     kerosene: { quietBurn: 6, prep: () => {} }, // empty space: -6 per round
     keroseneLeak: { quietBurn: 1, prep: () => {} }, // level(1,1): Engines equal, leak 1
     iceBrakes: { quietBurn: 0, prep: (st) => (st.brakesDeployed = 4) }, // must be past the 5
+    intern: { quietBurn: 0, prep: (st) => (st.internTokens = st.internTokens.map(() => null)) }, // all trained
   };
   const missing = IMPLEMENTED_MODULES.filter((m) => !EXPECT[m]);
   check(`every implemented module has matrix expectations${missing.length ? ` (missing: ${missing})` : ""}`, missing.length === 0);

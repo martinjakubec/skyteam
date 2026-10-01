@@ -52,7 +52,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes"];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes", "intern"];
 
 /**
  * Modules that can't be played together — at most one per group. Kerosene Leak
@@ -65,6 +65,13 @@ export const EXCLUSIVE_MODULE_GROUPS: readonly (readonly ModuleId[])[] = [["kero
 export function conflictingModules(id: ModuleId): ModuleId[] {
   return EXCLUSIVE_MODULE_GROUPS.filter((g) => g.includes(id)).flatMap((g) => g.filter((m) => m !== id));
 }
+
+/**
+ * Intern module: tokens dealt face-up in a random row on the Intern board. Each
+ * crew trains from its own end (Pilot left, Co-Pilot right); any left at
+ * landing loses the game.
+ */
+export const INTERN_TOKEN_COUNT = 6;
 
 /** Kerosene module: the marker starts here; reaching 0 (the empty space) loses. */
 export const KEROSENE_START = 20;

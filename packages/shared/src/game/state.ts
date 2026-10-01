@@ -1,9 +1,10 @@
-import type { PlayerId } from "../protocol";
+import type { PlacementTarget, PlayerId } from "../protocol";
 import {
   BRAKE_VALUES,
   CONCENTRATION_SLOTS,
   FLAPS_COUNT,
   ICE_BRAKE_VALUES,
+  INTERN_TOKEN_COUNT,
   KEROSENE_START,
   LANDING_GEAR_COUNT,
   RADIO_COPILOT_SLOTS,
@@ -103,6 +104,13 @@ export interface GameState {
   // space. Both need the step's value for the marker to pass it.
   iceBrakeSlots: { top: DieValue | null; bottom: { value: DieValue; crew: Crew } | null }[];
 
+  // --- Intern module (empty / unused unless scenario.modules includes "intern") ---
+  internTokens: (DieValue | null)[]; // face-up tokens left to right; null = trained
+  internSlots: Record<Crew, DieValue | null>; // each crew's training die this round
+  // A crew has just trained and must place this token before anything else happens.
+  internHeld: { crew: Crew; value: DieValue } | null;
+  internPlaced: string[]; // placementKey()s of spaces filled by Intern tokens this round
+
   coffee: number; // 0..MAX_COFFEE
   rerollTokens: number;
   // A joint reroll is in flight: the active player has rerolled and we are now
@@ -134,7 +142,11 @@ export function createInitialGameState(
   scenario: Scenario,
   pilotId: PlayerId,
   copilotId: PlayerId,
+  /** Server-supplied randomness for setup: the Intern tokens' shuffled order
+   *  (defaults to 1..6 in order — deterministic, for tests). */
+  setup: { internTokens?: DieValue[] } = {},
 ): GameState {
+  const internOn = scenario.modules?.includes("intern") ?? false;
   return {
     scenario,
     pilotId,
@@ -164,6 +176,12 @@ export function createInitialGameState(
     kerosene: KEROSENE_START,
     keroseneSlot: null,
     iceBrakeSlots: emptyIceBrakeSlots(),
+    internTokens: internOn
+      ? (setup.internTokens ?? (Array.from({ length: INTERN_TOKEN_COUNT }, (_, i) => i + 1) as DieValue[]))
+      : [],
+    internSlots: { pilot: null, copilot: null },
+    internHeld: null,
+    internPlaced: [],
     coffee: 0,
     rerollTokens: 0,
     pendingReroll: null,
@@ -175,6 +193,25 @@ export function createInitialGameState(
 /** One empty `{ top, bottom }` per Ice Brakes step. */
 export function emptyIceBrakeSlots(): GameState["iceBrakeSlots"] {
   return ICE_BRAKE_VALUES.map(() => ({ top: null, bottom: null }));
+}
+
+/**
+ * Stable key for one board space, as filled by `crew`. Axis, Engine and Radio
+ * exist once per crew, so the crew is part of their key; every other space is
+ * unique on the board. Marks spaces filled by Intern tokens (`internPlaced`).
+ */
+export function placementKey(crew: Crew, target: PlacementTarget): string {
+  const perCrew = target.kind === "axis" || target.kind === "engine" || target.kind === "radio";
+  return `${perCrew ? `${crew}:` : ""}${JSON.stringify(target)}`;
+}
+
+/** Index of the Intern token `crew` would take next (Pilot: leftmost, Co-Pilot:
+ *  rightmost remaining), or -1 when all are trained. */
+export function nextInternToken(state: GameState, crew: Crew): number {
+  const t = state.internTokens;
+  if (crew === "pilot") return t.findIndex((v) => v !== null);
+  for (let i = t.length - 1; i >= 0; i--) if (t[i] !== null) return i;
+  return -1;
 }
 
 /** Whether an advanced module is switched on for this game. */

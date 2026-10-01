@@ -45,6 +45,8 @@ export const PlacementTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("kerosene") }),
   // Ice Brakes module: step 0..3 (values 2..5); top = Pilot only, bottom = either crew.
   z.object({ kind: z.literal("iceBrakes"), slot: z.number().int().min(0).max(3), space: z.enum(["top", "bottom"]) }),
+  // Intern module: the placing crew's own training space.
+  z.object({ kind: z.literal("intern") }),
 ]);
 export type PlacementTarget = z.infer<typeof PlacementTarget>;
 
@@ -56,6 +58,13 @@ export const GameCommand = z.discriminatedUnion("type", [
     target: PlacementTarget,
     /** Net Coffee modifier applied to the die's value (±1 per token spent). */
     coffeeDelta: z.number().int().min(-5).max(5).optional(),
+  }),
+  z.object({
+    /** Intern module: place the token you just trained, like a die of its
+     *  number (any normal space except Concentration / the Intern board; no
+     *  Coffee). Your turn passes once it's placed. */
+    type: z.literal("placeIntern"),
+    target: PlacementTarget,
   }),
   z.object({
     type: z.literal("reroll"),

@@ -645,25 +645,23 @@ ul {
 }
 
 /* ---- Main deck ---- */
+/* Shared modules (Concentration, Intern) stacked and centred; each is a
+   single-panel module like the crew-rail ones. */
 .deck {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+}
+.deck .module {
+  width: 100%;
+  max-width: 520px;
 }
 .rail {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
 }
-.center-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  border-radius: 16px;
-  padding: 0.85rem;
-  width: 100%;
-  max-width: 520px;
-}
-
 /* ---- Module shell ---- */
 .module {
   background: rgba(0, 0, 0, 0.2);
@@ -673,7 +671,8 @@ ul {
   padding: 0.4rem 0.55rem 0.45rem;
   color: var(--ink);
 }
-.rail .module {
+.rail .module,
+.deck .module {
   background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border: 1px solid var(--panel-edge);
   border-top-color: rgba(255, 255, 255, 0.28);
@@ -1003,6 +1002,23 @@ ul {
   opacity: 1;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
 }
+
+/* A space filled by an Intern token takes the Intern's cream token colours
+   instead of the crew's blue/orange — whatever kind of space it is (seated-die
+   spaces, Gear/Flaps "held" spaces, plain Brakes). Selectors match or beat the
+   crew-colour rules' specificity and come after them. */
+.slot.dice.taken.intern,
+.slot.held.intern,
+.slot.taken.intern:not(.dice) {
+  background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
+  border: 2px solid #8d8466;
+}
+.slot.dice.taken.intern .slot-face,
+.slot.held.intern .slot-face,
+.slot.taken.intern:not(.dice) .slot-face {
+  color: #1e2a12;
+  text-shadow: none;
+}
 /* A legal target during selection/drag: a steady yellow border, no pulsing */
 .slot.open {
   cursor: pointer;
@@ -1018,6 +1034,64 @@ ul {
     box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 211, 77, 0.25);
   }
 }
+/* ---- Intern module: training space · token row · training space ---- */
+.intern {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.intern-tokens {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+/* Face-up Intern tokens: little cream dice — the same build as the tray die
+   (rounded square, bevel shadows) and the held Intern die. They shrink to fit
+   narrow screens. */
+.intern-token {
+  --die-bevel: inset 0 2px 0 rgba(255, 255, 255, 0.7), inset 0 -3px 5px rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.4);
+  flex: 0 1 40px;
+  min-width: 0;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 25%; /* 10px at full size, like the 40px held token */
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  color: #1e2a12;
+  background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
+  border: 2px solid #8d8466;
+  box-shadow: var(--die-bevel);
+}
+.intern-token.gone {
+  background: rgba(0, 0, 0, 0.18);
+  border: 2px dashed rgba(0, 0, 0, 0.3);
+  box-shadow: none;
+}
+/* Each crew's next token (the one nearest its side) gets its colour ring. */
+.intern-token.next-pilot {
+  box-shadow: 0 0 0 3px var(--blue), var(--die-bevel);
+}
+.intern-token.next-copilot {
+  box-shadow: 0 0 0 3px var(--orange), var(--die-bevel);
+}
+.intern-token.next-pilot.next-copilot {
+  box-shadow: 0 0 0 3px var(--blue), 0 0 0 6px var(--orange), var(--die-bevel);
+}
+.intern-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.6rem;
+  opacity: 0.8;
+}
+
 .coffee-count {
   font-size: 1.05rem;
   margin-left: auto;
@@ -1407,6 +1481,16 @@ ul {
   box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.4), inset 0 -4px 6px rgba(0, 0, 0, 0.4),
     0 12px 22px rgba(0, 0, 0, 0.55);
 }
+/* The Intern token while dragged: cream, a size down like in the tray. */
+.drag-die.intern {
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+  color: #1e2a12;
+  text-shadow: none;
+  background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
+  border: 2px solid #8d8466;
+}
 .drag-die.pilot {
   background: linear-gradient(155deg, #4a90d9, var(--blue-d));
 }
@@ -1424,6 +1508,20 @@ ul {
 .die.spent {
   opacity: 0.28;
 }
+/* The Intern token waiting in the tray: the Intern's cream colours, a size
+   smaller than a crew die (40px vs 50px). */
+.die.intern-die {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  color: #1e2a12;
+  background: radial-gradient(circle at 35% 30%, #fbf6e6, #d9cfae 80%);
+  border: 2px solid #8d8466;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.7), inset 0 -3px 5px rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.4);
+  align-self: center;
+}
+
 .die.mini {
   width: 20px;
   height: 20px;
@@ -1493,7 +1591,8 @@ ul {
 /* ---- Responsive ---- */
 @media (max-width: 760px) {
   /* Everything stacks; the crew rails dissolve into a 4-column strip beneath the
-     main panel — pilot radio · landing gear · flaps · co-pilot radio. */
+     dial — pilot radio · landing gear · flaps · co-pilot radio — with the
+     Concentration panel (deck) below the strip, just above the dice tray. */
   /* 1fr gutter columns on each side: full-width rows (tracks, callout, deck,
      tray) span gutter-to-gutter so they fill the screen, while the 4-module
      strip sits in the middle content columns, centred by the gutters. */
@@ -1503,8 +1602,8 @@ ul {
       "tracks  tracks tracks tracks tracks tracks"
       "dial    dial   dial   dial   dial   dial"
       "callout callout callout callout callout callout"
-      "deck    deck   deck   deck   deck   deck"
       ".       pradio gear   flaps  cradio ."
+      "deck    deck   deck   deck   deck   deck"
       "tray    tray   tray   tray   tray   tray";
     gap: 0.9rem 0.5rem;
   }
@@ -1548,9 +1647,9 @@ ul {
       "tracks  tracks  tracks tracks tracks  tracks"
       "dial    dial    dial   dial   dial    dial"
       "callout callout callout callout callout callout"
-      "deck    deck    deck   deck   deck    deck"
       ".       kero    kero   kero   kero    ."
       ".       pradio  gear   flaps  cradio  ."
+      "deck    deck    deck   deck   deck    deck"
       "tray    tray    tray   tray   tray    tray";
     gap: 0.9rem 0.5rem;
   }

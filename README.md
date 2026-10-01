@@ -108,7 +108,10 @@ landing checks).
   Leak** (played instead of Kerosene: no die space; the Engine dice burn their
   difference + 1 as soon as both are placed), and **Ice Brakes** (replace the
   Brakes: steps 2 → 5, each needing a same-value pair — Pilot on top, either
-  crew below — in one round; the marker must be past the 5 to land).
+  crew below — in one round; the marker must be past the 5 to land), and
+  **Intern** (train with a die ≠ your next token to take it — Pilot from the
+  left, Co-Pilot from the right — then place it at once like a die of its
+  number, not on Concentration, no Coffee; all 6 trained to land).
 - **Game setup.** The host picks the airport (`SCENARIOS`) and modules in the
   lobby (`room:setup`); the server builds the game from `scenarioForSetup`. Only
   modules listed in `IMPLEMENTED_MODULES` can be selected — add a module's id

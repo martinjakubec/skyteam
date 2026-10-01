@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { ICE_BRAKE_VALUES, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
+import { ICE_BRAKE_VALUES, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label, previewModule } from "../util";
 import {
@@ -14,11 +14,15 @@ import { Approach } from "./Approach";
 import { BrakesGauge } from "./BrakesGauge";
 import { Headset } from "./icons";
 import { IceBrakes } from "./IceBrakes";
+import { Intern } from "./Intern";
 import { Kerosene } from "./Kerosene";
 import { Module } from "./Module";
-import { Slot } from "./Slot";
+import { InternPlacedContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
+
+/** Selection/drag id for the held Intern token (crew dice are 0..3). */
+const INTERN_TOKEN = -1;
 
 export function Cockpit({
   snapshot,
@@ -35,6 +39,10 @@ export function Cockpit({
         ? "copilot"
         : null;
   const myTurn = myCrew !== null && game.turn === myCrew && game.phase === "placement";
+  // Intern: a crew that has just trained holds a token it must place before
+  // anything else. While it's mine, it's the only thing I can place.
+  const internHeld = game.internHeld ?? null;
+  const internHeldMine = internHeld !== null && internHeld.crew === myCrew;
 
   const [selected, setSelected] = useState<number | null>(null);
   const [coffeeDelta, setCoffeeDelta] = useState(0);
@@ -47,7 +55,27 @@ export function Cockpit({
   const myDice = myCrew ? game.dice[myCrew] : [];
   const oppDice = myCrew ? game.dice[myCrew === "pilot" ? "copilot" : "pilot"] : [];
   const selDie = myDice.find((d) => d.id === selected && !d.placed);
-  const selValue = selDie?.value !== undefined ? clamp(selDie.value + coffeeDelta, 1, 6) : null;
+  // The held Intern token is selected via the INTERN_TOKEN sentinel id; it
+  // places at face value (no Coffee).
+  const selValue =
+    selected === INTERN_TOKEN
+      ? internHeldMine
+        ? internHeld.value
+        : null
+      : selDie?.value !== undefined
+        ? clamp(selDie.value + coffeeDelta, 1, 6)
+        : null;
+
+  // The token is auto-selected the moment it's trained, so its legal spaces
+  // light up straight away; drop the selection once it's placed.
+  useEffect(() => {
+    if (internHeldMine) {
+      setSelected(INTERN_TOKEN);
+      setCoffeeDelta(0);
+    } else {
+      setSelected((s) => (s === INTERN_TOKEN ? null : s));
+    }
+  }, [internHeldMine]);
 
   // The server prompts the *other* crew via pendingReroll. iMustRespond = it's my
   // turn to reroll-or-decline; waitingForReroll = I initiated and am waiting.
@@ -65,7 +93,8 @@ export function Cockpit({
 
   const place = (target: Target) => {
     if (selected === null) return;
-    onCommand({ type: "placeDie", dieId: selected, target, coffeeDelta: coffeeDelta || undefined });
+    if (selected === INTERN_TOKEN) onCommand({ type: "placeIntern", target });
+    else onCommand({ type: "placeDie", dieId: selected, target, coffeeDelta: coffeeDelta || undefined });
     setSelected(null);
     setCoffeeDelta(0);
   };
@@ -94,6 +123,26 @@ export function Cockpit({
   // but no die space — the Engine dice drive the burn.
   const leakOn = (game.scenario.modules?.includes("keroseneLeak") ?? false) || previewModule("keroseneLeak");
   const keroseneOn = keroseneInPlay || previewModule("kerosene") || leakOn;
+  // Intern sits under Concentration. Dev `?preview=intern` (module not in play)
+  // shows sample tokens with the training spaces disabled.
+  const internInPlay = game.scenario.modules?.includes("intern") ?? false;
+  const internOn = internInPlay || previewModule("intern");
+  const internTokens = internInPlay ? game.internTokens : [3, 1, 5, 6, 2, 4];
+  // My next token: the Pilot trains from the left, the Co-Pilot from the right.
+  const myNextToken =
+    myCrew === "copilot" ? [...internTokens].reverse().find((v) => v !== null) : internTokens.find((v) => v !== null);
+  // Training: my own space, once per round, with a die that differs from my
+  // next token. Exempt from the mandatory reservation — the token it yields can
+  // fill the Axis/Engine itself. Never while a token is in hand.
+  const canTrain = (crew: Crew) =>
+    crew === myCrew &&
+    !internHeld &&
+    can(internInPlay && game.internSlots[crew] === null && myNextToken != null) &&
+    activeValue !== myNextToken;
+  // Spaces filled by Intern tokens this round render in the Intern's colours.
+  const internPlaced = new Set(internInPlay ? game.internPlaced : []);
+  const filledByIntern = (crew: Crew, target: Target) => internPlaced.has(placementKey(crew, target));
+
   // Ice Brakes replaces the Brakes row (dev `?preview=` shows it disabled).
   const iceInPlay = game.scenario.modules?.includes("iceBrakes") ?? false;
   const iceOn = iceInPlay || previewModule("iceBrakes");
@@ -119,6 +168,8 @@ export function Cockpit({
   // free, and I'm either holding a selected die or mid-drag.
   const can = (free: boolean) =>
     myTurn && (selected !== null || dragging) && free && game.pendingReroll === null && !rerollMode;
+  // Holding (selected or dragging) the Intern token rather than a die.
+  const holdingToken = selected === INTERN_TOKEN || drag?.dieId === INTERN_TOKEN;
 
   // Mandatory spots: every round a crew must seat one die on its Axis and one on
   // its Engine. Those dice are reserved — when the dice still in hand are all
@@ -130,7 +181,9 @@ export function Cockpit({
   const openMandatory =
     myCrew === null ? 0 : (game.axis[myCrew] === null ? 1 : 0) + (game.engines[myCrew] === null ? 1 : 0);
   const diceLeft = myDice.filter((d) => !d.placed).length;
-  const lockToMandatory = diceLeft <= openMandatory;
+  // A die in hand counts itself among `diceLeft`; the Intern token doesn't, so
+  // it may go on a free space as long as the dice left can still cover them.
+  const lockToMandatory = holdingToken ? diceLeft < openMandatory : diceLeft <= openMandatory;
   // Axis/Engine keep using `can` (always legal when free); every non-mandatory
   // space additionally requires that we're not holding the last dice in reserve.
   const canFree = (free: boolean) => can(free) && !lockToMandatory;
@@ -234,15 +287,20 @@ export function Cockpit({
     const slot = validSlotUnder(e.clientX, e.clientY);
     if (slot?.dataset.target) {
       const target = JSON.parse(slot.dataset.target) as Target;
-      onCommand({ type: "placeDie", dieId: g.dieId, target, coffeeDelta: g.coffee || undefined });
+      if (g.dieId === INTERN_TOKEN) onCommand({ type: "placeIntern", target });
+      else onCommand({ type: "placeDie", dieId: g.dieId, target, coffeeDelta: g.coffee || undefined });
       setSelected(null);
       setCoffeeDelta(0);
     } else {
-      setSelected(null); // dropped nowhere valid — the die stays put in the tray
+      // Dropped nowhere valid: a die returns to the tray unselected; the Intern
+      // token stays selected, since it must be placed next anyway.
+      setSelected(g.dieId === INTERN_TOKEN ? INTERN_TOKEN : null);
     }
   };
   const startDrag = (e: React.PointerEvent, die: { id: number; value?: number; placed?: boolean }) => {
-    if (die.placed || !myTurn || !myCrew || game.pendingReroll !== null || rerollMode) return;
+    // While an Intern token is in hand, only the token itself can be dragged.
+    const isToken = die.id === INTERN_TOKEN;
+    if (die.placed || !myTurn || !myCrew || game.pendingReroll !== null || rerollMode || internHeldMine !== isToken) return;
     e.preventDefault();
     const base = die.value ?? 1;
     const coffee = selected === die.id ? coffeeDelta : 0;
@@ -260,90 +318,94 @@ export function Cockpit({
   };
 
   return (
-    <div className={`board${keroseneOn ? " with-kerosene" : ""}`}>
-      {/* Full-width status tracks above the console: approach path + altitude */}
-      <section className="tracks">
-        <Approach game={game} airportIdx={airportIdx} />
-        <Altitude game={game} />
-      </section>
+    <InternPlacedContext.Provider value={filledByIntern}>
+      <div className={`board${keroseneOn ? " with-kerosene" : ""}`}>
+        {/* Full-width status tracks above the console: approach path + altitude */}
+        <section className="tracks">
+          <Approach game={game} airportIdx={airportIdx} />
+          <Altitude game={game} />
+        </section>
 
-      {/* Central dial-stack. The crew rails are placed after the deck (see below)
-          so they can reflow beneath the main panel on narrow screens; on wide
-          screens the .board grid areas position them back beside the dial. */}
-      <div className="dial-stack">
-          <div className="axis-cluster">
-            {/* Elbow leads: a diagonal up from each dial rim, then a horizontal
-                stub into the inner edge of the (top-aligned) dice space. */}
-            <span className="axis-lead h-left" aria-hidden="true" />
-            <span className="axis-lead d-left" aria-hidden="true" />
-            <span className="axis-lead h-right" aria-hidden="true" />
-            <span className="axis-lead d-right" aria-hidden="true" />
-            <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
-            <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
-            <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
-          </div>
-          <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
-          <div className="engines">
-            <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
-            <span className="engine-plus" aria-hidden="true">+</span>
-            <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
-          </div>
-          <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />
-          {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
-              between them signal the mandatory order. Fine leads tie each space
-              up to the brake gauge (left "[", middle "|", right "]"). The Ice
-              Brakes module swaps in its own 2 → 5 pair-of-spaces track. */}
-          {iceOn ? (
-            <IceBrakes
-              steps={game.iceBrakeSlots}
-              deployed={game.brakesDeployed}
-              canTop={(i) => iceOpen(i, "top")}
-              canBottom={(i) => iceOpen(i, "bottom")}
-              onTop={(i) => place({ kind: "iceBrakes", slot: i, space: "top" })}
-              onBottom={(i) => place({ kind: "iceBrakes", slot: i, space: "bottom" })}
-            />
-          ) : (
-            <div className="slots-row brakes">
-              <span className="brake-leads" aria-hidden="true">
-                <span className="bus" />
-                <span className="up" />
-                <span className="drop left" />
-                <span className="drop mid" />
-                <span className="drop right" />
-              </span>
-              {game.brakeSlots.map((taken, i) => (
-                <Fragment key={i}>
-                  {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
-                  <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
-                </Fragment>
-              ))}
+        {/* Central dial-stack. The crew rails are placed after the deck (see below)
+            so they can reflow beneath the main panel on narrow screens; on wide
+            screens the .board grid areas position them back beside the dial. */}
+        <div className="dial-stack">
+            <div className="axis-cluster">
+              {/* Elbow leads: a diagonal up from each dial rim, then a horizontal
+                  stub into the inner edge of the (top-aligned) dice space. */}
+              <span className="axis-lead h-left" aria-hidden="true" />
+              <span className="axis-lead d-left" aria-hidden="true" />
+              <span className="axis-lead h-right" aria-hidden="true" />
+              <span className="axis-lead d-right" aria-hidden="true" />
+              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "pilot" && game.axis.pilot === null)} />
+              <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
+              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis" })} enabled={can(myCrew === "copilot" && game.axis.copilot === null)} />
             </div>
-          )}
-        </div>
+            <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
+            <div className="engines">
+              <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "pilot" && game.engines.pilot === null)} />
+              <span className="engine-plus" aria-hidden="true">+</span>
+              <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
+            </div>
+            <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />
+            {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
+                between them signal the mandatory order. Fine leads tie each space
+                up to the brake gauge (left "[", middle "|", right "]"). The Ice
+                Brakes module swaps in its own 2 → 5 pair-of-spaces track. */}
+            {iceOn ? (
+              <IceBrakes
+                steps={game.iceBrakeSlots}
+                deployed={game.brakesDeployed}
+                canTop={(i) => iceOpen(i, "top")}
+                canBottom={(i) => iceOpen(i, "bottom")}
+                onTop={(i) => place({ kind: "iceBrakes", slot: i, space: "top" })}
+                onBottom={(i) => place({ kind: "iceBrakes", slot: i, space: "bottom" })}
+              />
+            ) : (
+              <div className="slots-row brakes">
+                <span className="brake-leads" aria-hidden="true">
+                  <span className="bus" />
+                  <span className="up" />
+                  <span className="drop left" />
+                  <span className="drop mid" />
+                  <span className="drop right" />
+                </span>
+                {game.brakeSlots.map((taken, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
+                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+                  </Fragment>
+                ))}
+              </div>
+            )}
+          </div>
 
-      <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
-        {game.outcome
-          ? game.outcome.result === "won"
-            ? "Smooth landing — the passengers applaud."
-            : game.outcome.reason
-          : waitingForReroll
-            ? `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`
-            : iMustRespond
-              ? "Reroll offered — pick any of your dice to reroll, or Skip."
-              : myCrew
-                ? myTurn
-                  ? rerollMode
-                    ? "Reroll — pick the dice to reroll, then Confirm."
-                    : "Your turn — drag a die onto a panel space."
-                  : `Silence. Waiting for the ${label(game.turn)}…`
-                : "Spectating the approach."}
-      </p>
+        <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
+          {game.outcome
+            ? game.outcome.result === "won"
+              ? "Smooth landing — the passengers applaud."
+              : game.outcome.reason
+            : internHeld
+              ? internHeldMine
+                ? `Intern trained — place the ${internHeld.value} token on a panel space.`
+                : `Waiting for the ${label(internHeld.crew)} to place the Intern token…`
+              : waitingForReroll
+                ? `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`
+                : iMustRespond
+                  ? "Reroll offered — pick any of your dice to reroll, or Skip."
+                  : myCrew
+                    ? myTurn
+                      ? rerollMode
+                        ? "Reroll — pick the dice to reroll, then Confirm."
+                        : "Your turn — drag a die onto a panel space."
+                      : `Silence. Waiting for the ${label(game.turn)}…`
+                    : "Spectating the approach."}
+        </p>
 
-      {/* Main deck */}
-      <section className="deck">
-        {/* Center panel */}
-        <div className="center-panel material riveted">
-          <Module title="Concentration" tone="split">
+        {/* Main deck: shared modules, styled like the crew-rail modules (one
+            panel each). Intern (module) sits under Concentration. */}
+        <section className="deck">
+          <Module title="Concentration" tone="split" className="mod-concentration">
             <div className="slots-row concentration">
               {game.concentrationSlots.map((cell, i) => {
                 // A space is empty when its cell is null *or* undefined — treat both
@@ -362,7 +424,7 @@ export function Cockpit({
                     taken={filled}
                     label={filled ? face(cell.value) : "☕"}
                     onClick={() => place({ kind: "concentration", slot: i })}
-                    enabled={canFree(!filled)}
+                    enabled={canFree(!filled) && !holdingToken}
                   />
                 );
               })}
@@ -371,168 +433,187 @@ export function Cockpit({
               </span>
             </div>
           </Module>
-        </div>
-      </section>
+          {internOn && (
+            <Intern
+              tokens={internTokens}
+              trainers={game.internSlots}
+              canTrain={canTrain}
+              onTrain={() => place({ kind: "intern" })}
+            />
+          )}
+        </section>
 
-      {/* Crew rails. In DOM they follow the deck so they stack under the main
-          panel on narrow screens; on wide screens the .board grid places the
-          pilot rail left of the dial and the co-pilot rail right of it. */}
-      <div className="rail rail-pilot">
-        {/* Kerosene runs down the left of the Radio + Landing Gear (rail grid:
-            see .with-kerosene). Either crew may use it — except with the
-            Leak, where the space is blocked. */}
-        {keroseneOn && (
-          <Kerosene
-            leak={leakOn}
-            level={game.kerosene}
-            seated={game.keroseneSlot}
-            enabled={canFree(keroseneInPlay && game.keroseneSlot == null)}
-            onClick={() => place({ kind: "kerosene" })}
+        {/* Crew rails. In DOM they follow the deck so they stack under the main
+            panel on narrow screens; on wide screens the .board grid places the
+            pilot rail left of the dial and the co-pilot rail right of it. */}
+        <div className="rail rail-pilot">
+          {/* Kerosene runs down the left of the Radio + Landing Gear (rail grid:
+              see .with-kerosene). Either crew may use it — except with the
+              Leak, where the space is blocked. */}
+          {keroseneOn && (
+            <Kerosene
+              leak={leakOn}
+              level={game.kerosene}
+              seated={game.keroseneSlot}
+              enabled={canFree(keroseneInPlay && game.keroseneSlot == null)}
+              onClick={() => place({ kind: "kerosene" })}
+            />
+          )}
+          <Module title="Radio" tone="blue" className="mod-radio-pilot">
+            <div className="slots-row">
+              <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
+            </div>
+          </Module>
+          <Module title="Landing Gear" tone="blue" className="mod-gear">
+            <div className="slots-col">
+              {game.gearGreen.map((green, i) => (
+                <Slot
+                  key={i}
+                  tone="blue"
+                  green={green}
+                  target={{ kind: "landingGear", slot: i }}
+                  taken={game.gearSlots[i] !== null}
+                  held={game.gearSlots[i]}
+                  label={GEAR_LABEL[i]}
+                  onClick={() => place({ kind: "landingGear", slot: i })}
+                  enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+                />
+              ))}
+            </div>
+          </Module>
+        </div>
+        <div className="rail rail-copilot">
+          <Module title="Radio" tone="orange" className="mod-radio-copilot">
+            <div className="slots-col">
+              {game.radioCopilot.map((val, i) => (
+                <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
+              ))}
+            </div>
+          </Module>
+          <Module title="Flaps" tone="orange" className="mod-flaps">
+            {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
+            <div className="slots-col">
+              {game.flapsGreen.map((green, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <span className="slot-arrow-v" aria-hidden="true" />}
+                  <Slot
+                    tone="orange"
+                    green={green}
+                    target={{ kind: "flaps", slot: i }}
+                    taken={game.flapSlots[i] !== null}
+                    held={game.flapSlots[i]}
+                    label={FLAP_LABEL[i]}
+                    onClick={() => place({ kind: "flaps", slot: i })}
+                    enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                  />
+                </Fragment>
+              ))}
+            </div>
+          </Module>
+        </div>
+
+        {/* Dice tray + log */}
+        <section className="tray">
+          {myCrew && (
+            <div className="hand">
+              <label>
+                Your dice ({label(myCrew)}){selValue !== null && ` — placing as ${selValue}`}
+              </label>
+              <div className="dice">
+                {/* A freshly trained Intern token must be placed before any die:
+                    it leads the tray, in the Intern's colours, a size down. */}
+                {internHeldMine && (
+                  <button
+                    className={`die intern-die ${selected === INTERN_TOKEN ? "sel" : ""} ${drag?.dieId === INTERN_TOKEN ? "lifted" : ""}`}
+                    title="Intern token — place it now (not on Concentration; no Coffee)"
+                    onPointerDown={(e) => startDrag(e, { id: INTERN_TOKEN, value: internHeld.value })}
+                  >
+                    {internHeld.value}
+                  </button>
+                )}
+                {myDice.map((d) => {
+                  const picked = rerollActive && rerollPick.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
+                      disabled={rerollActive ? d.placed : d.placed || !myTurn || game.pendingReroll !== null || internHeldMine}
+                      onPointerDown={rerollActive ? undefined : (e) => startDrag(e, d)}
+                      onClick={rerollActive ? () => toggleRerollDie(d.id) : undefined}
+                    >
+                      {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
+                    </button>
+                  );
+                })}
+                <span className="opp">
+                  {label(myCrew === "pilot" ? "copilot" : "pilot")}:
+                  <span className="opp-dice">
+                    {oppDice.map((d) => (
+                      <span key={d.id} className={`die mini facedown ${d.placed ? "spent" : ""}`} />
+                    ))}
+                  </span>
+                </span>
+              </div>
+              <div className="controls">
+                {rerollActive ? (
+                  <span className="reroll-pick">
+                    <span className="muted">
+                      {iMustRespond ? "Reroll offered — pick yours" : "Pick dice to reroll"}
+                    </span>
+                    {iMustRespond ? (
+                      <button className="reroll" onClick={confirmReroll}>
+                        {rerollPick.length ? `Reroll ${rerollPick.length} 🎲` : "Skip"}
+                      </button>
+                    ) : (
+                      <>
+                        <button className="reroll" disabled={rerollPick.length === 0} onClick={confirmReroll}>
+                          Reroll {rerollPick.length} 🎲
+                        </button>
+                        <button onClick={cancelReroll}>Cancel</button>
+                      </>
+                    )}
+                  </span>
+                ) : waitingForReroll ? (
+                  <span className="muted">Waiting for the {label(game.pendingReroll!)} to reroll…</span>
+                ) : (
+                  <>
+                    {game.coffee > 0 && selDie && (
+                      <span className="coffee-ctl">
+                        <span className="muted">Coffee</span>
+                        <button disabled={!selValue || selValue <= 1 || Math.abs(coffeeDelta - 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d - 1)}>−1</button>
+                        <b>{coffeeDelta > 0 ? `+${coffeeDelta}` : coffeeDelta}</b>
+                        <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
+                      </span>
+                    )}
+                    <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
+                      Reroll 🎲 ×{game.rerollTokens}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <ul className="log">
+            {game.log.slice(-7).map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        </section>
+
+        {hoverRect && (
+          <div
+            className="drop-ring"
+            style={{ left: hoverRect.x, top: hoverRect.y, width: hoverRect.w, height: hoverRect.h }}
+            aria-hidden="true"
           />
         )}
-        <Module title="Radio" tone="blue" className="mod-radio-pilot">
-          <div className="slots-row">
-            <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0 }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0 })} enabled={canFree(myCrew === "pilot" && game.radioPilot === null)} />
-          </div>
-        </Module>
-        <Module title="Landing Gear" tone="blue" className="mod-gear">
-          <div className="slots-col">
-            {game.gearGreen.map((green, i) => (
-              <Slot
-                key={i}
-                tone="blue"
-                green={green}
-                target={{ kind: "landingGear", slot: i }}
-                taken={game.gearSlots[i] !== null}
-                held={game.gearSlots[i]}
-                label={GEAR_LABEL[i]}
-                onClick={() => place({ kind: "landingGear", slot: i })}
-                enabled={canFree(myCrew === "pilot" && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
-              />
-            ))}
-          </div>
-        </Module>
-      </div>
-      <div className="rail rail-copilot">
-        <Module title="Radio" tone="orange" className="mod-radio-copilot">
-          <div className="slots-col">
-            {game.radioCopilot.map((val, i) => (
-              <Slot key={i} tone="orange" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: i }} taken={val !== null} label={face(val)} onClick={() => place({ kind: "radio", slot: i })} enabled={canFree(myCrew === "copilot" && val === null)} />
-            ))}
-          </div>
-        </Module>
-        <Module title="Flaps" tone="orange" className="mod-flaps">
-          {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
-          <div className="slots-col">
-            {game.flapsGreen.map((green, i) => (
-              <Fragment key={i}>
-                {i > 0 && <span className="slot-arrow-v" aria-hidden="true" />}
-                <Slot
-                  tone="orange"
-                  green={green}
-                  target={{ kind: "flaps", slot: i }}
-                  taken={game.flapSlots[i] !== null}
-                  held={game.flapSlots[i]}
-                  label={FLAP_LABEL[i]}
-                  onClick={() => place({ kind: "flaps", slot: i })}
-                  enabled={canFree(myCrew === "copilot" && i === nextFlap) && valOk(FLAP_RANGES[i])}
-                />
-              </Fragment>
-            ))}
-          </div>
-        </Module>
-      </div>
-
-      {/* Dice tray + log */}
-      <section className="tray">
-        {myCrew && (
-          <div className="hand">
-            <label>
-              Your dice ({label(myCrew)}){selValue !== null && ` — placing as ${selValue}`}
-            </label>
-            <div className="dice">
-              {myDice.map((d) => {
-                const picked = rerollActive && rerollPick.includes(d.id);
-                return (
-                  <button
-                    key={d.id}
-                    className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
-                    disabled={rerollActive ? d.placed : d.placed || !myTurn || game.pendingReroll !== null}
-                    onPointerDown={rerollActive ? undefined : (e) => startDrag(e, d)}
-                    onClick={rerollActive ? () => toggleRerollDie(d.id) : undefined}
-                  >
-                    {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
-                  </button>
-                );
-              })}
-              <span className="opp">
-                {label(myCrew === "pilot" ? "copilot" : "pilot")}:
-                <span className="opp-dice">
-                  {oppDice.map((d) => (
-                    <span key={d.id} className={`die mini facedown ${d.placed ? "spent" : ""}`} />
-                  ))}
-                </span>
-              </span>
-            </div>
-            <div className="controls">
-              {rerollActive ? (
-                <span className="reroll-pick">
-                  <span className="muted">
-                    {iMustRespond ? "Reroll offered — pick yours" : "Pick dice to reroll"}
-                  </span>
-                  {iMustRespond ? (
-                    <button className="reroll" onClick={confirmReroll}>
-                      {rerollPick.length ? `Reroll ${rerollPick.length} 🎲` : "Skip"}
-                    </button>
-                  ) : (
-                    <>
-                      <button className="reroll" disabled={rerollPick.length === 0} onClick={confirmReroll}>
-                        Reroll {rerollPick.length} 🎲
-                      </button>
-                      <button onClick={cancelReroll}>Cancel</button>
-                    </>
-                  )}
-                </span>
-              ) : waitingForReroll ? (
-                <span className="muted">Waiting for the {label(game.pendingReroll!)} to reroll…</span>
-              ) : (
-                <>
-                  {game.coffee > 0 && selDie && (
-                    <span className="coffee-ctl">
-                      <span className="muted">Coffee</span>
-                      <button disabled={!selValue || selValue <= 1 || Math.abs(coffeeDelta - 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d - 1)}>−1</button>
-                      <b>{coffeeDelta > 0 ? `+${coffeeDelta}` : coffeeDelta}</b>
-                      <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
-                    </span>
-                  )}
-                  <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
-                    Reroll 🎲 ×{game.rerollTokens}
-                  </button>
-                </>
-              )}
-            </div>
+        {drag && (
+          <div className={`drag-die ${drag.dieId === INTERN_TOKEN ? "intern" : drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+            {drag.value}
           </div>
         )}
-
-        <ul className="log">
-          {game.log.slice(-7).map((line, i) => (
-            <li key={i}>{line}</li>
-          ))}
-        </ul>
-      </section>
-
-      {hoverRect && (
-        <div
-          className="drop-ring"
-          style={{ left: hoverRect.x, top: hoverRect.y, width: hoverRect.w, height: hoverRect.h }}
-          aria-hidden="true"
-        />
-      )}
-      {drag && (
-        <div className={`drag-die ${drag.crew}`} style={{ left: drag.x, top: drag.y }} aria-hidden="true">
-          {drag.value}
-        </div>
-      )}
-    </div>
+      </div>
+    </InternPlacedContext.Provider>
   );
 }
