@@ -1,4 +1,4 @@
-import type { GameState, PlayerId, RoomStatus, SeatRole } from "@skyteam/shared";
+import type { GameSetup, GameState, PlayerId, RoomStatus, SeatRole } from "@skyteam/shared";
 
 /** A seat is the durable link between a room and a player. Crucially it is NOT
  *  a socket: a socket can drop and a fresh one re-attach to the same seat —
@@ -18,6 +18,8 @@ export interface Room {
   status: RoomStatus;
   seats: Seat[];
   observers: PlayerId[];
+  /** Airport + modules for the next game; the host edits it in the lobby. */
+  setup: GameSetup;
   /** Monotonic game-command counter (also used by clients to detect gaps). */
   version: number;
   game: GameState | null;

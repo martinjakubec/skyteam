@@ -17,6 +17,7 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
       connection: s.connected ? "connected" : "disconnected",
     })),
     observerCount: room.observers.length,
+    setup: room.setup,
     version: room.version,
     game: room.game ? redactGameStateFor(room.game, viewerId) : null,
     you: { playerId: viewerId, kind, role: seat?.role },

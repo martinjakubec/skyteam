@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
+import { IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, type GameSetup } from "./game/scenario";
 
 // ---------------------------------------------------------------------------
 // Identity & enums
@@ -77,6 +78,18 @@ export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
 export const SetReadyPayload = z.object({ ready: z.boolean() });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
 
+/** Host-only lobby setting: which airport and modules the next game uses. Only
+ *  implemented modules are accepted, and each at most once. */
+export const SetSetupPayload = z.object({
+  scenarioId: z.enum(SCENARIO_IDS),
+  modules: z
+    .array(z.enum(MODULE_IDS))
+    .max(MODULE_IDS.length)
+    .refine((m) => new Set(m).size === m.length, "Duplicate module.")
+    .refine((m) => m.every((id) => IMPLEMENTED_MODULES.includes(id)), "That module is not available yet."),
+}) satisfies z.ZodType<GameSetup>;
+export type SetSetupPayload = z.infer<typeof SetSetupPayload>;
+
 export const GameCommandPayload = z.object({
   /** Client-generated id so retries (e.g. after a reconnect) are idempotent. */
   commandId: z.string().min(1),
@@ -104,6 +117,8 @@ export interface RoomSnapshot {
   hostPlayerId: PlayerId;
   seats: SeatView[];
   observerCount: number;
+  /** Airport + modules the next game will be created with (host sets it in the lobby). */
+  setup: GameSetup;
   /** Monotonic counter incremented on every applied game command. */
   version: number;
   game: GameState | null;
@@ -134,6 +149,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   "room:join": (payload: JoinRoomPayload, ack: (res: Ack) => void) => void;
   "seat:ready": (payload: SetReadyPayload, ack: (res: Ack) => void) => void;
+  "room:setup": (payload: SetSetupPayload, ack: (res: Ack) => void) => void;
   "game:start": (ack: (res: Ack) => void) => void;
   "game:reset": (ack: (res: Ack) => void) => void;
   "game:command": (payload: GameCommandPayload, ack: (res: Ack) => void) => void;

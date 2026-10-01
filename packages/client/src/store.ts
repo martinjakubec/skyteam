@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type {
   ClientToServerEvents,
   GameCommand,
+  GameSetup,
   RoomSnapshot,
   ServerToClientEvents,
 } from "@skyteam/shared";
@@ -20,6 +21,7 @@ interface GameStore {
 
   connect: (roomId: string) => void;
   setReady: (ready: boolean) => void;
+  setSetup: (setup: GameSetup) => void;
   startGame: () => void;
   resetGame: () => void;
   sendCommand: (command: GameCommand) => void;
@@ -70,6 +72,11 @@ export const useGame = create<GameStore>((set, get) => ({
 
   setReady: (ready) =>
     get().socket?.emit("seat:ready", { ready }, (res) => {
+      if (!res.ok) set({ lastError: res.error });
+    }),
+
+  setSetup: (setup) =>
+    get().socket?.emit("room:setup", setup, (res) => {
       if (!res.ok) set({ lastError: res.error });
     }),
 

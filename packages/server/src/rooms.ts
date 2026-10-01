@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { MAX_PLAYERS } from "@skyteam/shared";
+import { DEFAULT_SETUP, MAX_PLAYERS } from "@skyteam/shared";
 import type { Room } from "./types";
 import { getRoom, getRoomIdByInvite, saveRoom } from "./store";
 
@@ -19,6 +19,7 @@ export async function createRoom(hostPlayerId: string): Promise<Room> {
     status: "lobby",
     seats: [{ playerId: hostPlayerId, role: "host", ready: false, connected: false }],
     observers: [],
+    setup: structuredClone(DEFAULT_SETUP),
     version: 0,
     game: null,
     updatedAt: Date.now(),

@@ -7,7 +7,7 @@ import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
 
 export function App() {
-  const { snapshot, connected, lastError, connect, setReady, startGame, resetGame, sendCommand } =
+  const { snapshot, connected, lastError, connect, setReady, setSetup, startGame, resetGame, sendCommand } =
     useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,7 +97,7 @@ export function App() {
           {snapshot &&
             snapshot.you.kind === "player" &&
             (snapshot.status === "lobby" || snapshot.status === "ready") && (
-              <Lobby snapshot={snapshot} onReady={setReady} onStart={startGame} />
+              <Lobby snapshot={snapshot} onReady={setReady} onSetup={setSetup} onStart={startGame} />
             )}
         </>
       )}

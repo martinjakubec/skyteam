@@ -214,6 +214,46 @@ ul {
   color: #ff8a7d;
 }
 
+/* Lobby game setup (airport + modules) */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.setup-label {
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+.setup select {
+  flex: 1;
+  min-width: 0;
+  background: var(--recess);
+  color: var(--paper);
+  border: 1px solid #0c1016;
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+.setup-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.6rem;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+}
+.setup-modules label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.setup-modules input[type="checkbox"] {
+  flex: none;
+  padding: 0;
+}
+
 /* ============================ BOARD ============================ */
 /* Wide screens: a grid whose named areas place the crew rails beside the dial
    even though they come after the deck in the DOM. That DOM order is what lets

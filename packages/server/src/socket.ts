@@ -2,16 +2,17 @@ import type http from "node:http";
 import { randomInt } from "node:crypto";
 import { Server, type DefaultEventsMap, type Socket } from "socket.io";
 import {
-  DEFAULT_SCENARIO,
   DICE_PER_PLAYER,
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
   MAX_PLAYERS,
   SetReadyPayload,
+  SetSetupPayload,
   createInitialGameState,
   redactGameStateFor,
   reduce,
+  scenarioForSetup,
   type ClientToServerEvents,
   type DieValue,
   type GameCommand,
@@ -49,6 +50,7 @@ export function attachSocket(server: http.Server): IOServer {
   io.on("connection", (socket) => {
     socket.on("room:join", (payload, ack) => void onJoin(io, socket, payload, ack));
     socket.on("seat:ready", (payload, ack) => void onReady(io, socket, payload, ack));
+    socket.on("room:setup", (payload, ack) => void onSetup(io, socket, payload, ack));
     socket.on("game:start", (ack) => void onStart(io, socket, ack));
     socket.on("game:reset", (ack) => void onReset(io, socket, ack));
     socket.on("game:command", (payload, ack) => void onCommand(io, socket, payload, ack));
@@ -113,6 +115,29 @@ async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   broadcastState(io, room);
 }
 
+/** Host picks the airport/modules. Changing them un-readies the other seats so
+ *  nobody starts a game they didn't agree to. */
+async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
+  const parsed = SetSetupPayload.safeParse(payload);
+  if (!parsed.success) return ack({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid setup." });
+
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  if (room.hostPlayerId !== playerId) return ack({ ok: false, error: "Only the host can change the setup." });
+  if (room.status !== "lobby" && room.status !== "ready")
+    return ack({ ok: false, error: "The game has already started." });
+
+  if (JSON.stringify(parsed.data) !== JSON.stringify(room.setup)) {
+    room.setup = parsed.data;
+    for (const seat of room.seats) if (seat.playerId !== playerId) seat.ready = false;
+    room.status = "lobby";
+    await saveRoom(room);
+  }
+
+  ack({ ok: true });
+  broadcastState(io, room);
+}
+
 async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   const { room, playerId } = await context(socket);
   if (!room) return ack({ ok: false, error: "Not in a room." });
@@ -126,7 +151,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   room.status = "in_progress";
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
-  let game = createInitialGameState(DEFAULT_SCENARIO, pilotId, copilotId);
+  let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId);
   game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
   room.game = game;
   room.version = 0;
@@ -149,7 +174,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
 
   room.status = "in_progress";
-  let game = createInitialGameState(DEFAULT_SCENARIO, pilotId, copilotId);
+  let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId);
   game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand() }, "").state;
   room.game = game;
   room.version = 0;

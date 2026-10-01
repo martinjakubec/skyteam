@@ -29,6 +29,15 @@ The single most important file to read is `packages/server/src/socket.ts` — it
 contains the room lifecycle, command handling, and the disconnect/reconnect
 grace-timer logic.
 
+## Tests
+
+```bash
+npm test   # rules + unit suites (run inside a node:22 container; see below)
+```
+
+`scripts/validate.mjs` is an end-to-end check against a running server
+(`BASE=http://server:3001` on the compose network).
+
 ## Running it
 
 Everything runs in containers, so you don't need Node installed locally.
@@ -95,6 +104,10 @@ landing checks).
   modules (Kerosene, Wind, Intern, Ice Brakes, Traffic die, Turns…) slot into the
   named resolve/end-of-round steps and the `Scenario.modules` list without a
   rewrite. They are not implemented yet.
+- **Game setup.** The host picks the airport (`SCENARIOS`) and modules in the
+  lobby (`room:setup`); the server builds the game from `scenarioForSetup`. Only
+  modules listed in `IMPLEMENTED_MODULES` can be selected — add a module's id
+  there once its rules are in the reducer.
 - **Dice are hidden and random.** Each player rolls behind a screen; the reducer
   stays pure, so the **server** generates dice values and threads them in, and
   `redactGameStateFor` hides the opponent's unplaced dice before state is sent.

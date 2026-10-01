@@ -1,7 +1,16 @@
 // Unit tests for the non-reducer pieces: hidden-dice redaction, per-viewer
-// snapshots, the CORS origin check, and the client's uuid() fallback.
+// snapshots, game-setup validation, the CORS origin check, and the client's
+// uuid() fallback.
 // Run via `npm test` (builds shared first; the server imports its dist).
-import { createInitialGameState, reduce, redactGameStateFor } from "../packages/shared/src/index.ts";
+import {
+  DEFAULT_SETUP,
+  SCENARIOS,
+  SetSetupPayload,
+  createInitialGameState,
+  reduce,
+  redactGameStateFor,
+  scenarioForSetup,
+} from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
@@ -77,6 +86,7 @@ console.log("2) toSnapshot tailors the game and 'you' to the recipient");
       { playerId: C, role: "copilot", ready: true, connected: false },
     ],
     observers: ["O"],
+    setup: DEFAULT_SETUP,
     version: 7,
     game: midRound(),
     updatedAt: 0,
@@ -89,6 +99,24 @@ console.log("2) toSnapshot tailors the game and 'you' to the recipient");
   check("observer marked as observer", forO.you.kind === "observer" && forO.you.role === undefined);
   check("game redacted for the observer", forO.game.dice.copilot.slice(1).every(isHidden));
   check("lobby snapshot has no game", toSnapshot({ ...room, game: null }, P).game === null);
+  check("snapshot carries the room setup", forO.setup.scenarioId === "YUL");
+}
+
+// 2b) Game setup ---------------------------------------------------------------
+console.log("2b) SetSetupPayload validation and scenarioForSetup");
+{
+  const ok = (v) => SetSetupPayload.safeParse(v).success;
+  check("default setup is valid", ok(DEFAULT_SETUP));
+  check("unknown airport rejected", !ok({ scenarioId: "XXX", modules: [] }));
+  check("unknown module rejected", !ok({ scenarioId: "YUL", modules: ["jetpack"] }));
+  check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["kerosene"] }));
+  check("missing modules rejected", !ok({ scenarioId: "YUL" }));
+
+  const scenario = scenarioForSetup({ scenarioId: "YUL", modules: [] });
+  check("setup resolves to the airport's board", scenario.name === SCENARIOS.YUL.name && scenario.rounds === 7);
+  check("modules are copied onto the scenario", Array.isArray(scenario.modules) && scenario.modules.length === 0);
+  scenario.modules.push("intern");
+  check("resolving never mutates the registry", SCENARIOS.YUL.modules === undefined);
 }
 
 // 3) CORS origin check -------------------------------------------------------

@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import { ROOM_TTL_SECONDS } from "@skyteam/shared";
+import { DEFAULT_SETUP, ROOM_TTL_SECONDS } from "@skyteam/shared";
 import { env } from "./env";
 import type { Room } from "./types";
 
@@ -38,6 +38,8 @@ export async function getRoom(id: string): Promise<Room | null> {
   const raw = await redis.get(roomKey(id));
   if (!raw) return null;
   const room = JSON.parse(raw) as Room;
+  // Rooms persisted before game setup existed have none; give them the default.
+  room.setup ??= structuredClone(DEFAULT_SETUP);
   cache.set(id, room);
   return room;
 }

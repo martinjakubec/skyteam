@@ -64,6 +64,13 @@ async function main() {
   const lobby = await aTwoSeats;
   check("host sees 2 seats in lobby", lobby.seats.length === 2 && lobby.status === "lobby");
 
+  console.log("2b) Game setup: host-only, validated, broadcast in the snapshot");
+  check("lobby snapshot carries the default setup", lobby.setup?.scenarioId === "YUL" && lobby.setup.modules.length === 0);
+  check("guest setup change rejected", (await emit(b, "room:setup", { scenarioId: "YUL", modules: [] })).ok === false);
+  check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["kerosene"] })).ok === false);
+  check("unknown airport rejected", (await emit(a, "room:setup", { scenarioId: "XXX", modules: [] })).ok === false);
+  check("host setup accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [] })).ok === true);
+
   console.log("3) Ready up (both) -> status ready");
   await emit(a, "seat:ready", { ready: true });
   const ready = waitFor(a, "room:state", (s) => s.status === "ready");

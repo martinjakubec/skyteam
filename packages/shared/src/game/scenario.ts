@@ -23,15 +23,36 @@ export type Crew = "pilot" | "copilot";
  * these; they are listed here so `Scenario.modules` is typed and the reducer's
  * hook points have a stable vocabulary to dispatch on when they're built.
  */
-export type ModuleId =
-  | "kerosene"
-  | "keroseneLeak"
-  | "intern"
-  | "wind"
-  | "iceBrakes"
-  | "realTime"
-  | "trafficDie"
-  | "turns";
+export const MODULE_IDS = [
+  "kerosene",
+  "keroseneLeak",
+  "intern",
+  "wind",
+  "iceBrakes",
+  "realTime",
+  "trafficDie",
+  "turns",
+] as const;
+export type ModuleId = (typeof MODULE_IDS)[number];
+
+/** Display names for the lobby's module picker. */
+export const MODULE_LABELS: Record<ModuleId, string> = {
+  kerosene: "Kerosene",
+  keroseneLeak: "Kerosene Leak",
+  intern: "Intern",
+  wind: "Winds",
+  iceBrakes: "Ice Brakes",
+  realTime: "Real Time",
+  trafficDie: "Traffic Die",
+  turns: "Turns",
+};
+
+/**
+ * Modules the reducer actually implements. The lobby only offers these and the
+ * server rejects any other selection; a module joins this list when its rules
+ * land in the reducer.
+ */
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = [];
 
 /** One space on the Approach Track. */
 export interface ApproachSpace {
@@ -163,3 +184,24 @@ export const YUL_MONTREAL: Scenario = {
 };
 
 export const DEFAULT_SCENARIO = YUL_MONTREAL;
+
+/** Every playable airport, keyed by the id a room's setup refers to. */
+export const SCENARIOS = {
+  YUL: YUL_MONTREAL,
+} as const satisfies Record<string, Scenario>;
+export type ScenarioId = keyof typeof SCENARIOS;
+export const SCENARIO_IDS = Object.keys(SCENARIOS) as [ScenarioId, ...ScenarioId[]];
+
+/** What the host picks in the lobby: the airport plus any advanced modules. */
+export interface GameSetup {
+  scenarioId: ScenarioId;
+  modules: ModuleId[];
+}
+
+export const DEFAULT_SETUP: GameSetup = { scenarioId: "YUL", modules: [] };
+
+/** The concrete Scenario a game is created from: the airport's board data with
+ *  the chosen modules switched on. */
+export function scenarioForSetup(setup: GameSetup): Scenario {
+  return { ...SCENARIOS[setup.scenarioId], modules: [...setup.modules] };
+}
