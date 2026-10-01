@@ -43,6 +43,8 @@ export const PlacementTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("concentration"), slot: z.number().int().min(0).max(1) }),
   // Kerosene module: a single space either crew may use.
   z.object({ kind: z.literal("kerosene") }),
+  // Ice Brakes module: step 0..3 (values 2..5); top = Pilot only, bottom = either crew.
+  z.object({ kind: z.literal("iceBrakes"), slot: z.number().int().min(0).max(3), space: z.enum(["top", "bottom"]) }),
 ]);
 export type PlacementTarget = z.infer<typeof PlacementTarget>;
 

@@ -113,6 +113,7 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("implemented module accepted", ok({ scenarioId: "YUL", modules: ["kerosene"] }));
   check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["intern"] }));
   check("Kerosene Leak accepted", ok({ scenarioId: "YUL", modules: ["keroseneLeak"] }));
+  check("Ice Brakes combine with Kerosene", ok({ scenarioId: "YUL", modules: ["kerosene", "iceBrakes"] }));
   check("Kerosene + Kerosene Leak together rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "keroseneLeak"] }));
   check("duplicate module rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "kerosene"] }));
   check("missing modules rejected", !ok({ scenarioId: "YUL" }));

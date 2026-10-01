@@ -106,7 +106,9 @@ landing checks).
   rewrite. Implemented so far: **Kerosene** (either crew burns a die's value;
   an empty space burns 6 at round end; an empty tank loses) and **Kerosene
   Leak** (played instead of Kerosene: no die space; the Engine dice burn their
-  difference + 1 as soon as both are placed).
+  difference + 1 as soon as both are placed), and **Ice Brakes** (replace the
+  Brakes: steps 2 → 5, each needing a same-value pair — Pilot on top, either
+  crew below — in one round; the marker must be past the 5 to land).
 - **Game setup.** The host picks the airport (`SCENARIOS`) and modules in the
   lobby (`room:setup`); the server builds the game from `scenarioForSetup`. Only
   modules listed in `IMPLEMENTED_MODULES` can be selected — add a module's id

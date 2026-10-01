@@ -1144,6 +1144,61 @@ ul {
 .brake-leads .drop.right {
   left: var(--pitch);
 }
+/* ---- Ice Brakes (module): replaces the brake row with four 2-space steps ---- */
+.ice-brakes {
+  position: relative;
+  margin-top: 2.5rem; /* same gap the brake leads bridge up to the gauge */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+.ice-brakes-row {
+  display: flex;
+  gap: 0.35rem;
+}
+.ice-step-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.ice-step-wrap .slot-arrow {
+  margin-top: 0; /* centred between the two rows, not on the top slot */
+}
+/* A frosted plate behind each step's pair of spaces, so the pairing reads. */
+.ice-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 4px;
+  margin: -5px; /* padding + 1px border: keeps the slot pitch identical to the base brake row */
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(214, 240, 255, 0.4), rgba(160, 210, 240, 0.22));
+  border: 1px solid rgba(220, 244, 255, 0.75);
+  box-shadow: 0 0 10px rgba(190, 232, 255, 0.35);
+}
+.ice-step.done {
+  opacity: 0.85;
+}
+.ice-caption {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.62rem;
+  color: rgba(235, 246, 255, 0.9);
+}
+/* Four columns: the bus spans the outer two slot centres (±1.5 pitches). */
+.brake-leads.ice .bus {
+  left: calc(-1.5 * var(--pitch));
+  width: calc(3 * var(--pitch));
+}
+.brake-leads.ice .drop.left {
+  left: calc(-1.5 * var(--pitch));
+}
+.brake-leads.ice .drop.right {
+  left: calc(1.5 * var(--pitch));
+}
+
 .slot-arrow {
   flex: none;
   width: 0;

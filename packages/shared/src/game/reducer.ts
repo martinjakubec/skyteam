@@ -2,6 +2,7 @@ import {
   airplanesRemaining,
   airportIndex,
   crewOf,
+  emptyIceBrakeSlots,
   firstPlayerForRound,
   hasModule,
   type GameState,
@@ -11,6 +12,7 @@ import {
   CONCENTRATION_SLOTS,
   DICE_PER_PLAYER,
   FLAPS_VALUES,
+  ICE_BRAKE_VALUES,
   KEROSENE_IDLE_BURN,
   LANDING_GEAR_VALUES,
   MAX_COFFEE,
@@ -95,6 +97,8 @@ function handleRoll(
   s.radioCopilot = s.radioCopilot.map(() => null);
   s.concentrationSlots = s.concentrationSlots.map(() => null);
   s.keroseneSlot = null;
+  // A half-filled Ice Brakes step's die is simply cleared: spent, no advance.
+  s.iceBrakeSlots = emptyIceBrakeSlots();
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -257,6 +261,8 @@ function applyPlacement(s: GameState, crew: Crew, value: DieValue, target: Place
       return placeConcentration(s, crew, value, target.slot);
     case "kerosene":
       return placeKerosene(s, crew, value);
+    case "iceBrakes":
+      return placeIceBrakes(s, crew, value, target.slot, target.space);
     default:
       return assertNever(target);
   }
@@ -384,6 +390,7 @@ function placeFlaps(s: GameState, crew: Crew, value: DieValue, slot: number): vo
 }
 
 function placeBrakes(s: GameState, crew: Crew, value: DieValue, slot: number): void {
+  if (hasModule(s, "iceBrakes")) throw new GameRuleError("The Ice Brakes replace the Brakes.");
   if (crew !== "pilot") throw new GameRuleError("Only the Pilot deploys the Brakes.");
   requireSlot(slot, BRAKE_VALUES.length);
   if (s.brakeSlots[slot]) throw new GameRuleError("That Brakes space is taken.");
@@ -411,6 +418,33 @@ function placeConcentration(s: GameState, crew: Crew, value: DieValue, slot: num
     s.log.push(`Concentration: gained a Coffee token (${s.coffee}/${MAX_COFFEE}).`);
   } else {
     s.log.push("Concentration: Coffee already full.");
+  }
+}
+
+/**
+ * Ice Brakes module: steps 2 → 3 → 4 → 5, only the next one open. Each has a
+ * Pilot-only top space and an either-crew bottom space, filled in any order;
+ * once both hold the step's value (same round), the marker passes the step —
+ * which opens the next one, so several can complete in one round.
+ */
+function placeIceBrakes(s: GameState, crew: Crew, value: DieValue, slot: number, space: "top" | "bottom"): void {
+  if (!hasModule(s, "iceBrakes")) throw new GameRuleError("The Ice Brakes module is not in play.");
+  requireSlot(slot, ICE_BRAKE_VALUES.length);
+  if (slot !== s.brakesDeployed) throw new GameRuleError("Ice Brakes must be deployed in order.");
+  const need = ICE_BRAKE_VALUES[slot];
+  if (value !== need) throw new GameRuleError(`Ice Brakes ${need} needs a ${need}.`);
+  const step = s.iceBrakeSlots[slot];
+  if (space === "top") {
+    if (crew !== "pilot") throw new GameRuleError("Only the Pilot can use the top Ice Brakes space.");
+    if (step.top !== null) throw new GameRuleError("That Ice Brakes space is taken.");
+    step.top = value;
+  } else {
+    if (step.bottom !== null) throw new GameRuleError("That Ice Brakes space is taken.");
+    step.bottom = { value, crew };
+  }
+  if (step.top !== null && step.bottom !== null) {
+    s.brakesDeployed += 1;
+    s.log.push(`Ice Brakes set to ${need}.`);
   }
 }
 
@@ -480,7 +514,11 @@ function evaluateLanding(s: GameState): void {
   if (!s.flapsGreen.every(Boolean)) reasons.push("flaps not fully deployed");
   if (s.axis.offset !== 0) reasons.push("plane not level");
 
-  const brakeValue = s.brakesDeployed > 0 ? BRAKE_VALUES[s.brakesDeployed - 1] : 0;
+  // Ice Brakes: the marker must be past the 5 (every step done) to land at all.
+  const ice = hasModule(s, "iceBrakes");
+  if (ice && s.brakesDeployed < ICE_BRAKE_VALUES.length) reasons.push("ice brakes not fully deployed");
+  const brakeSteps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
+  const brakeValue = s.brakesDeployed > 0 ? brakeSteps[s.brakesDeployed - 1] : 0;
   const speed = s.lastSpeed ?? (s.engines.pilot ?? 0) + (s.engines.copilot ?? 0);
   if (!(s.brakesDeployed > 0 && speed <= brakeValue)) reasons.push("speed too high for the brakes");
 

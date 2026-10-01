@@ -3,6 +3,7 @@ import {
   BRAKE_VALUES,
   CONCENTRATION_SLOTS,
   FLAPS_COUNT,
+  ICE_BRAKE_VALUES,
   KEROSENE_START,
   LANDING_GEAR_COUNT,
   RADIO_COPILOT_SLOTS,
@@ -97,6 +98,11 @@ export interface GameState {
   kerosene: number; // KEROSENE_START..0 — 0 means the tank ran dry (loss)
   keroseneSlot: { value: DieValue; crew: Crew } | null; // this round's die, either crew
 
+  // --- Ice Brakes module (replaces the Brakes; reuses brakesDeployed, 0..4) ---
+  // This round's dice per step: the Pilot's top space and the either-crew bottom
+  // space. Both need the step's value for the marker to pass it.
+  iceBrakeSlots: { top: DieValue | null; bottom: { value: DieValue; crew: Crew } | null }[];
+
   coffee: number; // 0..MAX_COFFEE
   rerollTokens: number;
   // A joint reroll is in flight: the active player has rerolled and we are now
@@ -157,12 +163,18 @@ export function createInitialGameState(
     concentrationSlots: Array(CONCENTRATION_SLOTS).fill(null),
     kerosene: KEROSENE_START,
     keroseneSlot: null,
+    iceBrakeSlots: emptyIceBrakeSlots(),
     coffee: 0,
     rerollTokens: 0,
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
   };
+}
+
+/** One empty `{ top, bottom }` per Ice Brakes step. */
+export function emptyIceBrakeSlots(): GameState["iceBrakeSlots"] {
+  return ICE_BRAKE_VALUES.map(() => ({ top: null, bottom: null }));
 }
 
 /** Whether an advanced module is switched on for this game. */

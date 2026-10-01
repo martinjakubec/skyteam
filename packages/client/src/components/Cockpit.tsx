@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { GameCommand, RoomSnapshot } from "@skyteam/shared";
+import { ICE_BRAKE_VALUES, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label, previewModule } from "../util";
 import {
@@ -13,6 +13,7 @@ import { Altitude } from "./Altitude";
 import { Approach } from "./Approach";
 import { BrakesGauge } from "./BrakesGauge";
 import { Headset } from "./icons";
+import { IceBrakes } from "./IceBrakes";
 import { Kerosene } from "./Kerosene";
 import { Module } from "./Module";
 import { Slot } from "./Slot";
@@ -93,6 +94,18 @@ export function Cockpit({
   // but no die space — the Engine dice drive the burn.
   const leakOn = (game.scenario.modules?.includes("keroseneLeak") ?? false) || previewModule("keroseneLeak");
   const keroseneOn = keroseneInPlay || previewModule("kerosene") || leakOn;
+  // Ice Brakes replaces the Brakes row (dev `?preview=` shows it disabled).
+  const iceInPlay = game.scenario.modules?.includes("iceBrakes") ?? false;
+  const iceOn = iceInPlay || previewModule("iceBrakes");
+  // Only the next step (the marker's position) is open; its top space is the
+  // Pilot's, the bottom either crew's, and both need the step's value.
+  const iceOpen = (i: number, space: "top" | "bottom") =>
+    canFree(
+      iceInPlay &&
+        i === game.brakesDeployed &&
+        game.iceBrakeSlots[i]?.[space] == null &&
+        (space === "bottom" || myCrew === "pilot"),
+    ) && valOk([ICE_BRAKE_VALUES[i]]);
 
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
   // Flaps deploy strictly in order: only the first undeployed section is legal.
@@ -275,25 +288,37 @@ export function Cockpit({
             <span className="engine-plus" aria-hidden="true">+</span>
             <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine" })} enabled={can(myCrew === "copilot" && game.engines.copilot === null)} />
           </div>
-          <BrakesGauge deployed={game.brakesDeployed} />
+          <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />
           {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
               between them signal the mandatory order. Fine leads tie each space
-              up to the brake gauge (left "[", middle "|", right "]"). */}
-          <div className="slots-row brakes">
-            <span className="brake-leads" aria-hidden="true">
-              <span className="bus" />
-              <span className="up" />
-              <span className="drop left" />
-              <span className="drop mid" />
-              <span className="drop right" />
-            </span>
-            {game.brakeSlots.map((taken, i) => (
-              <Fragment key={i}>
-                {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
-                <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
-              </Fragment>
-            ))}
-          </div>
+              up to the brake gauge (left "[", middle "|", right "]"). The Ice
+              Brakes module swaps in its own 2 → 5 pair-of-spaces track. */}
+          {iceOn ? (
+            <IceBrakes
+              steps={game.iceBrakeSlots}
+              deployed={game.brakesDeployed}
+              canTop={(i) => iceOpen(i, "top")}
+              canBottom={(i) => iceOpen(i, "bottom")}
+              onTop={(i) => place({ kind: "iceBrakes", slot: i, space: "top" })}
+              onBottom={(i) => place({ kind: "iceBrakes", slot: i, space: "bottom" })}
+            />
+          ) : (
+            <div className="slots-row brakes">
+              <span className="brake-leads" aria-hidden="true">
+                <span className="bus" />
+                <span className="up" />
+                <span className="drop left" />
+                <span className="drop mid" />
+                <span className="drop right" />
+              </span>
+              {game.brakeSlots.map((taken, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
+                  <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(myCrew === "pilot" && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+                </Fragment>
+              ))}
+            </div>
+          )}
         </div>
 
       <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>

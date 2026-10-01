@@ -52,7 +52,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak"];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak", "iceBrakes"];
 
 /**
  * Modules that can't be played together — at most one per group. Kerosene Leak
@@ -163,6 +163,12 @@ export const FLAPS_VALUES: DieValue[][] = [
 ];
 /** Brakes must be deployed in order: a 2, then a 4, then a 6. */
 export const BRAKE_VALUES: DieValue[] = [2, 4, 6];
+/**
+ * Ice Brakes module (replaces the Brakes): steps 2 → 3 → 4 → 5, deployed in
+ * order. Each step has a Pilot-only top space and an either-crew bottom space;
+ * both must get the step's value in the same round to advance the marker.
+ */
+export const ICE_BRAKE_VALUES: DieValue[] = [2, 3, 4, 5];
 
 /** Placement targets that have a fixed count of slots. */
 export const RADIO_PILOT_SLOTS = 1;

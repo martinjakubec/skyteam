@@ -2,7 +2,13 @@
 // Run with `npm test` (inside a node:22 container, repo bind-mounted).
 // Imported from source via tsx (the dist build uses extensionless ESM imports
 // that bare `node` can't resolve).
-import { createInitialGameState, reduce } from "../packages/shared/src/index.ts";
+import {
+  EXCLUSIVE_MODULE_GROUPS,
+  IMPLEMENTED_MODULES,
+  SetSetupPayload,
+  createInitialGameState,
+  reduce,
+} from "../packages/shared/src/index.ts";
 
 let failures = 0;
 function check(label, cond) {
@@ -497,6 +503,129 @@ console.log("17) Kerosene Leak: Engines burn |difference| + 1 when both are seat
   const withLeak = (fuel) => (st) => ((st.scenario.modules = ["keroseneLeak"]), (st.kerosene = fuel));
   check("final round: leak to empty beats a good landing", lostKero(playRound(readyToLand(withLeak(1)), level(1, 1))));
   check("final round: fuel to spare -> landing still counts", playRound(readyToLand(withLeak(2)), level(1, 1)).phase === "won");
+}
+
+// 18) Ice Brakes module ------------------------------------------------------------
+console.log("18) Ice Brakes: steps 2→5, a same-value pair (top Pilot, bottom either) per step");
+{
+  const iscn = (over) => scn({ rounds: 7, modules: ["iceBrakes"], ...over });
+  const ice = (slot, space) => ({ kind: "iceBrakes", slot, space });
+
+  // Two steps completed in one round (the marker can advance more than once).
+  let s = roll(init(iscn()), [2, 3, 1, 1], [2, 3, 1, 1]);
+  s = place(s, P, 2, ice(0, "top"));
+  check("half a pair doesn't move the marker", s.brakesDeployed === 0 && s.iceBrakeSlots[0].top === 2);
+  expectThrow("next step stays shut until this one is done", () => place(s, C, 3, ice(1, "bottom")));
+  s = place(s, C, 2, ice(0, "bottom"));
+  check("a matching pair passes step 2", s.brakesDeployed === 1 && s.iceBrakeSlots[0].bottom?.crew === "copilot");
+  s = place(s, P, 3, ice(1, "top"));
+  s = place(s, C, 3, ice(1, "bottom"));
+  check("…and step 3 in the same round", s.brakesDeployed === 2);
+  s = place(s, P, 1, { kind: "axis" });
+  s = place(s, C, 1, { kind: "axis" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 1, { kind: "engine" });
+  s = roll(s, [4, 1, 1, 1], [4, 1, 1, 1]);
+  check("marker keeps its place; spaces clear next round", s.brakesDeployed === 2 && s.iceBrakeSlots.every((x) => x.top === null && x.bottom === null));
+
+  // Placement rules.
+  const r = roll(init(iscn()), [2, 3, 1, 1], [2, 2, 1, 1]);
+  expectThrow("wrong value rejected", () => place(r, P, 3, ice(0, "top")));
+  expectThrow("a later step rejected out of order", () => place(r, P, 3, ice(1, "top")));
+  expectThrow("base Brakes are replaced", () => place(r, P, 2, { kind: "brakes", slot: 0 }));
+  const pBottom = place(r, P, 2, ice(0, "bottom"));
+  check("the Pilot may take the bottom space (bottom first is fine)", pBottom.iceBrakeSlots[0].bottom?.crew === "pilot");
+  expectThrow("the Co-Pilot may not take the top space", () => place(pBottom, C, 2, ice(0, "top")));
+  expectThrow("a taken space is rejected", () => place(pBottom, C, 2, ice(0, "bottom")));
+  const noIce = roll(init(scn({ rounds: 7 })), [2, 1, 1, 1], [1, 1, 1, 1]);
+  expectThrow("rejected when the module is not in play", () => place(noIce, P, 2, ice(0, "top")));
+
+  // A lone die is cleared at round end without advancing.
+  let half = roll(init(iscn()), [2, 1, 1, 6], [1, 1, 6, 6]);
+  half = place(half, P, 2, ice(0, "top"));
+  half = place(half, C, 1, { kind: "axis" });
+  half = place(half, P, 1, { kind: "axis" });
+  half = place(half, C, 1, { kind: "engine" });
+  half = place(half, P, 1, { kind: "engine" });
+  half = place(half, C, 6, { kind: "radio", slot: 0 });
+  half = place(half, P, 6, { kind: "concentration", slot: 0 });
+  half = place(half, C, 6, { kind: "radio", slot: 1 });
+  half = roll(half, [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("a half-filled step is cleared next round, marker unmoved", half.brakesDeployed === 0 && half.iceBrakeSlots[0].top === null);
+
+  // Landing.
+  const withIce = (steps) => (st) => ((st.scenario.modules = ["iceBrakes"]), (st.brakesDeployed = steps));
+  check("all four steps, speed 5 -> landed", playRound(readyToLand(withIce(4)), level(2, 3)).phase === "won");
+  check("all four steps, speed 6 -> too fast", lostFor(playRound(readyToLand(withIce(4)), level(3, 3)), /speed too high/));
+  check("marker not past the 5 -> lost", lostFor(playRound(readyToLand(withIce(3)), level(1, 1)), /ice brakes not fully deployed/));
+}
+
+// 19) Ice Brakes + Kerosene Leak together ----------------------------------------
+console.log("19) Ice Brakes + Kerosene Leak in one game");
+{
+  const both = ["iceBrakes", "keroseneLeak"];
+  check("setup accepted", SetSetupPayload.safeParse({ scenarioId: "YUL", modules: both }).success);
+
+  // One round exercising both: a pair on the 2 step, Engines 1 vs 1 leak 1.
+  let s = roll(init(scn({ rounds: 7, modules: both })), [2, 1, 1, 1], [2, 1, 1, 1]);
+  s = place(s, P, 2, { kind: "iceBrakes", slot: 0, space: "top" });
+  s = place(s, C, 2, { kind: "iceBrakes", slot: 0, space: "bottom" });
+  s = place(s, P, 1, { kind: "engine" });
+  s = place(s, C, 1, { kind: "engine" });
+  check("both effects apply in the same round", s.brakesDeployed === 1 && s.kerosene === 19);
+  expectThrow("still no Kerosene die space", () => place(s, P, 1, { kind: "kerosene" }));
+
+  const prep = (fuel) => (st) => ((st.scenario.modules = [...both]), (st.brakesDeployed = 4), (st.kerosene = fuel));
+  const landed = playRound(readyToLand(prep(20)), level(2, 3)); // speed 5 ≤ ice 5; leak 2
+  check("speed 5 lands on full Ice Brakes; the leak still burns", landed.phase === "won" && landed.kerosene === 18);
+  check("a leak that empties the tank beats a valid Ice Brakes landing", lostFor(playRound(readyToLand(prep(2)), level(2, 3)), /kerosene/i));
+  const short = (st) => ((st.scenario.modules = [...both]), (st.brakesDeployed = 3));
+  check("Ice Brakes short of the 5 still fails with the Leak on", lostFor(playRound(readyToLand(short), level(1, 1)), /ice brakes not fully deployed/));
+}
+
+// 20) Every module combination -----------------------------------------------------
+// Each implemented module declares (a) how much Kerosene a quiet round burns and
+// (b) how to make a landing legal. Every allowed combination must validate, play
+// a quiet round with the burns adding up, and land; every combination holding an
+// excluded pair must be rejected. A new module without an entry fails loudly,
+// so it can't skip this matrix.
+console.log("20) Every combination of implemented modules");
+{
+  const EXPECT = {
+    kerosene: { quietBurn: 6, prep: () => {} }, // empty space: -6 per round
+    keroseneLeak: { quietBurn: 1, prep: () => {} }, // level(1,1): Engines equal, leak 1
+    iceBrakes: { quietBurn: 0, prep: (st) => (st.brakesDeployed = 4) }, // must be past the 5
+  };
+  const missing = IMPLEMENTED_MODULES.filter((m) => !EXPECT[m]);
+  check(`every implemented module has matrix expectations${missing.length ? ` (missing: ${missing})` : ""}`, missing.length === 0);
+
+  const combos = IMPLEMENTED_MODULES.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]);
+  const excluded = (c) => EXCLUSIVE_MODULE_GROUPS.some((g) => g.filter((m) => c.includes(m)).length > 1);
+  let allowed = 0, rejected = 0, bad = [];
+  for (const combo of combos) {
+    const name = combo.length ? combo.join("+") : "base";
+    const valid = SetSetupPayload.safeParse({ scenarioId: "YUL", modules: combo }).success;
+    if (excluded(combo)) {
+      rejected++;
+      if (valid) bad.push(`${name}: excluded combination was accepted`);
+      continue;
+    }
+    allowed++;
+    if (!valid) { bad.push(`${name}: allowed combination was rejected`); continue; }
+    try {
+      const quiet = playRound(init(scn({ rounds: 7, modules: combo })), level(1, 1));
+      const burn = combo.reduce((n, m) => n + (EXPECT[m]?.quietBurn ?? 0), 0);
+      if (quiet.phase !== "rolling" || quiet.round !== 2) bad.push(`${name}: quiet round didn't complete (${quiet.outcome?.reason})`);
+      if (quiet.kerosene !== 20 - burn) bad.push(`${name}: kerosene ${quiet.kerosene}, expected ${20 - burn}`);
+      const landing = playRound(readyToLand((st) => { st.scenario.modules = [...combo]; combo.forEach((m) => EXPECT[m]?.prep(st)); }), level(1, 1));
+      if (landing.phase !== "won") bad.push(`${name}: legal landing failed (${landing.outcome?.reason})`);
+    } catch (e) {
+      bad.push(`${name}: threw ${e.message}`);
+    }
+  }
+  check(`${allowed} allowed combinations play a round and land`, !bad.some((b) => !b.includes("excluded")));
+  check(`${rejected} excluded combinations are rejected`, !bad.some((b) => b.includes("excluded")));
+  bad.forEach((b) => console.log(`     ↳ ${b}`));
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);
