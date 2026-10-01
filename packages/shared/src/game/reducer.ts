@@ -49,7 +49,8 @@ export type ReduceCommand =
   | { type: "roll"; pilot: DieValue[]; copilot: DieValue[] }
   | { type: "reroll"; dieIds: number[]; values: DieValue[] }
   | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
-  | { type: "placeIntern"; target: PlacementTarget };
+  | { type: "placeIntern"; target: PlacementTarget }
+  | { type: "adapt"; dieId: number };
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -69,6 +70,8 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handlePlaceDie(draft, command, byPlayerId);
     case "placeIntern":
       return handlePlaceIntern(draft, command, byPlayerId);
+    case "adapt":
+      return handleAdapt(draft, command, byPlayerId);
     default:
       return assertNever(command);
   }
@@ -347,6 +350,24 @@ function tokenHasSpace(s: GameState, crew: Crew, value: DieValue): boolean {
       throw e;
     }
   });
+}
+
+// --- Special Abilities ------------------------------------------------------
+
+/** Adaptation: once per game, a player turns one unplaced die to its opposite
+ *  face (1↔6, 2↔5, 3↔4) — on either player's turn. */
+function handleAdapt(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId): ReduceResult {
+  if (s.phase !== "placement") throw new GameRuleError("You can only adapt a die during placement.");
+  if (!hasAbility(s, "adaptation")) throw new GameRuleError("Adaptation is not in play.");
+  if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+  const crew = requireCrew(s, byPlayerId);
+  if (s.adaptationUsed[crew]) throw new GameRuleError("You have already used Adaptation.");
+  const die = s.dice[crew].find((d) => d.id === cmd.dieId);
+  if (!die || die.value === undefined || die.placed) throw new GameRuleError("Pick one of your unplaced dice.");
+  die.value = (7 - die.value) as DieValue;
+  s.adaptationUsed[crew] = true;
+  s.log.push(`${crewLabel(crew)} used Adaptation.`);
+  return { state: s, description: "Die turned over." };
 }
 
 // --- placement dispatch -----------------------------------------------------

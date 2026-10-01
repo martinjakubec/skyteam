@@ -1577,6 +1577,11 @@ ul {
 .ability-chip.active {
   padding-right: 0.2rem;
 }
+.ability-used {
+  opacity: 0.6;
+  text-transform: lowercase;
+  padding-right: 0.3rem;
+}
 .ability-chip button {
   padding: 0.2rem 0.5rem;
   font-size: 0.66rem;

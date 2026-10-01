@@ -86,6 +86,29 @@ export function Cockpit({
   // The dice tray is in pick-toggle mode when I'm choosing dice for a reroll.
   const rerollActive = (rerollMode && myTurn) || iMustRespond;
 
+  // Adaptation (Special Ability): once per game, turn one of my unplaced dice
+  // over — on either player's turn, so it has its own pick mode: the dice
+  // become tappable regardless of whose turn it is.
+  const [adaptMode, setAdaptMode] = useState(false);
+  const canAdapt =
+    myCrew !== null &&
+    (game.scenario.abilities?.includes("adaptation") ?? false) &&
+    !game.adaptationUsed[myCrew] &&
+    game.phase === "placement" &&
+    game.pendingReroll === null &&
+    !internHeld &&
+    myDice.some((d) => !d.placed);
+  const adaptActive = adaptMode && canAdapt && !rerollActive;
+  useEffect(() => {
+    if (!canAdapt) setAdaptMode(false);
+  }, [canAdapt]);
+  const adaptDie = (dieId: number) => {
+    onCommand({ type: "adapt", dieId });
+    setAdaptMode(false);
+    setSelected(null);
+    setCoffeeDelta(0);
+  };
+
   // Drop any local reroll UI when the reroll context changes server-side
   // (initiated, resolved, or a new round dealt) so stale picks never linger.
   useEffect(() => {
@@ -539,9 +562,14 @@ export function Cockpit({
                     <button
                       key={d.id}
                       className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
-                      disabled={rerollActive ? d.placed : d.placed || !myTurn || game.pendingReroll !== null || internHeldMine}
-                      onPointerDown={rerollActive ? undefined : (e) => startDrag(e, d)}
-                      onClick={rerollActive ? () => toggleRerollDie(d.id) : undefined}
+                      disabled={
+                        rerollActive || adaptActive
+                          ? d.placed
+                          : d.placed || !myTurn || game.pendingReroll !== null || internHeldMine
+                      }
+                      title={adaptActive && d.value !== undefined ? `Turn over → ${7 - d.value}` : undefined}
+                      onPointerDown={rerollActive || adaptActive ? undefined : (e) => startDrag(e, d)}
+                      onClick={rerollActive ? () => toggleRerollDie(d.id) : adaptActive ? () => adaptDie(d.id) : undefined}
                     >
                       {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
                     </button>
@@ -556,7 +584,25 @@ export function Cockpit({
                   </span>
                 </span>
               </div>
-              <Abilities abilities={game.scenario.abilities ?? []} />
+              <Abilities
+                abilities={game.scenario.abilities ?? []}
+                actions={{
+                  adaptation:
+                    myCrew && !game.adaptationUsed[myCrew] ? (
+                      adaptActive ? (
+                        <button onClick={() => setAdaptMode(false)} title="Tap one of your dice to turn it over">
+                          Tap a die · Cancel
+                        </button>
+                      ) : (
+                        <button disabled={!canAdapt} onClick={() => setAdaptMode(true)}>
+                          Flip a die
+                        </button>
+                      )
+                    ) : (
+                      <span className="ability-used">used</span>
+                    ),
+                }}
+              />
               <div className="controls">
                 {rerollActive ? (
                   <span className="reroll-pick">

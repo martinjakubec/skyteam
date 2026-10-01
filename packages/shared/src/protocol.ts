@@ -68,6 +68,12 @@ export const GameCommand = z.discriminatedUnion("type", [
     target: PlacementTarget,
   }),
   z.object({
+    /** Adaptation (Special Ability): once per game, turn one of your unplaced
+     *  dice to its opposite face. Allowed on either player's turn. */
+    type: z.literal("adapt"),
+    dieId: z.number().int().min(0).max(3),
+  }),
+  z.object({
     type: z.literal("reroll"),
     /** Indices of the player's own dice to reroll. The active player initiates a
      *  joint reroll (≥1 die, spends one token); the other player is then prompted

@@ -693,6 +693,26 @@ console.log("22) Control & Mastery");
   check("…and only with the card", m3.rerollTokens === 0);
 }
 
+// 23) Adaptation ------------------------------------------------------------------
+console.log("23) Adaptation");
+{
+  const adapt = (st, who, dieId) => reduce(st, { type: "adapt", dieId }, who).state;
+  const s0 = roll(init(scn({ rounds: 7, abilities: ["adaptation"] })), [1, 2, 3, 4], [6, 5, 4, 3]);
+  const s1 = adapt(s0, P, 0);
+  check("a 1 turns to a 6", s1.dice.pilot[0].value === 6 && s1.adaptationUsed.pilot);
+  expectThrow("once per game per player", () => adapt(s1, P, 1));
+  check("the other player may use theirs on the Pilot's turn", adapt(s1, C, 1).dice.copilot[1].value === 2);
+  expectThrow("not on a placed die", () => adapt(place(s0, P, 1, { kind: "axis" }), P, 0));
+  expectThrow("not without the card", () => adapt(roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]), P, 0));
+  expectThrow("not while a reroll is pending", () => {
+    const r = roll(init(scn({ rounds: 7, rerollRounds: [1], abilities: ["adaptation"] })), [1, 1, 1, 1], [1, 1, 1, 1]);
+    adapt(reroll(r, P, [0], [2]), C, 0);
+  });
+  // Jump to round 2 (handleRoll doesn't check the previous round's placements).
+  const nextRound = roll(Object.assign(structuredClone(s1), { phase: "rolling", round: 2 }), [1, 1, 1, 1], [1, 1, 1, 1]);
+  check("still used up in later rounds", nextRound.adaptationUsed.pilot === true);
+}
+
 // 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play

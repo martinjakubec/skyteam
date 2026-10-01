@@ -116,6 +116,8 @@ export interface GameState {
   rerollTokens: number;
   // Reroll tokens used and back in the supply — Mastery can regain them.
   rerollSpent: number;
+  // Adaptation: each crew may turn one die over, once per game.
+  adaptationUsed: Record<Crew, boolean>;
   // A joint reroll is in flight: the active player has rerolled and we are now
   // waiting on this crew to reroll (or decline). null = no reroll pending. While
   // set, every other command is rejected — this is the no-race lock.
@@ -188,6 +190,7 @@ export function createInitialGameState(
     coffee: 0,
     rerollTokens: 0,
     rerollSpent: 0,
+    adaptationUsed: { pilot: false, copilot: false },
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
