@@ -254,6 +254,21 @@ export function hasModule(state: GameState, id: ModuleId): boolean {
   return state.scenario.modules?.includes(id) ?? false;
 }
 
+/**
+ * Bring a game saved by an older build up to date: every field the current
+ * GameState has but the saved one lacks gets its fresh-game default (e.g. a
+ * mid-round game from before Special Abilities gets `pendingSwap: null`).
+ * Fields already present are kept. Mutates and returns `game`.
+ */
+export function normalizeGameState(game: GameState): GameState {
+  const defaults = createInitialGameState(game.scenario, game.pilotId, game.copilotId) as unknown as Record<string, unknown>;
+  const target = game as unknown as Record<string, unknown>;
+  for (const key of Object.keys(defaults)) {
+    if (target[key] === undefined) target[key] = defaults[key];
+  }
+  return game;
+}
+
 /** Which crew a player is, or null if they are not seated in this game. */
 export function crewOf(state: GameState, playerId: PlayerId): Crew | null {
   if (playerId === state.pilotId) return "pilot";
@@ -269,13 +284,16 @@ export function airplanesRemaining(state: GameState): number {
 /**
  * Produce a copy of the state safe to send to `viewerId`: the *other* crew's
  * unplaced dice have their values hidden. (Placed dice are public — they're on
- * the board.) Observers see both crews' hidden dice redacted.
+ * the board — and so is a die offered for Working Together, on its card.)
+ * Observers see both crews' hidden dice redacted.
  */
 export function redactGameStateFor(state: GameState, viewerId: PlayerId): GameState {
   const viewer = crewOf(state, viewerId);
+  // A die offered for Working Together lies face-up on the card: public too.
+  const offered = (crew: Crew, id: number) => state.pendingSwap?.from === crew && state.pendingSwap.dieId === id;
   const hide = (dice: Die[], crew: Crew): Die[] =>
     dice.map((d) =>
-      d.placed || crew === viewer ? d : { id: d.id, placed: false, hidden: true },
+      d.placed || crew === viewer || offered(crew, d.id) ? d : { id: d.id, placed: false, hidden: true },
     );
   return {
     ...state,

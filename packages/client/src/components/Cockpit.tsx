@@ -248,7 +248,12 @@ export function Cockpit({
   // The status line under the dial: the most pressing thing for this viewer.
   const calloutText = (): string => {
     if (game.outcome) return game.outcome.result === "won" ? "Smooth landing — the passengers applaud." : game.outcome.reason;
-    if (mustAnswerSwap) return `Working Together — tap one of your dice to swap with the ${label(game.pendingSwap!.from)}'s.`;
+    if (mustAnswerSwap) {
+      // The offered die lies face-up on the card, so its value is visible.
+      const offer = game.pendingSwap!;
+      const value = game.dice[offer.from].find((d) => d.id === offer.dieId)?.value;
+      return `Working Together — the ${label(offer.from)} offers a ${value ?? "die"}; tap one of your dice to swap.`;
+    }
     if (waitingForSwap) return `Working Together — waiting for the ${label(myCrew === "pilot" ? "copilot" : "pilot")} to pick a die…`;
     if (trafficHeld) {
       return trafficHeldMine

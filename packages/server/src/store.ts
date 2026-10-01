@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import { DEFAULT_SETUP, ROOM_TTL_SECONDS } from "@skyteam/shared";
+import { DEFAULT_SETUP, ROOM_TTL_SECONDS, normalizeGameState } from "@skyteam/shared";
 import { env } from "./env";
 import type { Room } from "./types";
 
@@ -41,6 +41,8 @@ export async function getRoom(id: string): Promise<Room | null> {
   // Rooms persisted before game setup existed have none; give them the default.
   room.setup ??= structuredClone(DEFAULT_SETUP);
   room.setup.abilities ??= []; // rooms saved before Special Abilities existed
+  // A game saved by an older build lacks newer state fields: fill them in.
+  if (room.game) normalizeGameState(room.game);
   cache.set(id, room);
   return room;
 }

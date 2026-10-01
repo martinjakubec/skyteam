@@ -10,6 +10,7 @@ import {
   conflictingModules,
   createInitialGameState,
   hasAbility,
+  normalizeGameState,
   reduce,
   redactGameStateFor,
   scenarioForSetup,
@@ -74,6 +75,14 @@ console.log("1) redactGameStateFor hides only the other crew's unplaced dice");
 
   check("source state not mutated", s.dice.copilot.every((d) => d.value !== undefined && !d.hidden));
   check("no hidden value leaks through JSON", !JSON.stringify(forPilot.dice.copilot.slice(1)).includes('"value"'));
+
+  // Working Together: the offered die lies face-up on the card.
+  const offer = structuredClone(s);
+  offer.pendingSwap = { from: "pilot", dieId: 1 };
+  const forResponder = redactGameStateFor(offer, C);
+  check("an offered Working Together die is visible to the other player", forResponder.dice.pilot[1].value === 2 && !forResponder.dice.pilot[1].hidden);
+  check("…but only that one", forResponder.dice.pilot.slice(2).every(isHidden));
+  check("…and spectators see it too", redactGameStateFor(offer, "observer").dice.pilot[1].value === 2);
 }
 
 // 2) Per-viewer snapshots ----------------------------------------------------
@@ -138,6 +147,21 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("abilities copied onto the scenario", scenarioForSetup({ scenarioId: "YUL", modules: [], abilities: ["control"] }).abilities.join() === "control");
   const legacy = createInitialGameState({ ...SCENARIOS.YUL }, "P", "C");
   check("a game without abilities (old rooms) has none", ABILITY_IDS.every((id) => !hasAbility(legacy, id)));
+}
+
+// 2c) Games saved before newer fields existed --------------------------------
+console.log("2c) normalizeGameState fills fields missing from older saved games");
+{
+  const fresh = midRound();
+  const old = structuredClone(fresh);
+  for (const k of ["pendingSwap", "adaptationUsed", "anticipated", "swappedThisRound", "rerollSpent", "syncDone",
+    "trafficPending", "trafficHeld", "trafficPlaced", "internTokens", "internSlots", "internHeld", "internPlaced",
+    "kerosene", "keroseneSlot", "iceBrakeSlots"]) delete old[k];
+  const fixed = normalizeGameState(old);
+  check("missing fields get their defaults", fixed.pendingSwap === null && fixed.trafficHeld === null && fixed.rerollSpent === 0 &&
+    fixed.adaptationUsed.pilot === false && Array.isArray(fixed.trafficPlaced) && fixed.kerosene === 20);
+  check("existing fields are kept", fixed.round === fresh.round && fixed.axis.pilot === fresh.axis.pilot && fixed.dice.pilot[1].value === 2);
+  check("an old game can still be played", reduce(fixed, { type: "placeDie", dieId: 1, target: { kind: "engine" } }, P).state.engines.pilot === 2);
 }
 
 // 3) CORS origin check -------------------------------------------------------
