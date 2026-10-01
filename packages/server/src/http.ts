@@ -1,12 +1,12 @@
 import express from "express";
 import cors from "cors";
-import { env } from "./env";
+import { corsOptions } from "./cors";
 import { issueToken, verifyToken } from "./identity";
 import { createRoom, joinByInvite, RoomError } from "./rooms";
 
 export function createApp() {
   const app = express();
-  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true }));
+  app.use(cors(corsOptions));
   app.use(express.json());
 
   app.get("/health", (_req, res) => {

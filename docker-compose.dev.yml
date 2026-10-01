@@ -25,7 +25,10 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev-insecure-secret-change-me
       RECONNECT_GRACE_MS: 60000
-      CLIENT_ORIGIN: http://localhost:5173
+      # "*" reflects any origin so the app is reachable over the LAN (e.g. from
+      # a phone or another PC at http://<host-ip>:5173) without pinning an IP.
+      # Narrow this (comma-separated allowlist) for anything beyond dev.
+      CLIENT_ORIGIN: "*"
       # Bind-mounted source on Windows doesn't emit inotify events into the
       # container, so file watchers must poll to see host edits.
       CHOKIDAR_USEPOLLING: "true"
@@ -42,7 +45,9 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_SERVER_URL: http://localhost:3001
+      # No VITE_SERVER_URL: the client derives the server host from the address
+      # the page was loaded from, so localhost and LAN both work. Set it here
+      # only to pin an explicit server URL.
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - .:/app

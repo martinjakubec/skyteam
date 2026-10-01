@@ -1,4 +1,5 @@
 import { SERVER_URL } from "./config";
+import { uuid } from "./uuid";
 
 // Each browser TAB must be an independent player. Storage alone can't guarantee
 // this: localStorage is shared across all tabs, and sessionStorage is *copied*
@@ -13,7 +14,7 @@ const TAB_PREFIX = "skyteam-tab:";
 
 function tabId(): string {
   if (!window.name.startsWith(TAB_PREFIX)) {
-    window.name = TAB_PREFIX + crypto.randomUUID();
+    window.name = TAB_PREFIX + uuid();
   }
   return window.name;
 }

@@ -68,8 +68,9 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 |---|---|---|
 | `RECONNECT_GRACE_MS` | How long a dropped player's seat is held before the game is abandoned | `60000` |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
-| `CLIENT_ORIGIN` | Allowed CORS origin (where the client is served) | `http://localhost:8080` |
-| `VITE_SERVER_URL` | Server URL baked into the client bundle at build time | `http://localhost:3001` |
+| `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
+| `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |
+| `VITE_SERVER_PORT` | Server port used when deriving the URL | `3001` |
 
 The reconnect window lives in one place (`RECONNECT_GRACE_MS`, defaulting to
 `DEFAULT_RECONNECT_GRACE_MS` in `packages/shared/src/config.ts`) so it's trivial

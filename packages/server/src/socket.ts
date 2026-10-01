@@ -20,6 +20,7 @@ import {
   type SocketData,
 } from "@skyteam/shared";
 import { env } from "./env";
+import { corsOptions } from "./cors";
 import { getRoom, saveRoom } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
@@ -42,7 +43,7 @@ const timerKey = (roomId: string, playerId: string) => `${roomId}:${playerId}`;
 
 export function attachSocket(server: http.Server): IOServer {
   const io: IOServer = new Server(server, {
-    cors: { origin: env.CLIENT_ORIGIN, credentials: true },
+    cors: corsOptions,
   });
 
   io.on("connection", (socket) => {

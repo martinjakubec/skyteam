@@ -8,6 +8,7 @@ import type {
 } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
 import { getStoredToken } from "./api";
+import { uuid } from "./uuid";
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -83,7 +84,7 @@ export const useGame = create<GameStore>((set, get) => ({
     }),
 
   sendCommand: (command) =>
-    get().socket?.emit("game:command", { commandId: crypto.randomUUID(), command }, (res) => {
+    get().socket?.emit("game:command", { commandId: uuid(), command }, (res) => {
       if (!res.ok) set({ lastError: res.error });
     }),
 }));
