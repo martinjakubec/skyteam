@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ICE_BRAKE_VALUES, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
+import { ICE_BRAKE_VALUES, firstPlayerForRound, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
 import { clamp, face, label, previewModule } from "../util";
 import {
@@ -86,28 +86,46 @@ export function Cockpit({
   // The dice tray is in pick-toggle mode when I'm choosing dice for a reroll.
   const rerollActive = (rerollMode && myTurn) || iMustRespond;
 
-  // Adaptation (Special Ability): once per game, turn one of my unplaced dice
-  // over — on either player's turn, so it has its own pick mode: the dice
-  // become tappable regardless of whose turn it is.
-  const [adaptMode, setAdaptMode] = useState(false);
+  // Single-die Special Abilities share a pick mode: press the card's button,
+  // then tap one of my dice. Adaptation (turn a die over, once per game) works
+  // on either player's turn, so in pick mode the dice are tappable regardless
+  // of whose turn it is. Anticipation (First Player rerolls one die before
+  // their first placement, once per round).
+  const has = (id: "adaptation" | "anticipation") => game.scenario.abilities?.includes(id) ?? false;
+  const noPendingAction = game.phase === "placement" && game.pendingReroll === null && !internHeld;
   const canAdapt =
+    myCrew !== null && has("adaptation") && !game.adaptationUsed[myCrew] && noPendingAction && myDice.some((d) => !d.placed);
+  const canAnticipate =
     myCrew !== null &&
-    (game.scenario.abilities?.includes("adaptation") ?? false) &&
-    !game.adaptationUsed[myCrew] &&
-    game.phase === "placement" &&
-    game.pendingReroll === null &&
-    !internHeld &&
-    myDice.some((d) => !d.placed);
-  const adaptActive = adaptMode && canAdapt && !rerollActive;
+    has("anticipation") &&
+    !game.anticipated &&
+    myCrew === firstPlayerForRound(game.round) &&
+    myDice.length > 0 &&
+    myDice.every((d) => !d.placed) &&
+    noPendingAction;
+  const [pickMode, setPickMode] = useState<"adapt" | "anticipate" | null>(null);
+  const pickActive =
+    !rerollActive && ((pickMode === "adapt" && canAdapt) || (pickMode === "anticipate" && canAnticipate)) ? pickMode : null;
   useEffect(() => {
-    if (!canAdapt) setAdaptMode(false);
-  }, [canAdapt]);
-  const adaptDie = (dieId: number) => {
-    onCommand({ type: "adapt", dieId });
-    setAdaptMode(false);
+    if (pickMode && !pickActive) setPickMode(null);
+  }, [pickMode, pickActive]);
+  const pickDie = (dieId: number) => {
+    onCommand(pickActive === "adapt" ? { type: "adapt", dieId } : { type: "anticipate", dieId });
+    setPickMode(null);
     setSelected(null);
     setCoffeeDelta(0);
   };
+  // The card's button: start picking, or cancel while picking.
+  const pickButton = (mode: "adapt" | "anticipate", label: string, enabled: boolean, hint: string) =>
+    pickActive === mode ? (
+      <button onClick={() => setPickMode(null)} title={hint}>
+        Tap a die · Cancel
+      </button>
+    ) : (
+      <button disabled={!enabled} onClick={() => setPickMode(mode)} title={hint}>
+        {label}
+      </button>
+    );
 
   // Drop any local reroll UI when the reroll context changes server-side
   // (initiated, resolved, or a new round dealt) so stale picks never linger.
@@ -563,13 +581,19 @@ export function Cockpit({
                       key={d.id}
                       className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
                       disabled={
-                        rerollActive || adaptActive
+                        rerollActive || pickActive
                           ? d.placed
                           : d.placed || !myTurn || game.pendingReroll !== null || internHeldMine
                       }
-                      title={adaptActive && d.value !== undefined ? `Turn over → ${7 - d.value}` : undefined}
-                      onPointerDown={rerollActive || adaptActive ? undefined : (e) => startDrag(e, d)}
-                      onClick={rerollActive ? () => toggleRerollDie(d.id) : adaptActive ? () => adaptDie(d.id) : undefined}
+                      title={
+                        pickActive === "adapt" && d.value !== undefined
+                          ? `Turn over → ${7 - d.value}`
+                          : pickActive === "anticipate"
+                            ? "Reroll this die"
+                            : undefined
+                      }
+                      onPointerDown={rerollActive || pickActive ? undefined : (e) => startDrag(e, d)}
+                      onClick={rerollActive ? () => toggleRerollDie(d.id) : pickActive ? () => pickDie(d.id) : undefined}
                     >
                       {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
                     </button>
@@ -589,18 +613,16 @@ export function Cockpit({
                 actions={{
                   adaptation:
                     myCrew && !game.adaptationUsed[myCrew] ? (
-                      adaptActive ? (
-                        <button onClick={() => setAdaptMode(false)} title="Tap one of your dice to turn it over">
-                          Tap a die · Cancel
-                        </button>
-                      ) : (
-                        <button disabled={!canAdapt} onClick={() => setAdaptMode(true)}>
-                          Flip a die
-                        </button>
-                      )
+                      pickButton("adapt", "Flip a die", canAdapt, "Tap one of your dice to turn it over")
                     ) : (
                       <span className="ability-used">used</span>
                     ),
+                  anticipation:
+                    myCrew === firstPlayerForRound(game.round)
+                      ? game.anticipated
+                        ? <span className="ability-used">used this round</span>
+                        : pickButton("anticipate", "Reroll a die", canAnticipate, "Before your first die: tap one of your dice to reroll it")
+                      : undefined,
                 }}
               />
               <div className="controls">

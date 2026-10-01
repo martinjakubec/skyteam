@@ -118,6 +118,8 @@ export interface GameState {
   rerollSpent: number;
   // Adaptation: each crew may turn one die over, once per game.
   adaptationUsed: Record<Crew, boolean>;
+  // Anticipation: the First Player has rerolled a die this round.
+  anticipated: boolean;
   // A joint reroll is in flight: the active player has rerolled and we are now
   // waiting on this crew to reroll (or decline). null = no reroll pending. While
   // set, every other command is rejected — this is the no-race lock.
@@ -191,6 +193,7 @@ export function createInitialGameState(
     rerollTokens: 0,
     rerollSpent: 0,
     adaptationUsed: { pilot: false, copilot: false },
+    anticipated: false,
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],

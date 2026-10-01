@@ -713,6 +713,22 @@ console.log("23) Adaptation");
   check("still used up in later rounds", nextRound.adaptationUsed.pilot === true);
 }
 
+// 24) Anticipation ----------------------------------------------------------------
+console.log("24) Anticipation");
+{
+  const ant = (st, who, dieId, value) => reduce(st, { type: "anticipate", dieId, value }, who).state;
+  const s0 = roll(init(scn({ rounds: 7, abilities: ["anticipation"] })), [1, 1, 1, 1], [2, 2, 2, 2]);
+  const s1 = ant(s0, P, 2, 6);
+  check("the First Player rerolls one die before placing", s1.dice.pilot[2].value === 6 && s1.anticipated);
+  check("…and it's still their turn", s1.turn === "pilot");
+  expectThrow("once per round", () => ant(s1, P, 1, 5));
+  expectThrow("only the First Player", () => ant(s0, C, 0, 5));
+  expectThrow("only before their first die", () => ant(place(s0, P, 1, { kind: "axis" }), P, 1, 5));
+  expectThrow("not without the card", () => ant(roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]), P, 0, 5));
+  const r2 = roll(Object.assign(structuredClone(s1), { phase: "rolling", round: 2 }), [1, 1, 1, 1], [3, 3, 3, 3]);
+  check("round 2: anticipation resets and the Co-Pilot (now leading) may use it", !r2.anticipated && ant(r2, C, 0, 6).dice.copilot[0].value === 6);
+}
+
 // 21) Every module combination -----------------------------------------------------
 // Each implemented module declares (a) how much Kerosene a quiet round burns and
 // (b) how to make a landing legal. Every allowed combination must validate, play

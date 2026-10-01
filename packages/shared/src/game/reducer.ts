@@ -50,7 +50,8 @@ export type ReduceCommand =
   | { type: "reroll"; dieIds: number[]; values: DieValue[] }
   | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
   | { type: "placeIntern"; target: PlacementTarget }
-  | { type: "adapt"; dieId: number };
+  | { type: "adapt"; dieId: number }
+  | { type: "anticipate"; dieId: number; value: DieValue };
 
 /**
  * The single, authoritative game-rules function. Pure: the input `state` is
@@ -72,6 +73,8 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
       return handlePlaceIntern(draft, command, byPlayerId);
     case "adapt":
       return handleAdapt(draft, command, byPlayerId);
+    case "anticipate":
+      return handleAnticipate(draft, command, byPlayerId);
     default:
       return assertNever(command);
   }
@@ -111,6 +114,7 @@ function handleRoll(
   s.internSlots = { pilot: null, copilot: null };
   s.internHeld = null;
   s.internPlaced = [];
+  s.anticipated = false;
   s.pendingReroll = null;
   s.placedThisRound = 0;
   s.turn = firstPlayerForRound(s.round);
@@ -368,6 +372,24 @@ function handleAdapt(s: GameState, cmd: { dieId: number }, byPlayerId: PlayerId)
   s.adaptationUsed[crew] = true;
   s.log.push(`${crewLabel(crew)} used Adaptation.`);
   return { state: s, description: "Die turned over." };
+}
+
+/** Anticipation: each round, before placing their first die, the First Player
+ *  may reroll one of their dice (value supplied by the server). */
+function handleAnticipate(s: GameState, cmd: { dieId: number; value: DieValue }, byPlayerId: PlayerId): ReduceResult {
+  if (s.phase !== "placement") throw new GameRuleError("You can only anticipate during placement.");
+  if (!hasAbility(s, "anticipation")) throw new GameRuleError("Anticipation is not in play.");
+  if (s.pendingReroll !== null || s.internHeld) throw new GameRuleError("Finish the current action first.");
+  const crew = requireCrew(s, byPlayerId);
+  if (crew !== firstPlayerForRound(s.round)) throw new GameRuleError("Only the First Player can anticipate.");
+  if (s.anticipated) throw new GameRuleError("Anticipation is already used this round.");
+  if (s.dice[crew].some((d) => d.placed)) throw new GameRuleError("Only before your first die.");
+  const die = s.dice[crew].find((d) => d.id === cmd.dieId);
+  if (!die || die.placed) throw new GameRuleError("No such die.");
+  die.value = cmd.value;
+  s.anticipated = true;
+  s.log.push(`${crewLabel(crew)} used Anticipation (rerolled one die).`);
+  return { state: s, description: "Die rerolled." };
 }
 
 // --- placement dispatch -----------------------------------------------------

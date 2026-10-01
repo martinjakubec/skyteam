@@ -212,10 +212,13 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
 
   const command = parsed.data.command;
   // A reroll is an intent: the server supplies the new (secret) dice values.
+  // Same for Anticipation's single-die reroll.
   const rcmd: ReduceCommand =
     command.type === "reroll"
       ? { type: "reroll", dieIds: command.dieIds, values: command.dieIds.map(() => randomInt(1, 7) as DieValue) }
-      : command;
+      : command.type === "anticipate"
+        ? { type: "anticipate", dieId: command.dieId, value: randomInt(1, 7) as DieValue }
+        : command;
 
   try {
     // Node processes one event at a time, so commands for a room are naturally

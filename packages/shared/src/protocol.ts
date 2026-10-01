@@ -74,6 +74,12 @@ export const GameCommand = z.discriminatedUnion("type", [
     dieId: z.number().int().min(0).max(3),
   }),
   z.object({
+    /** Anticipation (Special Ability): each round, before their first die, the
+     *  First Player may reroll one die. The server supplies the new value. */
+    type: z.literal("anticipate"),
+    dieId: z.number().int().min(0).max(3),
+  }),
+  z.object({
     type: z.literal("reroll"),
     /** Indices of the player's own dice to reroll. The active player initiates a
      *  joint reroll (≥1 die, spends one token); the other player is then prompted
