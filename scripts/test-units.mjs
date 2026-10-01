@@ -6,6 +6,7 @@ import {
   DEFAULT_SETUP,
   SCENARIOS,
   SetSetupPayload,
+  conflictingModules,
   createInitialGameState,
   reduce,
   redactGameStateFor,
@@ -111,6 +112,8 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("unknown module rejected", !ok({ scenarioId: "YUL", modules: ["jetpack"] }));
   check("implemented module accepted", ok({ scenarioId: "YUL", modules: ["kerosene"] }));
   check("not-yet-implemented module rejected", !ok({ scenarioId: "YUL", modules: ["intern"] }));
+  check("Kerosene Leak accepted", ok({ scenarioId: "YUL", modules: ["keroseneLeak"] }));
+  check("Kerosene + Kerosene Leak together rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "keroseneLeak"] }));
   check("duplicate module rejected", !ok({ scenarioId: "YUL", modules: ["kerosene", "kerosene"] }));
   check("missing modules rejected", !ok({ scenarioId: "YUL" }));
 
@@ -119,6 +122,9 @@ console.log("2b) SetSetupPayload validation and scenarioForSetup");
   check("modules are copied onto the scenario", Array.isArray(scenario.modules) && scenario.modules.length === 0);
   scenario.modules.push("intern");
   check("resolving never mutates the registry", SCENARIOS.YUL.modules === undefined);
+  check("Kerosene and Kerosene Leak exclude each other",
+    conflictingModules("kerosene").join() === "keroseneLeak" && conflictingModules("keroseneLeak").join() === "kerosene");
+  check("unrelated modules conflict with nothing", conflictingModules("intern").length === 0);
 }
 
 // 3) CORS origin check -------------------------------------------------------

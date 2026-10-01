@@ -471,5 +471,33 @@ console.log("16) Kerosene: either crew burns a die's value; empty space burns 6;
   check("final round: fuel to spare -> landing still counts", playRound(readyToLand(withKero(7)), level(1, 1)).phase === "won");
 }
 
+// 17) Kerosene Leak module -------------------------------------------------------
+console.log("17) Kerosene Leak: Engines burn |difference| + 1 when both are seated; no die space");
+{
+  const lscn = (over) => scn({ rounds: 7, modules: ["keroseneLeak"], ...over });
+  const lostKero = (s) => lostFor(s, /kerosene/i);
+
+  let s = roll(init(lscn()), [5, 1, 1, 1], [2, 1, 1, 1]);
+  s = place(s, P, 5, { kind: "engine" });
+  check("one Engine die alone burns nothing", s.kerosene === 20);
+  s = place(s, C, 2, { kind: "engine" }); // speed 7: advance 1 onto the airport, no overshoot
+  check("Engines 5 vs 2 burn 4 at once (mid-round)", s.kerosene === 16 && s.round === 1 && s.phase === "placement");
+  expectThrow("Kerosene space is not usable with the Leak", () => place(s, P, 1, { kind: "kerosene" }));
+
+  check("matching Engines still leak 1; no idle -6 at round end", playRound(init(lscn()), level(1, 1)).kerosene === 19);
+
+  const low = roll(init(lscn()), [1, 1, 1, 1], [5, 1, 1, 1]);
+  low.kerosene = 5;
+  const posBefore = low.position;
+  let dry = place(low, P, 1, { kind: "engine" });
+  dry = place(dry, C, 5, { kind: "engine" }); // speed 6 would advance 1 — but the leak (5) empties the tank first
+  check("a leak that empties the tank loses immediately", lostKero(dry) && dry.kerosene === 0);
+  check("…before the plane moves", dry.position === posBefore);
+
+  const withLeak = (fuel) => (st) => ((st.scenario.modules = ["keroseneLeak"]), (st.kerosene = fuel));
+  check("final round: leak to empty beats a good landing", lostKero(playRound(readyToLand(withLeak(1)), level(1, 1))));
+  check("final round: fuel to spare -> landing still counts", playRound(readyToLand(withLeak(2)), level(1, 1)).phase === "won");
+}
+
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

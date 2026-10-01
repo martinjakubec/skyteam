@@ -1,5 +1,7 @@
 import {
+  EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
+  conflictingModules,
   MODULE_IDS,
   MODULE_LABELS,
   SCENARIO_IDS,
@@ -51,12 +53,16 @@ function SetupPicker({
   editable: boolean;
   onChange: (setup: GameSetup) => void;
 }) {
-  const toggle = (id: ModuleId, on: boolean) =>
+  // Ticking a module unticks any it can't be played with (e.g. Kerosene vs
+  // Kerosene Leak — one or the other).
+  const toggle = (id: ModuleId, on: boolean) => {
+    const drop = on ? conflictingModules(id) : [];
     onChange({
       ...setup,
       // Keep the canonical MODULE_IDS order so equal selections compare equal.
-      modules: MODULE_IDS.filter((m) => (m === id ? on : setup.modules.includes(m))),
+      modules: MODULE_IDS.filter((m) => (m === id ? on : setup.modules.includes(m) && !drop.includes(m))),
     });
+  };
 
   return (
     <div className="setup">
@@ -92,6 +98,11 @@ function SetupPicker({
           );
         })}
       </fieldset>
+      {EXCLUSIVE_MODULE_GROUPS.map((group) => (
+        <p key={group.join()} className="muted setup-note">
+          {group.map((m) => MODULE_LABELS[m]).join(" or ")} — one or the other, not both.
+        </p>
+      ))}
       {!editable && <p className="muted">The host chooses the airport and modules.</p>}
     </div>
   );

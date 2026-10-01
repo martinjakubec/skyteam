@@ -52,7 +52,19 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
  * server rejects any other selection; a module joins this list when its rules
  * land in the reducer.
  */
-export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene"];
+export const IMPLEMENTED_MODULES: readonly ModuleId[] = ["kerosene", "keroseneLeak"];
+
+/**
+ * Modules that can't be played together — at most one per group. Kerosene Leak
+ * is a variant of the Kerosene track (same track, different burn rule), so a
+ * game uses one or the other.
+ */
+export const EXCLUSIVE_MODULE_GROUPS: readonly (readonly ModuleId[])[] = [["kerosene", "keroseneLeak"]];
+
+/** The modules that can't be combined with `id` (empty if none). */
+export function conflictingModules(id: ModuleId): ModuleId[] {
+  return EXCLUSIVE_MODULE_GROUPS.filter((g) => g.includes(id)).flatMap((g) => g.filter((m) => m !== id));
+}
 
 /** Kerosene module: the marker starts here; reaching 0 (the empty space) loses. */
 export const KEROSENE_START = 20;

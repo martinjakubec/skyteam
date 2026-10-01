@@ -68,6 +68,7 @@ async function main() {
   check("lobby snapshot carries the default setup", lobby.setup?.scenarioId === "YUL" && lobby.setup.modules.length === 0);
   check("guest setup change rejected", (await emit(b, "room:setup", { scenarioId: "YUL", modules: [] })).ok === false);
   check("unimplemented module rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["intern"] })).ok === false);
+  check("Kerosene + Kerosene Leak together rejected", (await emit(a, "room:setup", { scenarioId: "YUL", modules: ["kerosene", "keroseneLeak"] })).ok === false);
   check("unknown airport rejected", (await emit(a, "room:setup", { scenarioId: "XXX", modules: [] })).ok === false);
   check("host setup accepted", (await emit(a, "room:setup", { scenarioId: "YUL", modules: [] })).ok === true);
 

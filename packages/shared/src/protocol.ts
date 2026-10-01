@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
-import { IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, type GameSetup } from "./game/scenario";
+import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, type GameSetup } from "./game/scenario";
 
 // ---------------------------------------------------------------------------
 // Identity & enums
@@ -81,14 +81,19 @@ export const SetReadyPayload = z.object({ ready: z.boolean() });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
 
 /** Host-only lobby setting: which airport and modules the next game uses. Only
- *  implemented modules are accepted, and each at most once. */
+ *  implemented modules are accepted, each at most once, and never two from the
+ *  same exclusive group (e.g. Kerosene + Kerosene Leak). */
 export const SetSetupPayload = z.object({
   scenarioId: z.enum(SCENARIO_IDS),
   modules: z
     .array(z.enum(MODULE_IDS))
     .max(MODULE_IDS.length)
     .refine((m) => new Set(m).size === m.length, "Duplicate module.")
-    .refine((m) => m.every((id) => IMPLEMENTED_MODULES.includes(id)), "That module is not available yet."),
+    .refine((m) => m.every((id) => IMPLEMENTED_MODULES.includes(id)), "That module is not available yet.")
+    .refine(
+      (m) => EXCLUSIVE_MODULE_GROUPS.every((group) => group.filter((id) => m.includes(id)).length <= 1),
+      "Those modules can't be played together.",
+    ),
 }) satisfies z.ZodType<GameSetup>;
 export type SetSetupPayload = z.infer<typeof SetSetupPayload>;
 

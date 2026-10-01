@@ -249,6 +249,10 @@ ul {
   align-items: center;
   gap: 0.4rem;
 }
+.setup-note {
+  margin: 0;
+  font-size: 0.8rem;
+}
 .setup-modules input[type="checkbox"] {
   flex: none;
   padding: 0;
@@ -1531,6 +1535,18 @@ ul {
   }
   .with-kerosene .kerosene-gauge.vertical {
     display: none;
+  }
+  /* Leak has no die space, so its hint moves out of the gauge row up into the
+     module's top-right corner, level with the title. */
+  .with-kerosene .mod-kerosene {
+    position: relative;
+  }
+  .with-kerosene .kerosene-hint.leak {
+    position: absolute;
+    top: 0.4rem; /* the module's top padding — same line as the title */
+    right: 0.55rem;
+    font-size: 0.64rem; /* match the title so the two baselines line up */
+    line-height: normal;
   }
   .with-kerosene .kerosene-gauge.horizontal {
     display: block;

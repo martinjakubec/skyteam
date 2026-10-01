@@ -14,13 +14,20 @@ import { Slot } from "./Slot";
  *
  * Either crew may place one die of any value here per round; the marker drops
  * by that value. Left empty, the round ends with a fixed burn of 6.
+ *
+ * `leak` (Kerosene Leak module, played instead of Kerosene): same track but no
+ * die space (the physical board blocks it with a token; here it's simply
+ * omitted). Each round the tank loses the difference between the Engine
+ * dice, +1.
  */
 export function Kerosene({
   level,
   seated,
   enabled,
   onClick,
+  leak = false,
 }: {
+  leak?: boolean;
   level: number;
   /** The die placed on the Kerosene space this round, if any. */
   seated: { value: number; crew: Crew } | null;
@@ -28,24 +35,32 @@ export function Kerosene({
   onClick: () => void;
 }) {
   return (
-    <Module title="Kerosene" tone="split" className="mod-kerosene">
+    <Module title={leak ? "Kerosene Leak" : "Kerosene"} tone="split" className="mod-kerosene">
       <div className="kerosene">
-        <div className="kerosene-space">
-          <Slot
-            tone={seated ? (seated.crew === "pilot" ? "blue" : "orange") : "neutral"}
-            noSwitch
-            dice
-            taken={seated !== null}
-            label={seated ? face(seated.value) : "⛽"}
-            target={{ kind: "kerosene" }}
-            onClick={onClick}
-            enabled={enabled}
-          />
-          <span className="kerosene-hint" title={`An empty Kerosene space burns ${KEROSENE_IDLE_BURN} at round end`}>
-            empty −{KEROSENE_IDLE_BURN}
+        {leak ? (
+          <span className="kerosene-hint leak" title="Each round you lose the difference between the two Engine dice, +1">
+            engines Δ +1
           </span>
-        </div>
-        <KeroseneGauge level={level} orientation="vertical" />
+        ) : (
+          <div className="kerosene-space">
+            <Slot
+              tone={seated ? (seated.crew === "pilot" ? "blue" : "orange") : "neutral"}
+              noSwitch
+              dice
+              taken={seated !== null}
+              label={seated ? face(seated.value) : "⛽"}
+              target={{ kind: "kerosene" }}
+              onClick={onClick}
+              enabled={enabled}
+            />
+            <span className="kerosene-hint" title={`An empty Kerosene space burns ${KEROSENE_IDLE_BURN} at round end`}>
+              empty −{KEROSENE_IDLE_BURN}
+            </span>
+          </div>
+        )}
+        {/* With no die space, the Leak's vertical tube takes over the space's
+            height (68px slot + ~4px gap) so it still fills the module. */}
+        <KeroseneGauge level={level} orientation="vertical" length={leak ? 360 : 290} />
         <KeroseneGauge level={level} orientation="horizontal" />
       </div>
     </Module>
@@ -60,10 +75,18 @@ export function Kerosene({
  * and orange, to red near empty. A red band marks the last 6 steps (one idle
  * round's burn from empty).
  */
-function KeroseneGauge({ level, orientation }: { level: number; orientation: "vertical" | "horizontal" }) {
+function KeroseneGauge({
+  level,
+  orientation,
+  length = 290,
+}: {
+  level: number;
+  orientation: "vertical" | "horizontal";
+  /** Track length in px; the default gives ~14px per step so units read clearly. */
+  length?: number;
+}) {
   const vertical = orientation === "vertical";
-  // Track length ~14px per step either way, so single units read clearly.
-  const LEN = 290;
+  const LEN = length;
   const W = vertical ? 68 : LEN;
   const H = vertical ? LEN : 44;
   const tubeW = 14;

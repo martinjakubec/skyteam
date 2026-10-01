@@ -89,7 +89,10 @@ export function Cockpit({
   // Advanced modules switched on for this game. `?preview=` (dev only) shows a
   // module's UI without it being in play — its spaces stay disabled then.
   const keroseneInPlay = game.scenario.modules?.includes("kerosene") ?? false;
-  const keroseneOn = keroseneInPlay || previewModule("kerosene");
+  // Kerosene Leak replaces Kerosene (one or the other): same track and spot,
+  // but no die space — the Engine dice drive the burn.
+  const leakOn = (game.scenario.modules?.includes("keroseneLeak") ?? false) || previewModule("keroseneLeak");
+  const keroseneOn = keroseneInPlay || previewModule("kerosene") || leakOn;
 
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
   // Flaps deploy strictly in order: only the first undeployed section is legal.
@@ -351,9 +354,11 @@ export function Cockpit({
           pilot rail left of the dial and the co-pilot rail right of it. */}
       <div className="rail rail-pilot">
         {/* Kerosene runs down the left of the Radio + Landing Gear (rail grid:
-            see .with-kerosene). Either crew may use it. */}
+            see .with-kerosene). Either crew may use it — except with the
+            Leak, where the space is blocked. */}
         {keroseneOn && (
           <Kerosene
+            leak={leakOn}
             level={game.kerosene}
             seated={game.keroseneSlot}
             enabled={canFree(keroseneInPlay && game.keroseneSlot == null)}

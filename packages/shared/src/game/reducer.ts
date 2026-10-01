@@ -293,6 +293,15 @@ function resolveEngines(s: GameState): void {
   const speed = s.engines.pilot! + s.engines.copilot!;
   s.lastSpeed = speed;
 
+  // Kerosene Leak: the Engine dice drain the tank by their difference + 1, the
+  // moment both are seated — every round, the landing round included. A dry
+  // tank loses before the plane moves (or lands).
+  if (hasModule(s, "keroseneLeak")) {
+    const leak = Math.abs(s.engines.pilot! - s.engines.copilot!) + 1;
+    burnKerosene(s, leak, `Kerosene leak: Engines ${s.engines.pilot} vs ${s.engines.copilot} lost ${leak}`);
+    if (s.outcome) return;
+  }
+
   if (isFinalRound(s)) {
     s.log.push(`Final approach speed: ${speed}.`);
     return; // no movement on the landing round
