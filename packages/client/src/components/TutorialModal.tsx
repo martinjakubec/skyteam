@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { AbilityId, ModuleId } from "@skyteam/shared";
-import { TUTORIALS } from "../tutorials";
+import { tutorialFor } from "../tutorials";
+import type { TutorialId } from "../tutorials/types";
 import { useSandbox } from "../tutorials/useSandbox";
 import { Cockpit } from "./Cockpit";
 
-/** A module's or Special Ability's rules plus its guided, playable tutorial. */
-export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClose: () => void }) {
-  const tutorial = TUTORIALS[id];
+/** The full game's, a module's or a Special Ability's rules plus its guided, playable tutorial. */
+export function TutorialModal({ id, onClose }: { id: TutorialId; onClose: () => void }) {
+  const tutorial = tutorialFor(id);
   const sb = useSandbox(tutorial);
   const panel = useRef<HTMLDivElement>(null);
   // The lobby passes a new onClose on every render; keep the latest without
@@ -56,22 +56,33 @@ export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClo
           </button>
         </header>
         <p className="tutorial-desc">{tutorial.description}</p>
-        <div className="stage tutorial-stage">
-          <p className="tutorial-as">
-            Playing as: <b>{crew}</b>
-          </p>
-          {/* Remounted on Reset and whenever the other crew takes over, so no
-              selected die or Coffee carries across. */}
-          <Cockpit key={`${sb.resets}:${sb.snapshot.you.playerId}`} snapshot={sb.snapshot} onCommand={sb.send} show={tutorial.show} clockOffset={0} />
+        {/* Only the board scrolls (the step below stays in view); a drag near
+            its top or bottom edge scrolls it (see Cockpit). */}
+        <div className="tutorial-scroll" data-drag-scroll>
+          <div className="stage tutorial-stage">
+            <p className="tutorial-as">
+              Playing as: <b>{crew}</b>
+            </p>
+            {/* Remounted on Reset and whenever the other crew takes over, so no
+                selected die or Coffee carries across. */}
+            <Cockpit key={`${sb.resets}:${sb.snapshot.you.playerId}`} snapshot={sb.snapshot} onCommand={sb.send} show={tutorial.show} clockOffset={0} />
+          </div>
         </div>
         <footer className={`tutorial-steps${sb.flash ? " done" : ""}`}>
-          <span className="tutorial-count">{sb.step ? `Step ${sb.stepIndex + 1} of ${total}` : "Free play"}</span>
+          <span className="tutorial-count">
+            {!sb.step
+              ? tutorial.outro ? "Done" : "Free play"
+              : sb.step.chapter
+                ? `${sb.step.chapter} · ${sb.stepIndex + 1}/${total}`
+                : `Step ${sb.stepIndex + 1} of ${total}`}
+          </span>
           <p className="tutorial-text" aria-live="polite">
-            {sb.error ?? sb.step?.text ?? "Free play — try anything, or Reset."}
+            {sb.error ?? sb.step?.text ?? tutorial.outro ?? "Free play — try anything, or Reset."}
           </p>
           <div className="row">
             {sb.timerRunning && <button onClick={sb.skipTime}>Skip to time's up</button>}
             {sb.step && <button onClick={sb.next}>{sb.step.info ? "Got it" : "Next"}</button>}
+            {sb.canRetry && <button onClick={sb.retryStep}>Retry step</button>}
             <button onClick={sb.reset}>Reset</button>
             <button onClick={onClose}>Close</button>
           </div>

@@ -375,13 +375,16 @@ export function Cockpit({
     const a = autoScroll.current;
     const EDGE = 96; // px zone at top/bottom edge that triggers scrolling
     const MAX = 18; // px/frame at the very edge
-    const h = window.innerHeight;
+    // Inside a tutorial the dialog's board box scrolls, not the page: its edges
+    // are the zones.
+    const box = boardRef.current?.closest("[data-drag-scroll]");
+    const r = box?.getBoundingClientRect();
+    const top = r ? r.top : 0;
+    const bottom = r ? r.bottom : window.innerHeight;
     let dy = 0;
-    if (a.y < EDGE) dy = -Math.ceil(((EDGE - a.y) / EDGE) * MAX);
-    else if (h - a.y < EDGE) dy = Math.ceil(((EDGE - (h - a.y)) / EDGE) * MAX);
+    if (a.y - top < EDGE) dy = -Math.ceil(((EDGE - Math.max(0, a.y - top)) / EDGE) * MAX);
+    else if (bottom - a.y < EDGE) dy = Math.ceil(((EDGE - Math.max(0, bottom - a.y)) / EDGE) * MAX);
     if (dy !== 0) {
-      // Inside a tutorial the dialog scrolls, not the page.
-      const box = boardRef.current?.closest(".tutorial-backdrop");
       const scrolled = () => (box ? box.scrollTop : window.scrollY);
       const before = scrolled();
       if (box) box.scrollBy(0, dy);

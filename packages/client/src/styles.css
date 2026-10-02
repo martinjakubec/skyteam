@@ -240,6 +240,10 @@ ul {
   flex-direction: column;
   gap: 0.5rem;
 }
+/* Opens the full-game tutorial (also on the home screen). */
+.setup .how-to-play {
+  align-self: flex-start;
+}
 .setup-label {
   font-family: var(--font-display);
   letter-spacing: 0.05em;
@@ -2401,8 +2405,11 @@ ul {
   padding: 2rem 1rem;
   background: rgba(8, 11, 16, 0.72);
 }
+/* The panel fits the screen; only the board (.tutorial-scroll) scrolls, so the
+   step below it is always in view (the full-game board is taller than a phone). */
 .tutorial-panel {
   width: min(1000px, 100%);
+  max-height: calc(100dvh - 4rem);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -2431,6 +2438,12 @@ ul {
 .tutorial-desc {
   margin: 0;
 }
+.tutorial-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .tutorial-stage {
   padding: 0;
   max-width: none;
@@ -2440,6 +2453,7 @@ ul {
   font-size: 0.85rem;
 }
 .tutorial-steps {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -2469,6 +2483,7 @@ ul {
     padding: 0.5rem 0.25rem;
   }
   .tutorial-panel {
+    max-height: calc(100dvh - 1rem);
     padding: 0.6rem 0.4rem;
   }
 }

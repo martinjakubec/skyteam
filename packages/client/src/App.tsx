@@ -5,12 +5,14 @@ import { Cockpit } from "./components/Cockpit";
 import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
+import { TutorialModal } from "./components/TutorialModal";
 
 export function App() {
   const { snapshot, connected, lastError, connect, setReady, setSetup, startGame, resetGame, exitGame, sendCommand } =
     useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [howToPlay, setHowToPlay] = useState(false);
 
   // Auto-join when opened via an invite link: /?join=<inviteCode>
   // The ref guard makes this run exactly once: React StrictMode double-invokes
@@ -59,6 +61,10 @@ export function App() {
           Create a room
         </button>
         <p className="muted">Open an invite link to join an existing room.</p>
+        <button className="how-to-play" onClick={() => setHowToPlay(true)}>
+          How to play
+        </button>
+        {howToPlay && <TutorialModal id="basics" onClose={() => setHowToPlay(false)} />}
       </main>
     );
   }
