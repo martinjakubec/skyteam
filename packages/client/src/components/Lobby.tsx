@@ -16,7 +16,9 @@ import {
   type RoomSnapshot,
   type ScenarioId,
 } from "@skyteam/shared";
+import { useState } from "react";
 import { ScenarioPicker } from "./ScenarioPicker";
+import { TutorialModal } from "./TutorialModal";
 
 export function Lobby({
   snapshot,
@@ -88,6 +90,15 @@ function SetupPicker({
       abilities: [],
     });
 
+  // The ⓘ beside each module and ability opens its tutorial — for host and
+  // guest alike (it runs locally; nothing is sent).
+  const [tutorial, setTutorial] = useState<ModuleId | AbilityId | null>(null);
+  const info = (id: ModuleId | AbilityId, name: string) => (
+    <button type="button" className="info-btn" aria-label={`How ${name} works`} title={`How ${name} works`} onClick={() => setTutorial(id)}>
+      ⓘ
+    </button>
+  );
+
   return (
     <div className="setup">
       <div className="setup-airport">
@@ -99,16 +110,19 @@ function SetupPicker({
         {MODULE_IDS.map((id) => {
           const available = IMPLEMENTED_MODULES.includes(id);
           return (
-            <label key={id} className={available ? "" : "muted"}>
-              <input
-                type="checkbox"
-                checked={setup.modules.includes(id)}
-                disabled={!editable || !available}
-                onChange={(e) => toggle(id, e.target.checked)}
-              />
-              {MODULE_LABELS[id]}
-              {!available && " (soon)"}
-            </label>
+            <span key={id} className="setup-item">
+              <label className={available ? "" : "muted"}>
+                <input
+                  type="checkbox"
+                  checked={setup.modules.includes(id)}
+                  disabled={!editable || !available}
+                  onChange={(e) => toggle(id, e.target.checked)}
+                />
+                {MODULE_LABELS[id]}
+                {!available && " (soon)"}
+              </label>
+              {info(id, MODULE_LABELS[id])}
+            </span>
           );
         })}
       </fieldset>
@@ -117,15 +131,18 @@ function SetupPicker({
         {ABILITY_IDS.map((id) => {
           const checked = setup.abilities.includes(id);
           return (
-            <label key={id} title={ABILITY_TEXT[id]}>
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={!editable || (!checked && setup.abilities.length >= maxAbilities)}
-                onChange={(e) => toggleAbility(id, e.target.checked)}
-              />
-              {ABILITY_LABELS[id]}
-            </label>
+            <span key={id} className="setup-item">
+              <label title={ABILITY_TEXT[id]}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!editable || (!checked && setup.abilities.length >= maxAbilities)}
+                  onChange={(e) => toggleAbility(id, e.target.checked)}
+                />
+                {ABILITY_LABELS[id]}
+              </label>
+              {info(id, ABILITY_LABELS[id])}
+            </span>
           );
         })}
       </fieldset>
@@ -140,6 +157,7 @@ function SetupPicker({
         </p>
       ))}
       {!editable && <p className="muted">The host chooses the airport and modules.</p>}
+      {tutorial && <TutorialModal id={tutorial} onClose={() => setTutorial(null)} />}
     </div>
   );
 }
