@@ -1,4 +1,4 @@
-import { GameRuleError, type Crew, type GameCommand, type GameState } from "@skyteam/shared";
+import { GameRuleError, reduce, type Crew, type GameCommand, type GameState } from "@skyteam/shared";
 import { apply, scriptedDice, type DiceCursor, type ScriptedDice } from "./engine";
 import type { Move, Tutorial } from "./types";
 
@@ -55,6 +55,19 @@ export function play(sess: Session, tutorial: Tutorial, move: Move, dice: Script
  *  and the tutorial isn't finished. */
 export function hasProgress(sess: Session, tutorial: Tutorial): boolean {
   return sess.stepIndex < tutorial.steps.length && (sess.stepIndex > 0 || sess.game !== sess.before);
+}
+
+/** Freeze a running Real-Time clock (while "Leave the tutorial?" is asked);
+ *  a no-op when none is running. */
+export function pauseClock(sess: Session, at: number): Session {
+  if (sess.game.timerEndsAt === null || sess.game.phase !== "placement") return sess;
+  return { ...sess, game: reduce(sess.game, { type: "pauseTimer", at }, "").state };
+}
+
+/** Restart a paused clock with the time it had left. */
+export function resumeClock(sess: Session, at: number): Session {
+  if (sess.game.timerRemainingMs === null) return sess;
+  return { ...sess, game: reduce(sess.game, { type: "resumeTimer", at }, "").state };
 }
 
 /** Retry step: back to the board as the current step began. */

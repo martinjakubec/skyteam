@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETUP, type GameCommand, type GameState, type RoomSnapshot } from "@skyteam/shared";
 import { COPILOT_ID, PILOT_ID, actingCrew, scriptedDice, timeUp } from "./engine";
-import { advance, hasProgress, initSession, play, retry, skip, type Session } from "./session";
+import { advance, hasProgress, initSession, pauseClock, play, resumeClock, retry, skip, type Session } from "./session";
 import type { Move, Tutorial } from "./types";
 
 /** How long a completed step shows as done before the next one starts. */
@@ -82,6 +82,14 @@ export function useSandbox(tutorial: Tutorial) {
     commit(retry(latest.current, tutorial));
     setResets((n) => n + 1);
   };
+  /** Freeze a running Real-Time clock; true if there was one to freeze. */
+  const pause = () => {
+    const next = pauseClock(latest.current, Date.now());
+    if (next === latest.current) return false;
+    commit(next);
+    return true;
+  };
+  const resume = () => commit(resumeClock(latest.current, Date.now()));
   useEffect(() => cancelAdvance, []);
 
   // Real-Time: the countdown runs on this machine's clock.
@@ -108,6 +116,8 @@ export function useSandbox(tutorial: Tutorial) {
     next,
     reset,
     retryStep,
+    pause,
+    resume,
     skipTime: () => playMove(timeUp),
     timerRunning,
   };

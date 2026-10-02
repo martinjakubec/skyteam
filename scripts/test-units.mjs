@@ -401,6 +401,21 @@ console.log("2l) tutorial session: is there progress to lose on close?");
   check("a finished tutorial has nothing to lose", end.stepIndex === t.steps.length && !ses.hasProgress(end, t));
 }
 
+console.log("2m) tutorial session: the Real-Time clock pauses while Leave is asked");
+{
+  const rt = TUTORIALS.realTime;
+  const dice = tut.scriptedDice(rt.script);
+  const running = ses.play(ses.initSession(rt, dice), rt, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  const left = running.game.timerEndsAt - 1000;
+  const paused = ses.pauseClock(running, 1000);
+  check("pausing freezes the time left", paused.game.timerEndsAt === null && paused.game.timerRemainingMs === left);
+  const resumed = ses.resumeClock(paused, 50000);
+  check("resuming restarts it with that time left", resumed.game.timerEndsAt === 50000 + left && resumed.game.timerRemainingMs === null);
+  check("the step and its start are untouched", resumed.stepIndex === running.stepIndex && resumed.before === running.before);
+  const k = ses.initSession(TUTORIALS.kerosene);
+  check("with no clock running, pausing changes nothing", ses.pauseClock(k, 1000) === k);
+}
+
 // 3) CORS origin check -------------------------------------------------------
 console.log("3) originChecker: wildcard, allowlist, missing origin");
 {

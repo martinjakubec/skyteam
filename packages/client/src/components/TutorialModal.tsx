@@ -16,8 +16,16 @@ export function TutorialModal({ id, onClose }: { id: TutorialId; onClose: () => 
   // Leaving mid-tutorial asks first ("Leave the tutorial?"); nothing to lose, no question.
   const [confirming, setConfirming] = useState(false);
   const confirmBox = useRef<HTMLDivElement>(null);
-  const requestClose = () => (sb.hasProgress ? setConfirming(true) : onClose());
+  // A Real-Time clock stands still while the question is open.
+  const pausedForQuestion = useRef(false);
+  const requestClose = () => {
+    if (!sb.hasProgress) return onClose();
+    pausedForQuestion.current = sb.pause();
+    setConfirming(true);
+  };
   const keepPlaying = () => {
+    if (pausedForQuestion.current) sb.resume();
+    pausedForQuestion.current = false;
     setConfirming(false);
     panel.current?.focus();
   };
