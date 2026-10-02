@@ -114,38 +114,41 @@ export function ScenarioPicker({
         </span>
       </button>
       {open && (
-        <div
-          ref={list}
-          className="picker-list"
-          role="listbox"
-          tabIndex={-1}
-          aria-label="Scenarios"
-          aria-activedescendant={`${uid}-${active}`}
-          onKeyDown={onListKey}
-        >
-          {DIFFICULTIES.map((d) => (
-            <div key={d.id} role="group" aria-labelledby={`${uid}-${d.id}`} className={`picker-group diff-${d.id}`}>
-              <div id={`${uid}-${d.id}`} className="picker-band">
-                {d.label}
+        // The frame clips the scrolling list (and its scrollbar) to rounded corners.
+        <div className="picker-frame">
+          <div
+            ref={list}
+            className="picker-list"
+            role="listbox"
+            tabIndex={-1}
+            aria-label="Scenarios"
+            aria-activedescendant={`${uid}-${active}`}
+            onKeyDown={onListKey}
+          >
+            {DIFFICULTIES.map((d) => (
+              <div key={d.id} role="group" aria-labelledby={`${uid}-${d.id}`} className={`picker-group diff-${d.id}`}>
+                <div id={`${uid}-${d.id}`} className="picker-band">
+                  {d.label}
+                </div>
+                {ORDER.map((t, i) =>
+                  t.difficulty !== d.id ? null : (
+                    <div
+                      key={t.id}
+                      id={`${uid}-${i}`}
+                      role="option"
+                      data-value={idOf(t)}
+                      aria-selected={t === current}
+                      className={`picker-option${i === active ? " active" : ""}`}
+                      onPointerMove={() => i !== active && setActive(i)}
+                      onClick={() => choose(t)}
+                    >
+                      <CardLabel t={t} />
+                    </div>
+                  ),
+                )}
               </div>
-              {ORDER.map((t, i) =>
-                t.difficulty !== d.id ? null : (
-                  <div
-                    key={t.id}
-                    id={`${uid}-${i}`}
-                    role="option"
-                    data-value={idOf(t)}
-                    aria-selected={t === current}
-                    className={`picker-option${i === active ? " active" : ""}`}
-                    onPointerMove={() => i !== active && setActive(i)}
-                    onClick={() => choose(t)}
-                  >
-                    <CardLabel t={t} />
-                  </div>
-                ),
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
