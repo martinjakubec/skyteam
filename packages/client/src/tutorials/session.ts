@@ -51,6 +51,12 @@ export function play(sess: Session, tutorial: Tutorial, move: Move, dice: Script
   return { ...sess, game, done, played, error: null };
 }
 
+/** Closing would lose something: a step is under way past the untouched start,
+ *  and the tutorial isn't finished. */
+export function hasProgress(sess: Session, tutorial: Tutorial): boolean {
+  return sess.stepIndex < tutorial.steps.length && (sess.stepIndex > 0 || sess.game !== sess.before);
+}
+
 /** Retry step: back to the board as the current step began. */
 export function retry(sess: Session, tutorial: Tutorial): Session {
   const step = tutorial.steps[sess.stepIndex];

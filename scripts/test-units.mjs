@@ -386,6 +386,21 @@ console.log("2k) tutorial session: Retry step, strict steps, the full-game tutor
   check("…with a chapter on every step", BASICS.steps.every((st) => typeof st.chapter === "string" && st.chapter.length > 0));
 }
 
+console.log("2l) tutorial session: is there progress to lose on close?");
+{
+  const t = TUTORIALS.kerosene;
+  const dice = tut.scriptedDice(t.script);
+  const s0 = ses.initSession(t, dice);
+  check("a fresh tutorial has nothing to lose", !ses.hasProgress(s0, t));
+  const s1 = ses.play(s0, t, tut.place("pilot", 2, { kind: "kerosene" }), dice);
+  check("a move on step 1 is progress", ses.hasProgress(s1, t));
+  const s2 = ses.skip(s0, t, dice);
+  check("a later step is progress", ses.hasProgress(s2, t));
+  let end = s0;
+  for (let i = 0; i < t.steps.length; i++) end = ses.skip(end, t, dice);
+  check("a finished tutorial has nothing to lose", end.stepIndex === t.steps.length && !ses.hasProgress(end, t));
+}
+
 // 3) CORS origin check -------------------------------------------------------
 console.log("3) originChecker: wildcard, allowlist, missing origin");
 {

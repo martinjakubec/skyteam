@@ -2408,6 +2408,7 @@ ul {
 /* The panel fits the screen; only the board (.tutorial-scroll) scrolls, so the
    step below it is always in view (the full-game board is taller than a phone). */
 .tutorial-panel {
+  position: relative;
   width: min(1000px, 100%);
   max-height: calc(100dvh - 4rem);
   display: flex;
@@ -2420,6 +2421,38 @@ ul {
   color: var(--ink);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   outline: none;
+}
+/* "Leave the tutorial?": over the whole panel, which it blocks while open. */
+.tutorial-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border-radius: inherit;
+  background: rgba(8, 11, 16, 0.6);
+}
+.tutorial-confirm {
+  width: min(22rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  background: var(--recess);
+  color: var(--paper);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+.tutorial-confirm h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tutorial-confirm p {
+  margin: 0;
 }
 .tutorial-head {
   display: flex;
