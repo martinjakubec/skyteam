@@ -25,6 +25,7 @@ import {
   withEntropy,
 } from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
+import * as tut from "../packages/client/src/tutorials/engine.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
@@ -240,6 +241,24 @@ console.log("2f) entropy: the server's dice values come from a pluggable source"
   check("roundRoll: two hands, one Traffic roll per icon, the clock", roll.pilot.join() === "6,6,6,6" && roll.copilot.length === 4 && roll.traffic.join() === "5" && roll.at === 42);
   const settled = settle(game, { d6: () => 3, traffic: () => 2 }, () => 7);
   check("settle rolls the pending round", settled.phase === "placement" && settled.dice.pilot.every((d) => d.value === 3) && settled.airplanes[1] === 1);
+}
+
+console.log("2g) tutorial engine: both crews, scripted dice, real rules");
+{
+  let s = tut.start({ pilot: [3, 4, 6, 6], copilot: [3, 4, 6, 6] });
+  check("starts in placement with the given hands", s.phase === "placement" && s.dice.pilot.map((d) => d.value).join() === "3,4,6,6");
+  check("the Pilot acts first in round 1", tut.actingCrew(s) === "pilot");
+  const dice = tut.scriptedDice({ d6: [5] });
+  s = tut.apply(s, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  check("a move is played through the reducer", s.axis.pilot === 3 && tut.actingCrew(s) === "copilot");
+  const before = s;
+  let threw = false;
+  try { tut.apply(s, tut.place("copilot", 3, tut.engine("pilot")), dice); } catch { threw = true; }
+  check("an illegal move throws and leaves the state alone", threw && before.engines.pilot === null);
+  check("scripted dice hand out their values, then random 1–6", dice.d6() === 5 && [1, 2, 3, 4, 5, 6].includes(dice.d6()));
+  const sw = tut.start({ abilities: ["workingTogether"], pilot: [1, 3, 6, 6], copilot: [5, 3, 6, 6] });
+  const offered = tut.apply(sw, tut.swap("pilot", 1), dice);
+  check("the other crew answers a swap", tut.actingCrew(offered) === "copilot");
 }
 
 // 3) CORS origin check -------------------------------------------------------
