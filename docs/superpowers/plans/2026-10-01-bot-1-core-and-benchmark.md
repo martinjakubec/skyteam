@@ -2,112 +2,130 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revised 2026-10-02** against the current code. What changed since the 2026-10-01 draft: the server's dice code already moved to `packages/shared/src/game/entropy.ts` (`Dice`, `withEntropy`, `roundRoll`, `settle`), so Task 1 builds on it instead of creating a parallel `engine.ts`. Rounds can now need Traffic dice (printed on scenario spaces) and Real-Time rolls need a clock time, which `roundRoll` already handles. The lobby offers 21 scenario cards with Turns, Traffic dice and prescribed modules, so self-play and the benchmark cover every card, not just YUL, and the evaluator knows about Turns. The Traffic Die module is gone; `placeTraffic` now only comes from Synchronisation.
+
 **Goal:** A headless Sky Team bot that plays either seat through the real rules engine, plus a self-play benchmark that measures its win rate on every allowed setup.
 
-**Architecture:** The bot lives in `packages/shared/src/bot/` so the server (Phase 2 NPC), the scripts and the tests share it. It never re-implements rules: it lists legal moves by trying candidate commands on the pure reducer, and ranks resulting states with a heuristic evaluator. It only ever sees its own redacted view (`redactGameStateFor`), so it has exactly a human's information. The server's randomness plumbing is extracted into a shared `engine.ts` so self-play can drive whole games with a seeded RNG.
+**Architecture:** The bot lives in `packages/shared/src/bot/` so the server (Phase 2 NPC), the scripts and the tests share it. It never re-implements rules: it lists legal moves by trying candidate commands on the pure reducer, and ranks the resulting states with a heuristic evaluator. It only ever sees its own redacted view (`redactGameStateFor`), so it has exactly a human's information. Whole games are dealt and driven through `entropy.ts` with a seeded random source, so self-play is reproducible.
 
-**Tech Stack:** TypeScript (`@skyteam/shared`), tests as `.mjs` scripts run with `tsx` (see `scripts/test-rules.mjs`), Docker for all Node execution.
+**Tech Stack:** TypeScript (`@skyteam/shared`), tests as `.mjs` scripts run with `tsx` (see `scripts/test-units.mjs`), Docker for all Node execution.
 
-**Spec:** this plan plus the follow-on plans `2026-10-01-bot-2-npc-seat.md` and `2026-10-01-bot-3-search-and-difficulties.md`. User decisions (2026-10-01): the player chooses Pilot or Co-Pilot and the bot takes the other seat; three difficulty levels (names proposed below); no move explanations yet.
+**Spec:** this plan plus the follow-on plans `2026-10-01-bot-2-npc-seat.md` and `2026-10-01-bot-3-search-and-difficulties.md`. User decisions (2026-10-01): the player chooses Pilot or Co-Pilot and the bot takes the other seat; three difficulty levels (names below); no move explanations yet.
 
 ## Global Constraints
 
-- Node runs only in Docker: `docker run --rm -v "$PWD":/app -v skyteam_check_nm:/app/node_modules -w /app node:22-alpine sh -c "npm run typecheck && npm test"`.
+- Node runs only in Docker. With the dev stack up: `docker.exe compose -f docker-compose.dev.yml exec -T client sh -c "npm run typecheck && npm test"`.
 - The reducer (`packages/shared/src/game/reducer.ts`) stays pure and is the only source of rules; bot code must not duplicate legality checks.
-- The bot decides from `redactGameStateFor(state, botPlayerId)` only — never from the full state. Partner's unplaced dice are unknown to it.
+- The bot decides from `redactGameStateFor(state, botPlayerId)` only — never from the full state. The partner's unplaced dice are unknown to it (`hidden: true`, no `value`).
 - Difficulty ids/labels (shared, used by all phases): `"cadet"` → **Cadet** (easiest), `"navigator"` → **Navigator** (middle), `"aviator"` → **Aviator** (strongest). Phase 1 implements Navigator; Cadet and Aviator alias it until Phase 3.
-- New modules/abilities must stay covered: self-play runs over every allowed module × ability setup (user rule: test all combinations unless excluded).
+- Every allowed setup stays covered (user rule: test all combinations unless excluded): every scenario card, every allowed module combination, every Special Ability.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; push with `"/mnt/c/Program Files/Git/cmd/git.exe" push origin main`.
 
 ## Review Focus
 
-- **A bot asked to act when it has no legal move** (e.g. every die blocked): `chooseMove` must not throw into the server loop — it returns `null`, and self-play records a "stuck" game. Test in Task 3.
-- **Pending prompts that aren't a placement** (answer a Reroll, answer Working Together, place a held Intern token / Traffic die, train only with an allowed value): `actorFor` + `chooseMove` must handle each, or self-play stalls. Test in Task 3 and Task 4.
-- **Reroll/Anticipation legality needs server values**: `legalMoves` must use placeholder values only to test legality and emit the *wire* command (no `values`). Test in Task 2.
-- **Redacted partner dice** (`hidden: true`, no `value`): no bot path may read them. Test in Task 2 (moves from a redacted view are all legal on the full state).
-- **Determinism**: same seed ⇒ same game, so benchmark regressions are reproducible. Test in Task 4.
+- **A bot asked to act when it has no legal move**: `chooseMove` returns `null` (never throws into the server loop); self-play records a "stuck" game. Test in Task 3.
+- **Prompts that aren't a normal placement** (answer a Reroll, answer Working Together, place a held Intern token or Synchronisation Traffic die): `actorFor` + `chooseMove` handle each, or self-play stalls. Tests in Tasks 3 and 4.
+- **Reroll/Anticipation need server values**: `legalMoves` uses placeholder values only to test legality and emits the *wire* command (no `values`/`value`). Test in Task 2.
+- **Redacted partner dice**: no bot path reads them; every move found from a redacted view is legal on the full state. Test in Task 2.
+- **Turns and Traffic dice on the cards**: a bot that ignores a Turn loses at once ("Missed the turn"); rounds on spaces with Traffic dice must roll them. Self-play over all 21 cards finishes every game (Task 4), and the evaluator penalises a tilt the current space's Turn forbids (Task 3).
 
 ---
 
 ## File Structure
 
-- Create `packages/shared/src/game/engine.ts` — server-side entropy as pure helpers taking a `Rand`: dealing a new game, turning intents into reduce commands, settling pending rolls.
+- Modify `packages/shared/src/game/entropy.ts` — add `Rand`, `randDice`, `shuffledInternTokens`, `newGame`, `applyIntent` next to the existing `Dice`, `withEntropy`, `roundRoll`, `settle`.
+- Modify `packages/server/src/socket.ts` — use `newGame` and `randDice` instead of its private `shuffledInternTokens`, `serverDice` literal and duplicated start/reset code.
 - Create `packages/shared/src/bot/rng.ts` — seeded PRNG (`mulberry32`) → `Rand`.
 - Create `packages/shared/src/bot/levels.ts` — `BotLevel`, labels.
-- Create `packages/shared/src/bot/moves.ts` — `legalMoves`.
-- Create `packages/shared/src/bot/actor.ts` — `actorFor`: whose action the game is waiting on.
+- Create `packages/shared/src/bot/moves.ts` — `legalMoves`, `playerIdOf`.
+- Create `packages/shared/src/bot/actor.ts` — `actorFor`: whose input the game is waiting on.
 - Create `packages/shared/src/bot/evaluate.ts` — heuristic state score.
 - Create `packages/shared/src/bot/policy.ts` — `chooseMove` (Navigator).
-- Create `packages/shared/src/bot/selfplay.ts` — `selfPlay` one full game.
-- Create `packages/shared/src/bot/index.ts`; export from `packages/shared/src/index.ts`.
-- Modify `packages/server/src/socket.ts` — use `engine.ts` instead of its private helpers.
-- Create `scripts/test-bot.mjs`; modify root `package.json` (`test`, new `bench`); create `scripts/bench.mjs`.
+- Create `packages/shared/src/bot/setups.ts` — the setups self-play and the benchmark cover (cards, module combinations, abilities).
+- Create `packages/shared/src/bot/selfplay.ts` — `selfPlay`: one full game.
+- Create `packages/shared/src/bot/index.ts`; export it from `packages/shared/src/index.ts`.
+- Create `scripts/test-bot.mjs`, `scripts/bench.mjs`; modify root `package.json` (`test`, new `bench`); README "Tests".
 
 ---
 
-### Task 1: Shared game engine (server entropy as pure helpers)
+### Task 1: Deal and drive whole games from a random source
 
 **Files:**
-- Create: `packages/shared/src/game/engine.ts`
-- Modify: `packages/shared/src/index.ts`, `packages/server/src/socket.ts` (remove `rollHand`, `shuffledInternTokens`, the inline `rcmd` mapping and the two `while` loops in `onCommand`/`onStart`/`onReset`)
+- Modify: `packages/shared/src/game/entropy.ts`, `packages/server/src/socket.ts`
+- Create: `packages/shared/src/bot/rng.ts`, `packages/shared/src/bot/index.ts`; modify `packages/shared/src/index.ts`
 - Test: `scripts/test-bot.mjs` (new), root `package.json` `test` script
 
 **Interfaces:**
+- Consumes (exists): `Dice { d6(): DieValue; traffic(): DieValue }`, `withEntropy(command, dice)`, `roundRoll(game, dice, at)`, `settle(game, dice, now: () => number)`.
 - Produces:
-  - `type Rand = (n: number) => number` — uniform integer in `[0, n)`.
-  - `newGame(setup: GameSetup, pilotId: PlayerId, copilotId: PlayerId, rand: Rand): GameState` — scenario from setup, shuffled Intern tokens, round 1 rolled.
-  - `resolveIntent(command: GameCommand, rand: Rand): ReduceCommand` — adds server values to `reroll` and `anticipate`; others unchanged.
-  - `settle(game: GameState, rand: Rand): GameState` — answers `trafficPending` with `rollTraffic`, then rolls new rounds while `phase === "rolling"`.
-  - `applyIntent(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand): GameState` — `settle(reduce(game, resolveIntent(command, rand), playerId).state, rand)`.
+  - `type Rand = (n: number) => number` — a uniform integer in `[0, n)`.
+  - `randDice(rand: Rand): Dice`.
+  - `shuffledInternTokens(rand: Rand): DieValue[]` — 1..6 in a random order.
+  - `newGame(setup: GameSetup, pilotId: PlayerId, copilotId: PlayerId, rand: Rand, at: number): GameState` — scenario from the setup, shuffled Intern tokens, round 1 rolled (with its Traffic dice; stamped `at` for Real-Time).
+  - `applyIntent(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand, now: () => number): GameState` — one player action end to end, as the server performs it.
+  - `mulberry32(seed: number): Rand`.
 
 - [ ] **Step 1: Write the failing test** — create `scripts/test-bot.mjs`:
 
 ```js
-// Bot and engine tests (pure, no server). Run via `npm test`.
-import { newGame, applyIntent, resolveIntent, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
+// Bot and game-driving tests (pure, no server). Run via `npm test`.
+import { newGame, applyIntent, randDice, shuffledInternTokens, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
 
 let failures = 0;
 const check = (label, cond) => { console.log(`${cond ? "  ✅" : "  ❌"} ${label}`); if (!cond) failures++; };
 const P = "P", C = "C";
+const clock = () => 0;
 
-console.log("1) Engine: server entropy as pure helpers");
+console.log("1) Dealing and driving games from a random source");
 {
-  const g = newGame({ ...DEFAULT_SETUP, modules: ["intern"] }, P, C, mulberry32(1));
+  const g = newGame({ ...DEFAULT_SETUP, modules: ["intern"] }, P, C, mulberry32(1), 0);
   check("a new game is dealt and rolled", g.phase === "placement" && g.dice.pilot.length === 4 && g.internTokens.length === 6);
-  check("same seed, same game", JSON.stringify(newGame(DEFAULT_SETUP, P, C, mulberry32(7))) === JSON.stringify(newGame(DEFAULT_SETUP, P, C, mulberry32(7))));
-  const r = resolveIntent({ type: "reroll", dieIds: [0, 2] }, mulberry32(3));
-  check("reroll intents get server values", r.values.length === 2 && r.values.every((v) => v >= 1 && v <= 6));
-  check("other intents pass through", resolveIntent({ type: "adapt", dieId: 1 }, mulberry32(3)).type === "adapt");
-  const placed = applyIntent(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P, mulberry32(4));
+  check("same seed, same game", JSON.stringify(newGame(DEFAULT_SETUP, P, C, mulberry32(7), 0)) === JSON.stringify(newGame(DEFAULT_SETUP, P, C, mulberry32(7), 0)));
+  check("Intern tokens are 1–6 once each", shuffledInternTokens(mulberry32(2)).slice().sort().join() === "1,2,3,4,5,6");
+  const d = randDice(mulberry32(3));
+  const rolls = Array.from({ length: 200 }, () => d.d6());
+  check("random dice cover 1–6 and nothing else", new Set(rolls).size === 6 && rolls.every((v) => v >= 1 && v <= 6));
+  const traffic = newGame({ scenarioId: "red-HND", modules: [], abilities: [] }, P, C, mulberry32(4), 0);
+  const printed = traffic.scenario.approachTrack.reduce((a, sp) => a + sp.traffic, 0);
+  check("a round on a Traffic-dice space rolls them (red-HND starts with 3)", traffic.phase === "placement" && traffic.airplanes.reduce((a, b) => a + b, 0) === printed + 3);
+  const rt = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(5), 1000);
+  check("a Real-Time game's clock starts at the given time", rt.timerEndsAt !== null && rt.timerEndsAt > 1000);
+  const placed = applyIntent(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P, mulberry32(6), clock);
   check("applyIntent applies and settles", placed.axis.pilot !== null && placed.turn === "copilot");
-  check("settle leaves a placement-ready game", settle(g, mulberry32(5)).phase === "placement");
+  check("settle leaves a placement-ready game", settle(g, randDice(mulberry32(8)), clock).phase === "placement");
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
 ```
 
-Root `package.json` `test` becomes `npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs && tsx scripts/test-bot.mjs`.
+In root `package.json`, `test` becomes:
+`"npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs && tsx scripts/test-bot.mjs"`.
 
-- [ ] **Step 2: Run** `npm test` → FAIL: `does not provide an export named 'newGame'`.
+This relies on `red-HND`'s first space having `trafficDice: 3` in `APPROACH_TRACKS` (`packages/shared/src/game/catalog.ts`) and the 12-token supply not running out (red-HND prints 8 airplanes, so 3 more fit: 11 of 12).
 
-- [ ] **Step 3: Implement** `packages/shared/src/game/engine.ts`:
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `docker.exe compose -f docker-compose.dev.yml exec -T client sh -c "npm test"`
+Expected: FAIL — `does not provide an export named 'newGame'`.
+
+- [ ] **Step 3: Implement.** Append to `packages/shared/src/game/entropy.ts` (add the imports it needs: `PlayerId` from `../protocol`, `INTERN_TOKEN_COUNT` from `./scenario`, `TRAFFIC_DIE_FACES` from `./abilities`, `scenarioForSetup`/`GameSetup` from `./catalog`, `createInitialGameState` from `./state`):
 
 ```ts
-import type { GameCommand, PlayerId } from "../protocol";
-import { TRAFFIC_DIE_FACES } from "./abilities";
-import { reduce, type ReduceCommand } from "./reducer";
-import { DICE_PER_PLAYER, INTERN_TOKEN_COUNT, scenarioForSetup, type DieValue, type GameSetup } from "./scenario";
-import { createInitialGameState, type GameState } from "./state";
-
 /** A source of randomness: a uniform integer in [0, n). The server passes
- *  crypto.randomInt; tests and self-play pass a seeded PRNG. */
+ *  crypto's randomInt; self-play and tests pass a seeded PRNG. */
 export type Rand = (n: number) => number;
 
-const die = (rand: Rand) => (rand(6) + 1) as DieValue;
-const hand = (rand: Rand) => Array.from({ length: DICE_PER_PLAYER }, () => die(rand));
+/** Dice whose values come from `rand`. */
+export function randDice(rand: Rand): Dice {
+  return {
+    d6: () => (rand(6) + 1) as DieValue,
+    traffic: () => TRAFFIC_DIE_FACES[rand(TRAFFIC_DIE_FACES.length)],
+  };
+}
 
-function shuffledTokens(rand: Rand): DieValue[] {
+/** The Intern tokens 1..6 in a random face-up order (Fisher–Yates). */
+export function shuffledInternTokens(rand: Rand): DieValue[] {
   const t = Array.from({ length: INTERN_TOKEN_COUNT }, (_, i) => (i + 1) as DieValue);
   for (let i = t.length - 1; i > 0; i--) {
     const j = rand(i + 1);
@@ -116,41 +134,27 @@ function shuffledTokens(rand: Rand): DieValue[] {
   return t;
 }
 
-/** Deal a new game for a lobby setup and roll round 1. */
-export function newGame(setup: GameSetup, pilotId: PlayerId, copilotId: PlayerId, rand: Rand): GameState {
-  const game = createInitialGameState(scenarioForSetup(setup), pilotId, copilotId, { internTokens: shuffledTokens(rand) });
-  return settle(game, rand);
+/** Deal a game for a lobby setup and roll round 1 (`at` stamps a Real-Time clock). */
+export function newGame(setup: GameSetup, pilotId: PlayerId, copilotId: PlayerId, rand: Rand, at: number): GameState {
+  const game = createInitialGameState(scenarioForSetup(setup), pilotId, copilotId, { internTokens: shuffledInternTokens(rand) });
+  return reduce(game, roundRoll(game, randDice(rand), at), "").state;
 }
 
-/** Turn a client intent into a reduce command, adding server-owned values. */
-export function resolveIntent(command: GameCommand, rand: Rand): ReduceCommand {
-  if (command.type === "reroll") return { type: "reroll", dieIds: command.dieIds, values: command.dieIds.map(() => die(rand)) };
-  if (command.type === "anticipate") return { type: "anticipate", dieId: command.dieId, value: die(rand) };
-  return command;
-}
-
-/** Answer everything the reducer left waiting on randomness. */
-export function settle(game: GameState, rand: Rand): GameState {
-  let g = game;
-  while (g.trafficPending && !g.outcome) {
-    g = reduce(g, { type: "rollTraffic", value: TRAFFIC_DIE_FACES[rand(TRAFFIC_DIE_FACES.length)] }, "").state;
-  }
-  while (g.phase === "rolling" && !g.outcome) {
-    g = reduce(g, { type: "roll", pilot: hand(rand), copilot: hand(rand) }, "").state;
-  }
-  return g;
-}
-
-/** One player action, end to end, as the server performs it. */
-export function applyIntent(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand): GameState {
-  return settle(reduce(game, resolveIntent(command, rand), playerId).state, rand);
+/** One player action end to end, as the server performs it: add server values
+ *  (rerolls), apply, then supply what the reducer asks for (Traffic dice, the
+ *  next round's roll). Throws GameRuleError if the action is illegal. */
+export function applyIntent(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand, now: () => number): GameState {
+  const dice = randDice(rand);
+  return settle(reduce(game, withEntropy(command, dice), playerId).state, dice, now);
 }
 ```
+
+If importing `./catalog` into `entropy.ts` creates a cycle the build rejects, move `newGame` into a new `packages/shared/src/game/deal.ts` that imports both, and export it from `index.ts`.
 
 Create `packages/shared/src/bot/rng.ts`:
 
 ```ts
-import type { Rand } from "../game/engine";
+import type { Rand } from "../game/entropy";
 
 /** Small, fast, seedable PRNG (mulberry32) as a Rand — reproducible self-play. */
 export function mulberry32(seed: number): Rand {
@@ -165,38 +169,48 @@ export function mulberry32(seed: number): Rand {
 }
 ```
 
-Export both from `packages/shared/src/index.ts` (`export * from "./game/engine"; export * from "./bot/rng";`). In `socket.ts`: `const rand: Rand = (n) => randomInt(0, n);`; `onStart`/`onReset` use `newGame(room.setup, pilotId, copilotId, rand)`; `onCommand` uses `applyIntent(room.game, command, playerId, rand)`; delete `rollHand`, `shuffledInternTokens`, the `rcmd` mapping and both loops.
+Create `packages/shared/src/bot/index.ts` with `export * from "./rng";` and add `export * from "./bot";` to `packages/shared/src/index.ts`.
 
-- [ ] **Step 4: Run** `npm test` → PASS; then restart the dev stack and run `scripts/validate.mjs` (compose network) → `ALL CHECKS PASSED`.
-- [ ] **Step 5: Commit** — `"Extract server entropy into a shared engine"`.
+In `packages/server/src/socket.ts`:
+- Replace the `serverDice` literal with `const rand: Rand = (n) => randomInt(0, n);` and `const serverDice = randDice(rand);`.
+- In `onStart` and `onReset`, replace the two `createInitialGameState(...)` + `reduce(game, roundRoll(...))` lines with `room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());`.
+- Delete the private `shuffledInternTokens`; drop the now-unused imports (`INTERN_TOKEN_COUNT`, `TRAFFIC_DIE_FACES`, `createInitialGameState`, `roundRoll`, `scenarioForSetup`, `DieValue`, `Dice` — keep any still used).
+- Leave `onCommand` as it is: it must compute `withEntropy` *before* the Real-Time "too late" check, so it can't use `applyIntent`.
+
+- [ ] **Step 4: Run tests and the end-to-end check**
+
+Run: `docker.exe compose -f docker-compose.dev.yml exec -T client sh -c "npm run typecheck && npm test"` → `ALL BOT TESTS PASSED ✅`.
+Then restart the server container (`docker.exe compose -f docker-compose.dev.yml restart server`) and run `scripts/validate.mjs` as its header describes → `ALL CHECKS PASSED`.
+
+- [ ] **Step 5: Commit** — `"Deal and drive whole games from a random source (shared, seeded in tests)"`.
 
 ---
 
 ### Task 2: Legal moves
 
-**Files:** Create `packages/shared/src/bot/moves.ts`, `packages/shared/src/bot/levels.ts`, `packages/shared/src/bot/index.ts`; Test: `scripts/test-bot.mjs` section 2.
+**Files:** Create `packages/shared/src/bot/moves.ts`, `packages/shared/src/bot/levels.ts`; modify `packages/shared/src/bot/index.ts`; Test: `scripts/test-bot.mjs` section 2.
 
 **Interfaces:**
-- Consumes: `reduce`, `GameRuleError`, `redactGameStateFor`, `GameCommand`, `PlacementTarget`.
+- Consumes: `reduce`, `GameRuleError`, `ReduceCommand` (reducer), `redactGameStateFor`, `GameCommand`, `PlacementTarget`, `newGame`, `applyIntent`, `mulberry32`.
 - Produces: `legalMoves(view: GameState, crew: Crew): GameCommand[]` (wire commands, ready to send); `type BotLevel = "cadet" | "navigator" | "aviator"`; `BOT_LEVELS`, `BOT_LEVEL_LABELS`; `playerIdOf(view: GameState, crew: Crew): PlayerId`.
 
-- [ ] **Step 1: Failing tests** (append before the summary line)
+- [ ] **Step 1: Write the failing test** (insert before the summary line of `scripts/test-bot.mjs`)
 
 ```js
 console.log("2) legalMoves from the bot's own (redacted) view");
 {
-  const { legalMoves, redactGameStateFor, reduce } = await import("../packages/shared/src/index.ts");
-  const full = newGame({ ...DEFAULT_SETUP, modules: ["kerosene", "intern"], abilities: ["adaptation", "workingTogether"] }, P, C, mulberry32(11));
+  const { legalMoves, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const full = newGame({ ...DEFAULT_SETUP, modules: ["kerosene", "intern"], abilities: ["adaptation", "workingTogether"] }, P, C, mulberry32(11), 0);
   const view = redactGameStateFor(full, P);
   const moves = legalMoves(view, "pilot");
   check("there are moves on the Pilot's turn", moves.length > 0);
-  check("every move is legal on the full state", moves.every((m) => { try { applyIntent(full, m, P, mulberry32(1)); return true; } catch { return false; } }));
+  check("every move is legal on the full state", moves.every((m) => { try { applyIntent(full, m, P, mulberry32(1), clock); return true; } catch { return false; } }));
   check("includes an Axis placement", moves.some((m) => m.type === "placeDie" && m.target.kind === "axis"));
   check("includes Adaptation and a Working Together offer", moves.some((m) => m.type === "adapt") && moves.some((m) => m.type === "swap"));
   check("wire commands only (no server values)", moves.every((m) => !("values" in m) && !("value" in m)));
   const nextToken = full.internTokens.find((t) => t !== null);
   const trainer = full.dice.pilot.find((d) => d.value !== nextToken);
-  const holding = applyIntent(full, { type: "placeDie", dieId: trainer.id, target: { kind: "intern" } }, P, mulberry32(2));
+  const holding = applyIntent(full, { type: "placeDie", dieId: trainer.id, target: { kind: "intern" } }, P, mulberry32(2), clock);
   const tokenMoves = legalMoves(redactGameStateFor(holding, P), "pilot");
   check("a held Intern token: only token placements, never Concentration", tokenMoves.length > 0 && tokenMoves.every((m) => m.type === "placeIntern" && m.target.kind !== "concentration"));
   check("off-turn: only off-turn actions (Adaptation)", legalMoves(redactGameStateFor(full, C), "copilot").every((m) => m.type === "adapt"));
@@ -204,6 +218,7 @@ console.log("2) legalMoves from the bot's own (redacted) view");
 ```
 
 - [ ] **Step 2: Run** → FAIL (`legalMoves` not exported).
+
 - [ ] **Step 3: Implement**
 
 `levels.ts`:
@@ -275,7 +290,7 @@ export function legalMoves(view: GameState, crew: Crew): GameCommand[] {
   const hand = view.dice[crew].filter((d) => !d.placed);
   const add = (cmd: GameCommand) => legal(view, crew, cmd) && out.push(cmd);
 
-  for (const target of TARGETS) add({ type: "placeTraffic", target }); // any colour
+  for (const target of TARGETS) add({ type: "placeTraffic", target }); // Synchronisation: any colour
   for (const target of TARGETS) if (!("side" in target) || target.side === crew) add({ type: "placeIntern", target });
   // A crew's own dice and tokens only ever go on its own side of per-crew spaces.
   const own = TARGETS.filter((t) => !("side" in t) || t.side === crew);
@@ -295,9 +310,9 @@ export function legalMoves(view: GameState, crew: Crew): GameCommand[] {
 }
 ```
 
-**Performance budget.** Each candidate is one `reduce` (a `structuredClone` of the state, ~10–30 µs). Own-side filtering keeps it to ~4 dice × ~25 spaces × (1 + 2·Coffee) ≈ 100–700 tries per decision → a few ms; a game is ~60 decisions ≈ 0.2–0.5 s. Budget the tests and benchmark accordingly (Task 4). If it's too slow, add a cheap pre-filter on value-restricted spaces (Gear/Flaps/Brakes/Ice Brakes values, already-filled spaces) before calling `reduce` — the reducer still has the final say.
+**Performance budget.** Each candidate is one `reduce` (a `structuredClone` of the state, ~10–30 µs). Own-side filtering keeps it to ~4 dice × ~25 spaces × (1 + 2·Coffee) ≈ 100–700 tries per decision → a few ms; a game is ~60 decisions ≈ 0.2–0.5 s. If it's too slow, add a cheap pre-filter for value-restricted spaces (Gear/Flaps/Brakes/Ice Brakes values, filled spaces) before calling `reduce` — the reducer still has the final say.
 
-`bot/index.ts` re-exports `levels`, `moves`, `rng` (and later files); `packages/shared/src/index.ts` adds `export * from "./bot";`.
+Add `export * from "./levels"; export * from "./moves";` to `bot/index.ts`.
 
 - [ ] **Step 4: Run** → PASS. **Step 5: Commit** — `"Add bot legal-move generation"`.
 
@@ -305,26 +320,28 @@ export function legalMoves(view: GameState, crew: Crew): GameCommand[] {
 
 ### Task 3: Actor, evaluator and the Navigator policy
 
-**Files:** Create `packages/shared/src/bot/actor.ts`, `evaluate.ts`, `policy.ts`; Test: `scripts/test-bot.mjs` section 3.
+**Files:** Create `packages/shared/src/bot/actor.ts`, `evaluate.ts`, `policy.ts`; modify `bot/index.ts`; Test: `scripts/test-bot.mjs` section 3.
 
 **Interfaces:**
+- Consumes: `legalMoves`, `playerIdOf`, `BotLevel`, `Rand`, `reduce`, `airportIndex`, `ICE_BRAKE_VALUES`.
 - Produces:
-  - `actorFor(game: GameState): Crew | null` — whose input the game waits on: `internHeld.crew`; `"copilot"` if `trafficHeld`; the answering crew if `pendingSwap` / `pendingReroll`; else `turn` while `phase === "placement"`; `null` when over.
-  - `evaluate(state: GameState, crew: Crew): number` — higher is better for the crew (shared fate: both crews get the same score; `crew` is kept for future asymmetric terms).
+  - `actorFor(game: GameState): Crew | null` — whose input the game waits on (`null` when over).
+  - `evaluate(state: GameState, crew: Crew): number` — higher is better (co-operative: same for both seats; `crew` kept for later asymmetric terms). `WIN = 10_000`.
   - `chooseMove(view: GameState, crew: Crew, level: BotLevel, rand: Rand): GameCommand | null`.
 
-- [ ] **Step 1: Failing tests**
+- [ ] **Step 1: Write the failing test**
 
 ```js
 console.log("3) actorFor, evaluate, chooseMove (Navigator)");
 {
   const { actorFor, chooseMove, evaluate, redactGameStateFor, createInitialGameState, reduce, scenarioForSetup } = await import("../packages/shared/src/index.ts");
-  const setup = (mods = [], abs = []) => ({ ...DEFAULT_SETUP, modules: mods, abilities: abs });
+  const setup = (mods = [], abs = [], scenarioId = "YUL") => ({ scenarioId, modules: mods, abilities: abs });
   const fresh = (dp, dc, s = setup()) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
 
   check("actor: turn by default", actorFor(fresh([1, 1, 1, 1], [1, 1, 1, 1])) === "pilot");
   const swap = reduce(fresh([1, 2, 3, 4], [6, 5, 4, 3], setup([], ["workingTogether"])), { type: "swap", dieId: 0 }, P).state;
   check("actor: the player who must answer a swap", actorFor(swap) === "copilot");
+  check("actor: nobody once the game is over", actorFor({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), outcome: { result: "won" }, phase: "won" }) === null);
 
   // Avoid a spin (YUL spins at ±3): the Co-Pilot's Axis is a 6; the Pilot holds 1, 5, 6, 6 → must not play the 1.
   let s = fresh([1, 5, 6, 6], [6, 1, 1, 1]);
@@ -333,21 +350,25 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   const m = chooseMove(redactGameStateFor(s, P), "pilot", "navigator", mulberry32(1));
   check("doesn't spin the plane", !(m.type === "placeDie" && m.target.kind === "axis" && s.dice.pilot[m.dieId].value === 1));
 
-  // Clear traffic: a 2 on the Radio clears the airplane right ahead.
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
-  // Answers prompts: a held Intern token gets placed.
+  // Turns: on a space whose Turn forbids the current tilt the plane can't fly on.
+  const turn = { ...t, scenario: { ...t.scenario, approachTrack: t.scenario.approachTrack.map((sp, i) => (i === 0 ? { ...sp, axisAllowed: [1, 0] } : sp)) } };
+  check("evaluate penalises a tilt the Turn forbids", evaluate({ ...turn, axis: { ...turn.axis, offset: -1 } }, "pilot") < evaluate({ ...turn, axis: { ...turn.axis, offset: 1 } }, "pilot"));
+
   const n = reduce(fresh([2, 1, 1, 1], [1, 1, 1, 1], setup(["intern"])), { type: "placeDie", dieId: 0, target: { kind: "intern" } }, P).state;
   check("places a held Intern token", chooseMove(redactGameStateFor(n, P), "pilot", "navigator", mulberry32(2))?.type === "placeIntern");
 
-  // No legal move → null, never a throw.
   const over = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), phase: "lost" };
   check("no legal move → null", chooseMove(over, "pilot", "navigator", mulberry32(3)) === null);
 }
 ```
 
+The Intern test trains with a 2: without options `createInitialGameState` lays the tokens out 1..6, so the next token is the 1.
+
 - [ ] **Step 2: Run** → FAIL.
+
 - [ ] **Step 3: Implement**
 
 `actor.ts`:
@@ -358,13 +379,14 @@ import type { GameState } from "../game/state";
 
 const other = (c: Crew): Crew => (c === "pilot" ? "copilot" : "pilot");
 
-/** Whose input the game is waiting on right now (null once it's over). */
+/** Whose input the game is waiting on right now (null once it's over). Same
+ *  precedence as the tutorial sandbox's `actingCrew`. */
 export function actorFor(g: GameState): Crew | null {
   if (g.outcome || g.phase !== "placement") return null;
+  if (g.pendingReroll) return g.pendingReroll;
+  if (g.pendingSwap) return other(g.pendingSwap.from);
   if (g.internHeld) return g.internHeld.crew;
   if (g.trafficHeld) return "copilot";
-  if (g.pendingSwap) return other(g.pendingSwap.from);
-  if (g.pendingReroll) return g.pendingReroll;
   return g.turn;
 }
 ```
@@ -378,14 +400,15 @@ import { ICE_BRAKE_VALUES, type Crew } from "../game/scenario";
 export const WIN = 10_000;
 
 /**
- * Heuristic value of a state for the crew (the game is co-operative, so it's
- * the same for both seats). Terms: outcome; approach progress vs rounds left;
- * traffic in the way; tilt; switches still to deploy vs rounds left; brakes;
- * Kerosene and Intern pressure; small credit for Coffee / Reroll tokens.
+ * Heuristic value of a state for the crew (co-operative, so the same for both
+ * seats). Terms: outcome; approach progress vs rounds left; traffic in the way;
+ * tilt, and a tilt the current space's Turn forbids; switches still to deploy
+ * vs rounds left; brakes; Kerosene and Intern pressure; small credit for
+ * Coffee and Reroll tokens.
  */
 export function evaluate(s: GameState, _crew: Crew): number {
   if (s.outcome) return s.outcome.result === "won" ? WIN : -WIN;
-  const roundsLeft = s.scenario.rounds - s.round; // rounds still able to move (final round can't)
+  const roundsLeft = s.scenario.rounds - s.round; // rounds still able to move (the final round can't)
   const remaining = airportIndex(s.scenario) - s.position;
   let v = 0;
   // Must cover `remaining` spaces in `roundsLeft` rounds, ≤2 per round.
@@ -395,6 +418,9 @@ export function evaluate(s: GameState, _crew: Crew): number {
   s.airplanes.forEach((n, i) => { if (i >= s.position) v -= n * (i - s.position <= 2 ? 120 : 60); });
   // Tilt: 0 is level; ±spinAt is fatal (already an outcome); landing needs 0.
   v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? 400 : 80);
+  // Turns: flying off this space with a tilt it doesn't allow loses.
+  const allowed = s.scenario.approachTrack[s.position]?.axisAllowed;
+  if (allowed && !allowed.includes(s.axis.offset)) v -= 600;
   // Switches to deploy before landing.
   const todo = s.gearGreen.filter((g) => !g).length + s.flapsGreen.filter((g) => !g).length;
   v -= todo * 60 + Math.max(0, todo - 2 * roundsLeft) * 300;
@@ -420,13 +446,14 @@ import type { GameCommand } from "../protocol";
 import { reduce, type ReduceCommand } from "../game/reducer";
 import type { Crew, DieValue } from "../game/scenario";
 import type { GameState } from "../game/state";
-import type { Rand } from "../game/engine";
+import type { Rand } from "../game/entropy";
 import { evaluate } from "./evaluate";
 import type { BotLevel } from "./levels";
 import { legalMoves, playerIdOf } from "./moves";
 
-/** Score a move by the state it leads to. Random outcomes (rerolls) are
- *  scored at their expectation's stand-in: the current value (neutral). */
+/** Score a move by the state it leads to. Random outcomes (rerolls) are scored
+ *  with the dice unchanged — neutral, so Navigator never rerolls on purpose
+ *  (Phase 3's search values them properly). */
 function scoreMove(view: GameState, crew: Crew, move: GameCommand): number {
   const cmd: ReduceCommand =
     move.type === "reroll" ? { ...move, values: move.dieIds.map((id) => view.dice[crew].find((d) => d.id === id)!.value as DieValue) }
@@ -468,50 +495,110 @@ export function chooseMove(view: GameState, crew: Crew, _level: BotLevel, rand: 
 }
 ```
 
+Add `export * from "./actor"; export * from "./evaluate"; export * from "./policy";` to `bot/index.ts`.
+
 - [ ] **Step 4: Run** → PASS. **Step 5: Commit** — `"Add the Navigator bot policy"`.
 
 ---
 
-### Task 4: Self-play and the benchmark
+### Task 4: Self-play and the benchmark over every setup
 
-**Files:** Create `packages/shared/src/bot/selfplay.ts`, `scripts/bench.mjs`; modify root `package.json` (`"bench": "npm run build:shared && tsx scripts/bench.mjs"`); Test: `scripts/test-bot.mjs` section 4; README "Tests" section.
+**Files:** Create `packages/shared/src/bot/setups.ts`, `packages/shared/src/bot/selfplay.ts`, `scripts/bench.mjs`; modify `bot/index.ts`, root `package.json` (`"bench": "npm run build:shared && tsx scripts/bench.mjs"`), README "Tests"; Test: `scripts/test-bot.mjs` section 4.
 
 **Interfaces:**
-- Consumes: `newGame`, `applyIntent`, `actorFor`, `chooseMove`, `redactGameStateFor`.
-- Produces: `selfPlay(setup: GameSetup, levels: Record<Crew, BotLevel>, seed: number, maxMoves?: number): { outcome: "won" | "lost" | "stuck"; reason: string; rounds: number; moves: number }`.
+- Consumes: `newGame`, `applyIntent`, `actorFor`, `chooseMove`, `redactGameStateFor`, `mulberry32`, `SetSetupPayload`, `SCENARIO_TEMPLATES`, `IMPLEMENTED_MODULES`, `ABILITY_IDS`, `DEFAULT_MAX_ABILITIES`, `SCENARIOS`.
+- Produces:
+  - `cardSetups(): GameSetup[]` — each of the 21 cards with its printed modules (the implemented ones) and as many Special Abilities as its ★ allows, rotating through `ABILITY_IDS` card by card.
+  - `representativeSetups(): GameSetup[]` — `cardSetups()` + every allowed YUL module combination + each ability alone and alongside the largest module combination.
+  - `allSetups(): GameSetup[]` — every allowed YUL module combination × every allowed ability set, plus `cardSetups()`.
+  - `selfPlay(setup: GameSetup, levels: Record<Crew, BotLevel>, seed: number, maxMoves?: number): { outcome: "won" | "lost" | "stuck"; reason: string; rounds: number; moves: number }`.
 
-- [ ] **Step 1: Failing tests**
+- [ ] **Step 1: Write the failing test**
 
 ```js
-console.log("4) Self-play: every module combination, and every ability");
+console.log("4) Self-play: every card, every module combination, every ability");
 {
-  // Every allowed module combination (no abilities) + each ability alone and
-  // with all compatible modules — the full module × ability matrix runs in
-  // `npm run bench -- ALL` (too slow for npm test at ~0.3 s per game).
-  const { selfPlay, SetSetupPayload, IMPLEMENTED_MODULES, ABILITY_IDS } = await import("../packages/shared/src/index.ts");
-  const subsets = (xs) => xs.reduce((acc, x) => [...acc, ...acc.map((c) => [...c, x])], [[]]);
-  const valid = (s) => SetSetupPayload.safeParse(s).success;
-  const moduleSets = subsets([...IMPLEMENTED_MODULES]).filter((modules) => valid({ scenarioId: "YUL", modules, abilities: [] }));
-  const richest = moduleSets.reduce((m, c) => (c.length > m.length ? c : m), []);
-  const setups = [
-    ...moduleSets.map((modules) => ({ scenarioId: "YUL", modules, abilities: [] })),
-    ...ABILITY_IDS.flatMap((a) => [{ scenarioId: "YUL", modules: [], abilities: [a] }, { scenarioId: "YUL", modules: richest, abilities: [a] }]),
-  ];
+  const { selfPlay, representativeSetups, cardSetups, ABILITY_IDS } = await import("../packages/shared/src/index.ts");
+  check("all 21 cards are covered", cardSetups().length === 21);
+  const setups = representativeSetups();
+  check("every ability is played", ABILITY_IDS.every((a) => setups.some((s) => s.abilities.includes(a))));
+  const label = (s) => `${s.scenarioId}: ${[...s.modules, ...s.abilities].join("+") || "base"}`;
   const results = setups.map((s, i) => ({ s, r: selfPlay(s, { pilot: "navigator", copilot: "navigator" }, 1000 + i) }));
   const stuck = results.filter(({ r }) => r.outcome === "stuck");
   check(`${setups.length} setups each play to a finished game`, stuck.length === 0);
-  stuck.slice(0, 5).forEach(({ s, r }) => console.log(`     ↳ stuck: ${[...s.modules, ...s.abilities].join("+") || "base"} — ${r.reason}`));
+  stuck.slice(0, 5).forEach(({ s, r }) => console.log(`     ↳ stuck: ${label(s)} — ${r.reason}`));
   const a = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
   const b = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
   check("same seed, same game", JSON.stringify(a) === JSON.stringify(b));
 }
 ```
 
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement** `selfplay.ts`:
+- [ ] **Step 2: Run** → FAIL.
+
+- [ ] **Step 3: Implement**
+
+`setups.ts`:
 
 ```ts
-import { applyIntent, newGame } from "../game/engine";
-import type { Crew, GameSetup } from "../game/scenario";
+import { ABILITY_IDS, DEFAULT_MAX_ABILITIES } from "../game/abilities";
+import { SCENARIOS, SCENARIO_TEMPLATES, type GameSetup } from "../game/catalog";
+import { IMPLEMENTED_MODULES, type ModuleId } from "../game/scenario";
+import { SetSetupPayload } from "../protocol";
+
+const subsets = <T>(xs: readonly T[]): T[][] => xs.reduce<T[][]>((acc, x) => [...acc, ...acc.map((c) => [...c, x])], [[]]);
+const valid = (s: GameSetup) => SetSetupPayload.safeParse(s).success;
+/** YUL allows no Special Abilities, so ability setups fly a card that allows two (green-PRG). */
+const ABILITY_BOARD = SCENARIO_TEMPLATES.find((t) => t.abilityCount === 2)!.id;
+
+/** Every module combination the lobby accepts (exclusive groups respected). */
+const moduleSets = (): ModuleId[][] => subsets(IMPLEMENTED_MODULES).filter((modules) => valid({ scenarioId: "YUL", modules, abilities: [] }));
+
+/** Each card as printed: its implemented modules, and as many Special Abilities
+ *  as its ★ allows, rotating through them card by card. */
+export function cardSetups(): GameSetup[] {
+  let next = 0;
+  return SCENARIO_TEMPLATES.map((t) => {
+    const abilities = Array.from({ length: t.abilityCount }, () => ABILITY_IDS[next++ % ABILITY_IDS.length]);
+    return { scenarioId: t.id === "green-YUL" ? "YUL" : t.id, modules: t.modules.filter((m) => IMPLEMENTED_MODULES.includes(m)), abilities };
+  });
+}
+
+/** Fast coverage: every card, every module combination, each ability alone and
+ *  with the largest module combination. */
+export function representativeSetups(): GameSetup[] {
+  const sets = moduleSets();
+  const richest = sets.reduce((m, c) => (c.length > m.length ? c : m), [] as ModuleId[]);
+  return [
+    ...cardSetups(),
+    ...sets.map((modules) => ({ scenarioId: "YUL", modules, abilities: [] })),
+    ...ABILITY_IDS.flatMap((a) => [
+      { scenarioId: ABILITY_BOARD, modules: [], abilities: [a] },
+      { scenarioId: ABILITY_BOARD, modules: richest, abilities: [a] },
+    ]),
+  ].filter(valid);
+}
+
+/** Every module combination × every ability set the lobby accepts, plus every
+ *  card. Module-only setups fly YUL; ability setups fly ABILITY_BOARD. */
+export function allSetups(): GameSetup[] {
+  const max = SCENARIOS[ABILITY_BOARD].maxAbilities ?? DEFAULT_MAX_ABILITIES;
+  const abilitySets = subsets(ABILITY_IDS).filter((a) => a.length > 0 && a.length <= max);
+  return [
+    ...cardSetups(),
+    ...moduleSets().flatMap((modules) => [
+      { scenarioId: "YUL", modules, abilities: [] },
+      ...abilitySets.map((abilities) => ({ scenarioId: ABILITY_BOARD, modules, abilities })),
+    ]),
+  ].filter(valid);
+}
+```
+
+`selfplay.ts`:
+
+```ts
+import type { GameSetup } from "../game/catalog";
+import { applyIntent, newGame } from "../game/entropy";
+import type { Crew } from "../game/scenario";
 import { redactGameStateFor } from "../game/state";
 import { actorFor } from "./actor";
 import type { BotLevel } from "./levels";
@@ -521,10 +608,12 @@ import { mulberry32 } from "./rng";
 export interface SelfPlayResult { outcome: "won" | "lost" | "stuck"; reason: string; rounds: number; moves: number }
 
 /** One full bot-vs-bot game: each seat decides from its own redacted view; the
- *  engine supplies seeded randomness exactly as the server would. */
+ *  seeded random source supplies every roll exactly as the server would. The
+ *  clock stands still, so Real-Time never runs out (the bot acts instantly). */
 export function selfPlay(setup: GameSetup, levels: Record<Crew, BotLevel>, seed: number, maxMoves = 400): SelfPlayResult {
   const rand = mulberry32(seed);
-  let g = newGame(setup, "P", "C", rand);
+  const now = () => 0;
+  let g = newGame(setup, "P", "C", rand, now());
   let moves = 0;
   for (; moves < maxMoves; moves++) {
     const crew = actorFor(g);
@@ -532,32 +621,26 @@ export function selfPlay(setup: GameSetup, levels: Record<Crew, BotLevel>, seed:
     const id = crew === "pilot" ? "P" : "C";
     const move = chooseMove(redactGameStateFor(g, id), crew, levels[crew], rand);
     if (!move) return { outcome: "stuck", reason: `no legal move for the ${crew} (round ${g.round})`, rounds: g.round, moves };
-    g = applyIntent(g, move, id, rand);
+    g = applyIntent(g, move, id, rand, now);
   }
   if (!g.outcome) return { outcome: "stuck", reason: `no outcome after ${moves} moves`, rounds: g.round, moves };
   return { outcome: g.outcome.result, reason: g.outcome.result === "lost" ? g.outcome.reason : "", rounds: g.round, moves };
 }
 ```
 
-`scripts/bench.mjs` — usage `npm run bench -- [games=30] [level=navigator] [ALL]`. By default it plays the representative setups from the self-play test (every module combination + each ability alone and with all compatible modules, ~24 setups); `ALL` plays every allowed module × ability setup (264; minutes per game count). `ONLY="intern,kerosene"` (env) keeps setups containing all those ids. Prints one line per setup: win % · average round reached · top 3 loss reasons; then the overall win %.
+(If Task 1 put `newGame` in `game/deal.ts`, import it from there.)
+
+Add `export * from "./setups"; export * from "./selfplay";` to `bot/index.ts`.
+
+`scripts/bench.mjs` — usage `npm run bench -- [games=30] [level=navigator] [ALL]`. Default: `representativeSetups()`; `ALL`: `allSetups()` (hundreds of setups — use a small game count). `ONLY="intern,kerosene"` (env) keeps setups containing all those ids (scenario id, module or ability). Prints one line per setup: win % · average round reached · top 3 loss reasons; then the overall win %.
 
 ```js
-import { selfPlay, SetSetupPayload, IMPLEMENTED_MODULES, ABILITY_IDS, DEFAULT_MAX_ABILITIES } from "../packages/shared/src/index.ts";
+import { selfPlay, representativeSetups, allSetups } from "../packages/shared/src/index.ts";
 const N = Number(process.argv[2] ?? 30);
 const level = process.argv[3] ?? "navigator";
-const all = process.argv.includes("ALL");
 const ONLY = process.env.ONLY?.split(",");
-const subsets = (xs) => xs.reduce((acc, x) => [...acc, ...acc.map((c) => [...c, x])], [[]]);
-const valid = (s) => SetSetupPayload.safeParse(s).success;
-const moduleSets = subsets([...IMPLEMENTED_MODULES]).filter((modules) => valid({ scenarioId: "YUL", modules, abilities: [] }));
-const richest = moduleSets.reduce((m, c) => (c.length > m.length ? c : m), []);
-const candidates = all
-  ? moduleSets.flatMap((modules) => subsets([...ABILITY_IDS]).filter((a) => a.length <= DEFAULT_MAX_ABILITIES).map((abilities) => ({ scenarioId: "YUL", modules, abilities })))
-  : [
-      ...moduleSets.map((modules) => ({ scenarioId: "YUL", modules, abilities: [] })),
-      ...ABILITY_IDS.flatMap((a) => [{ scenarioId: "YUL", modules: [], abilities: [a] }, { scenarioId: "YUL", modules: richest, abilities: [a] }]),
-    ];
-const setups = candidates.filter((s) => valid(s) && (!ONLY || ONLY.every((x) => [...s.modules, ...s.abilities].includes(x))));
+const ids = (s) => [s.scenarioId, ...s.modules, ...s.abilities];
+const setups = (process.argv.includes("ALL") ? allSetups() : representativeSetups()).filter((s) => !ONLY || ONLY.every((x) => ids(s).includes(x)));
 let wins = 0, games = 0;
 for (const s of setups) {
   const reasons = new Map(); let w = 0, rounds = 0;
@@ -568,17 +651,20 @@ for (const s of setups) {
   }
   wins += w; games += N;
   const top = [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${v}× ${k}`).join("; ");
-  console.log(`${([...s.modules, ...s.abilities].join("+") || "base").padEnd(48)} ${((100 * w) / N).toFixed(1).padStart(5)}%  avg round ${(rounds / N).toFixed(1)}  ${top}`);
+  const name = `${s.scenarioId}: ${[...s.modules, ...s.abilities].join("+") || "base"}`;
+  console.log(`${name.padEnd(56)} ${((100 * w) / N).toFixed(1).padStart(5)}%  avg round ${(rounds / N).toFixed(1)}  ${top}`);
 }
 console.log(`\nOverall: ${((100 * wins) / games).toFixed(1)}% won over ${games} games (${level})`);
 ```
 
-- [ ] **Step 4: Run** `npm test` → PASS (self-play section should take well under a minute); `npm run bench -- 30` → a table. Record the overall win % in the commit message as the Phase-1 baseline.
-- [ ] **Step 5:** README "Tests": document `npm run bench`. **Commit** — `"Add bot self-play and win-rate benchmark (baseline: N%)"`.
+- [ ] **Step 4: Run** `npm test` → PASS (the self-play section should take well under a minute; if not, apply Task 2's pre-filter). Then `npm run bench -- 30` → a table. Record the overall win % in the commit message as the Phase-1 baseline.
+
+- [ ] **Step 5:** README "Tests": document `npm run bench` (arguments, `ALL`, `ONLY`). **Commit** — `"Add bot self-play and win-rate benchmark (baseline: N%)"`.
 
 ---
 
 ## Self-review notes
 
-- Covers: legal-move generation via the reducer (no duplicated rules), fair information (redacted view only), evaluator, policy, prompts (actor), deterministic self-play, benchmark over every allowed setup.
-- Names used by later phases: `BotLevel`/`BOT_LEVELS`/`BOT_LEVEL_LABELS`, `actorFor`, `chooseMove(view, crew, level, rand)`, `applyIntent`, `newGame`, `Rand`, `mulberry32`, `selfPlay`, `evaluate`, `legalMoves`, `playerIdOf`.
+- Covers: driving whole games from a seeded source on top of the existing `entropy.ts` (no second copy of the dice code), legal moves via the reducer (no duplicated rules), fair information (redacted view only), evaluator with Turns, policy, prompts (actor), deterministic self-play, a benchmark over every card, module combination and ability.
+- Known Phase-1 limits, left to Phase 3 on purpose: Navigator never rerolls on purpose (rerolls score neutral), and self-play has no Real-Time time pressure.
+- Names used by later phases: `BotLevel`/`BOT_LEVELS`/`BOT_LEVEL_LABELS`, `actorFor`, `chooseMove(view, crew, level, rand)`, `applyIntent(game, command, playerId, rand, now)`, `newGame(setup, pilotId, copilotId, rand, at)`, `Rand`, `randDice`, `mulberry32`, `selfPlay`, `evaluate`, `legalMoves`, `playerIdOf`, `representativeSetups`, `allSetups`, `cardSetups`. Plans 2 and 3 were written against the 2026-10-01 signatures (`newGame(..., rand)` and `applyIntent(..., rand)` without the clock arguments) and need the same update before they're executed.
