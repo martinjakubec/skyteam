@@ -97,6 +97,20 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("landing round: an Engine die too fast for the Brakes is fatal", evaluate(brakes([1, 1, 1, 1]), "copilot") - evaluate(brakes([6, 6, 6, 6]), "copilot") > 2000);
   check("more Brakes are better (a normal landing speed needs them)", evaluate({ ...t0(), brakesDeployed: 2 }, "pilot") > evaluate({ ...t0(), brakesDeployed: 1 }, "pilot"));
 
+  // The bot simulates on its redacted view: the partner's hidden dice may fit
+  // a space, so they must never be judged stuck (and discarded) there.
+  let h = fresh([3, 1, 4, 4], [3, 1, 6, 5]);
+  h.dice.pilot.slice(0, 3).forEach((d) => (d.placed = true));
+  h.dice.copilot.slice(0, 3).forEach((d) => (d.placed = true));
+  h = { ...h, axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: 1, copilot: 1 }, radioCopilot: [6, 6], placedThisRound: 6, turn: "pilot",
+    concentrationSlots: [{ value: 4, crew: "pilot" }, { value: 6, crew: "copilot" }] };
+  const sim = reduce(redactGameStateFor(h, P), { type: "placeDie", dieId: 3, target: { kind: "radio", slot: 0 } }, P).state;
+  check("a hidden partner die is never discarded in the bot's simulation", sim.round === 1 && sim.dice.copilot.some((d) => !d.placed));
+  // Landing round, both dice down: a tilt or a speed over the Brakes is as fatal as before placing.
+  const down = (extra) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 7, brakesDeployed: 2, ...extra });
+  check("landing round: both Engine dice down and too fast is fatal", evaluate(down({ engines: { pilot: 3, copilot: 1 } }), "pilot") - evaluate(down({ engines: { pilot: 3, copilot: 4 } }), "pilot") > 2000);
+  check("landing round: both Axis dice down and tilted is fatal", evaluate(down({ axis: { pilot: 3, copilot: 3, offset: 0 } }), "pilot") - evaluate(down({ axis: { pilot: 4, copilot: 3, offset: 1 } }), "pilot") > 2000);
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 

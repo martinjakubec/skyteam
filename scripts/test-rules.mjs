@@ -1218,6 +1218,22 @@ console.log("32) A die that fits no space is discarded (the game never freezes)"
   s = place(s, P, 5, { kind: "radio", slot: 0 });
   check("the stuck die is discarded and the round ends", s.round === 2 && s.phase === "rolling");
   check("…with a log line saying why", s.log.some((l) => /Co-Pilot's 6 has nowhere to go/.test(l)));
+
+  // Changing a die without passing the turn (Adaptation) can strand it too.
+  let a = roll(init(scn({ rounds: 7, abilities: ["adaptation"] })), [3, 1, 4, 4], [3, 1, 6, 5]);
+  a.dice.pilot.forEach((d) => (d.placed = true));
+  a.dice.copilot.slice(0, 3).forEach((d) => (d.placed = true));
+  a.axis = { pilot: 3, copilot: 3, offset: 0 };
+  a.engines = { pilot: 1, copilot: 1 };
+  a.radioPilot = 4;
+  a.radioCopilot = [6, 6];
+  a.concentrationSlots = [{ value: 4, crew: "pilot" }, { value: 6, crew: "copilot" }];
+  a.flapsGreen = [true, true, true, false];
+  a.flapSlots = [1, 2, 3, null]; // the 5 fits the last Flaps (4/5); a 2 fits nothing free
+  a.placedThisRound = 7;
+  a.turn = "copilot";
+  a = reduce(a, { type: "adapt", dieId: 3 }, C).state; // 5 → 2
+  check("a die stranded by Adaptation is discarded too", a.round === 2 && a.log.some((l) => /Co-Pilot's 2 has nowhere to go/.test(l)));
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

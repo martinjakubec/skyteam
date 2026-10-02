@@ -83,8 +83,13 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
     throw new GameRuleError("The clock is paused until both players are connected.");
   }
   const result = dispatch(draft, command, byPlayerId);
-  // Real-Time: the countdown only runs while a round is being played.
   const s = result.state;
+  // A die changed without the turn passing (a reroll, Adaptation, a swap) can
+  // be stranded too: check again whenever nothing is pending.
+  if (s.phase === "placement" && !s.outcome && !s.pendingReroll && !s.pendingSwap && !s.internHeld && !s.trafficHeld && !s.trafficPending) {
+    discardStuckDice(s);
+  }
+  // Real-Time: the countdown only runs while a round is being played.
   if (s.phase !== "placement" || s.outcome) {
     s.timerEndsAt = null;
     s.timerRemainingMs = null;
@@ -411,7 +416,8 @@ function discardStuckDice(s: GameState): void {
   while (s.phase === "placement" && !s.outcome) {
     const crew = s.turn;
     const hand = s.dice[crew].filter((d) => !d.placed);
-    if (hand.length === 0 || anyValueFits(s, crew) || hand.some((d) => canPlace(s, crew, d.id))) return;
+    // A hidden die (the bot's redacted view of its partner) may well fit: never judge it.
+    if (hand.length === 0 || hand.some((d) => d.value === undefined) || anyValueFits(s, crew) || hand.some((d) => canPlace(s, crew, d.id))) return;
     const die = hand[0];
     die.placed = true;
     s.placedThisRound += 1;

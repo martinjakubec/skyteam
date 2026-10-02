@@ -86,7 +86,9 @@ function landingSpeedRisk(s: GameState, crew: Crew): number {
     if (!values.length) return 0;
     return Math.min(...values.map((v) => (theirs !== null ? (tooFast(v, theirs) ? 5000 : 0) : hidden(v))));
   }
-  return theirs === null ? hidden(s.engines[crew]!) : 0;
+  if (theirs === null) return hidden(s.engines[crew]!);
+  // Both down: as fatal as before placing (a further Brakes step may still come).
+  return tooFast(s.engines[crew]!, theirs) ? 5000 : 0;
 }
 
 /**
@@ -109,7 +111,8 @@ function axisRisk(s: GameState, crew: Crew): number {
     return reachable.length ? Math.min(...reachable.map(risk)) : 0;
   }
   if (theirs === null) return hiddenPartnerRisk(s, (f) => tiltWith(s, other, f, s.axis[crew]!));
-  return 0;
+  // Both down: on the landing round a tilt is as fatal as before placing.
+  return isLanding(s) && s.axis.offset !== 0 ? 5000 : 0;
 }
 
 /** Must cover `remaining` spaces in `roundsLeft` moving rounds, ≤2 per round. */
