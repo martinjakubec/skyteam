@@ -25,5 +25,24 @@ console.log("1) Dealing and driving games from a random source");
   check("settle leaves a placement-ready game", settle(g, randDice(mulberry32(8)), clock).phase === "placement");
 }
 
+console.log("2) legalMoves from the bot's own (redacted) view");
+{
+  const { legalMoves, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const full = newGame({ ...DEFAULT_SETUP, modules: ["kerosene", "intern"], abilities: ["adaptation", "workingTogether"] }, P, C, mulberry32(11), 0);
+  const view = redactGameStateFor(full, P);
+  const moves = legalMoves(view, "pilot");
+  check("there are moves on the Pilot's turn", moves.length > 0);
+  check("every move is legal on the full state", moves.every((m) => { try { applyIntent(full, m, P, mulberry32(1), clock); return true; } catch { return false; } }));
+  check("includes an Axis placement", moves.some((m) => m.type === "placeDie" && m.target.kind === "axis"));
+  check("includes Adaptation and a Working Together offer", moves.some((m) => m.type === "adapt") && moves.some((m) => m.type === "swap"));
+  check("wire commands only (no server values)", moves.every((m) => !("values" in m) && !("value" in m)));
+  const nextToken = full.internTokens.find((t) => t !== null);
+  const trainer = full.dice.pilot.find((d) => d.value !== nextToken);
+  const holding = applyIntent(full, { type: "placeDie", dieId: trainer.id, target: { kind: "intern" } }, P, mulberry32(2), clock);
+  const tokenMoves = legalMoves(redactGameStateFor(holding, P), "pilot");
+  check("a held Intern token: only token placements, never Concentration", tokenMoves.length > 0 && tokenMoves.every((m) => m.type === "placeIntern" && m.target.kind !== "concentration"));
+  check("off-turn: only off-turn actions (Adaptation)", legalMoves(redactGameStateFor(full, C), "copilot").every((m) => m.type === "adapt"));
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
