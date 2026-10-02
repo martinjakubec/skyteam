@@ -19,7 +19,10 @@ import {
   normalizeGameState,
   reduce,
   redactGameStateFor,
+  roundRoll,
   scenarioForSetup,
+  settle,
+  withEntropy,
 } from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
@@ -220,6 +223,23 @@ console.log("2e) APPROACH_TRACKS: one well-formed track per card, as printed on 
   check("spot check green HND (left turns)", tr("green-HND") === "0d2 1 1t1/0 2 1t2/1 0t2/1/0 2 1");
   check("spot check yellow PRG (no start dice)", tr("yellow-PRG") === "0 0 1 3d1 0 3d1 2 3");
   check("spot check black KEF", tr("black-KEF") === "0d2 0t2/1/0 2d1 1t0/-1/-2 1t1/0/-1 0");
+}
+
+console.log("2f) entropy: the server's dice values come from a pluggable source");
+{
+  const queue = (vals) => () => vals.shift();
+  const dice = { d6: queue([1, 2, 3, 4, 5, 6, 1, 2, 6]), traffic: queue([4]) };
+  const r = withEntropy({ type: "reroll", dieIds: [0, 2] }, dice);
+  check("a reroll gets one value per die", r.type === "reroll" && r.values.join() === "1,2");
+  const a = withEntropy({ type: "anticipate", dieId: 1 }, dice);
+  check("Anticipation gets a value", a.type === "anticipate" && a.value === 3);
+  const p = { type: "placeDie", dieId: 0, target: { kind: "radio", slot: 0 } };
+  check("other commands pass through unchanged", withEntropy(p, dice) === p);
+  const game = createInitialGameState({ ...YUL_MONTREAL, approachTrack: [{ traffic: 0, trafficDice: 1 }, { traffic: 0, airport: true }] }, "P", "C");
+  const roll = roundRoll(game, { d6: () => 6, traffic: () => 5 }, 42);
+  check("roundRoll: two hands, one Traffic roll per icon, the clock", roll.pilot.join() === "6,6,6,6" && roll.copilot.length === 4 && roll.traffic.join() === "5" && roll.at === 42);
+  const settled = settle(game, { d6: () => 3, traffic: () => 2 }, () => 7);
+  check("settle rolls the pending round", settled.phase === "placement" && settled.dice.pilot.every((d) => d.value === 3) && settled.airplanes[1] === 1);
 }
 
 // 3) CORS origin check -------------------------------------------------------

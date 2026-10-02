@@ -2,7 +2,6 @@ import type http from "node:http";
 import { randomInt } from "node:crypto";
 import { Server, type DefaultEventsMap, type Socket } from "socket.io";
 import {
-  DICE_PER_PLAYER,
   INTERN_TOKEN_COUNT,
   TRAFFIC_DIE_FACES,
   GameCommandPayload,
@@ -15,12 +14,15 @@ import {
   hasModule,
   redactGameStateFor,
   reduce,
+  roundRoll,
   scenarioForSetup,
+  settle,
+  withEntropy,
   type ClientToServerEvents,
   type DieValue,
   type GameCommand,
   type GameState,
-  type ReduceCommand,
+  type Dice,
   type ServerToClientEvents,
   type SocketData,
 } from "@skyteam/shared";
@@ -168,7 +170,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, roundRoll(game), "").state;
+  game = reduce(game, roundRoll(game, serverDice, Date.now()), "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
@@ -192,7 +194,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   room.status = "in_progress";
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, roundRoll(game), "").state;
+  game = reduce(game, roundRoll(game, serverDice, Date.now()), "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
@@ -236,18 +238,11 @@ function shuffledInternTokens(): DieValue[] {
   return t;
 }
 
-/** Roll a fresh hand of dice (server-owned entropy). */
-function rollHand(): DieValue[] {
-  return Array.from({ length: DICE_PER_PLAYER }, () => randomInt(1, 7) as DieValue);
-}
-
-/** A round's roll: both hands, plus one Traffic die roll per Traffic icon on
- *  the Current Position — stamped with the clock for Real-Time. */
-function roundRoll(game: GameState): ReduceCommand {
-  const trafficDice = game.scenario.approachTrack[game.position]?.trafficDice ?? 0;
-  const traffic = Array.from({ length: trafficDice }, () => TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)]);
-  return { type: "roll", pilot: rollHand(), copilot: rollHand(), traffic, at: Date.now() };
-}
+/** Server-owned entropy for every roll. */
+const serverDice: Dice = {
+  d6: () => randomInt(1, 7) as DieValue,
+  traffic: () => TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)],
+};
 
 async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = GameCommandPayload.safeParse(payload);
@@ -262,12 +257,7 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   const command = parsed.data.command;
   // A reroll is an intent: the server supplies the new (secret) dice values.
   // Same for Anticipation's single-die reroll.
-  const rcmd: ReduceCommand =
-    command.type === "reroll"
-      ? { type: "reroll", dieIds: command.dieIds, values: command.dieIds.map(() => randomInt(1, 7) as DieValue) }
-      : command.type === "anticipate"
-        ? { type: "anticipate", dieId: command.dieId, value: randomInt(1, 7) as DieValue }
-        : command;
+  const rcmd = withEntropy(command, serverDice);
 
   // Real-Time: a command that arrives after the deadline (before the timeout
   // got to run) is too late — the round ends now instead.
@@ -280,7 +270,7 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   try {
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
-    const game = settle(reduce(room.game, rcmd, playerId).state);
+    const game = settleNow(reduce(room.game, rcmd, playerId).state);
     room.game = game;
     room.version += 1;
     if (game.outcome) room.status = "finished";
@@ -296,20 +286,10 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   }
 }
 
-/**
- * Supply what the reducer asked the server for after a command: Traffic die
- * rolls (Synchronisation) and, once a round has ended, the next round's dice —
- * stamped with the clock so a Real-Time countdown starts from the roll.
- */
-function settle(game: GameState): GameState {
-  while (game.trafficPending && !game.outcome) {
-    const value = TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)];
-    game = reduce(game, { type: "rollTraffic", value }, "").state;
-  }
-  while (game.phase === "rolling" && !game.outcome) {
-    game = reduce(game, roundRoll(game), "").state;
-  }
-  return game;
+/** Supply what the reducer asked the server for (see shared `settle`): Traffic
+ *  die rolls and the next round's dice, stamped with the clock for Real-Time. */
+function settleNow(game: GameState): GameState {
+  return settle(game, serverDice, Date.now);
 }
 
 /**
@@ -356,7 +336,7 @@ async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<v
   // Stale: the round already ended, the clock was paused, or a newer one runs.
   if (!room?.game || room.status !== "in_progress" || room.game.timerEndsAt !== endsAt) return;
 
-  room.game = settle(reduce(room.game, { type: "timeUp" }, "").state);
+  room.game = settleNow(reduce(room.game, { type: "timeUp" }, "").state);
   room.version += 1;
   if (room.game.outcome) room.status = "finished";
   await saveRoom(room);
