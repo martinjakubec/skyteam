@@ -422,7 +422,7 @@ ul {
   margin: 0;
   font-size: 0.8rem;
 }
-/* A module / ability with its ⓘ (opens the tutorial; outside the label, so it
+/* A module / ability with its ℹ️ (opens the tutorial; outside the label, so it
    never toggles the checkbox). */
 .setup-item {
   display: flex;
@@ -433,12 +433,14 @@ ul {
   flex: none;
   width: 1.4rem;
   height: 1.4rem;
+  display: grid;
+  place-items: center;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 4px;
   font-family: var(--font-body);
   text-transform: none;
   letter-spacing: normal;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   line-height: 1;
 }
 .setup-modules input[type="checkbox"],

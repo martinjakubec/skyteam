@@ -13,7 +13,7 @@ import type { Tutorial } from "./types";
 import { wind } from "./wind";
 import { workingTogether } from "./workingTogether";
 
-/** One interactive tutorial per module and Special Ability (opened from the lobby's ⓘ). */
+/** One interactive tutorial per module and Special Ability (opened from the lobby's ℹ️). */
 export const TUTORIALS: Record<ModuleId | AbilityId, Tutorial> = {
   kerosene, keroseneLeak, intern, wind, iceBrakes, realTime,
   workingTogether, synchronisation, mastery, control, anticipation, adaptation,

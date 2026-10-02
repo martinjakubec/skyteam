@@ -90,12 +90,12 @@ function SetupPicker({
       abilities: [],
     });
 
-  // The ⓘ beside each module and ability opens its tutorial — for host and
+  // The ℹ️ beside each module and ability opens its tutorial — for host and
   // guest alike (it runs locally; nothing is sent).
   const [tutorial, setTutorial] = useState<ModuleId | AbilityId | null>(null);
   const info = (id: ModuleId | AbilityId, name: string) => (
     <button type="button" className="info-btn" aria-label={`How ${name} works`} title={`How ${name} works`} onClick={() => setTutorial(id)}>
-      ⓘ
+      ℹ️
     </button>
   );
 
