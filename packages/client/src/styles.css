@@ -422,6 +422,25 @@ ul {
   margin: 0;
   font-size: 0.8rem;
 }
+/* A module / ability with its ⓘ (opens the tutorial; outside the label, so it
+   never toggles the checkbox). */
+.setup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.info-btn {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border-radius: 50%;
+  font-family: var(--font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.85rem;
+  line-height: 1;
+}
 .setup-modules input[type="checkbox"],
 .setup-abilities input[type="checkbox"] {
   flex: none;
@@ -2364,5 +2383,90 @@ ul {
   }
   .slot.open {
     animation: none;
+  }
+}
+
+/* Tutorials: a dialog over the lobby with a trimmed, playable cockpit. Above
+   the page (900), below the drag overlays (.drop-ring 999, .drag-die 1000). */
+.tutorial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+  background: rgba(8, 11, 16, 0.72);
+}
+.tutorial-panel {
+  width: min(1000px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  outline: none;
+}
+.tutorial-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tutorial-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tutorial-close {
+  padding: 0.2rem 0.6rem;
+}
+.tutorial-desc {
+  margin: 0;
+}
+.tutorial-stage {
+  padding: 0;
+  max-width: none;
+}
+.tutorial-as {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+.tutorial-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: var(--recess);
+  color: var(--paper);
+  transition: background 0.2s;
+}
+.tutorial-steps.done {
+  background: #1f4a2a;
+}
+.tutorial-count {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.tutorial-text {
+  margin: 0;
+}
+/* Phones: a slimmer frame so the board (zoomed like the game stage) fits
+   without sideways scrolling. */
+@media (max-width: 480px) {
+  .tutorial-backdrop {
+    padding: 0.5rem 0.25rem;
+  }
+  .tutorial-panel {
+    padding: 0.6rem 0.4rem;
   }
 }

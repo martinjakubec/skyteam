@@ -19,9 +19,15 @@ import {
   normalizeGameState,
   reduce,
   redactGameStateFor,
+  roundRoll,
   scenarioForSetup,
+  settle,
+  withEntropy,
 } from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
+import * as tut from "../packages/client/src/tutorials/engine.ts";
+import { TUTORIALS } from "../packages/client/src/tutorials/index.ts";
+import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
@@ -220,6 +226,125 @@ console.log("2e) APPROACH_TRACKS: one well-formed track per card, as printed on 
   check("spot check green HND (left turns)", tr("green-HND") === "0d2 1 1t1/0 2 1t2/1 0t2/1/0 2 1");
   check("spot check yellow PRG (no start dice)", tr("yellow-PRG") === "0 0 1 3d1 0 3d1 2 3");
   check("spot check black KEF", tr("black-KEF") === "0d2 0t2/1/0 2d1 1t0/-1/-2 1t1/0/-1 0");
+}
+
+console.log("2f) entropy: the server's dice values come from a pluggable source");
+{
+  const queue = (vals) => () => vals.shift();
+  const dice = { d6: queue([1, 2, 3, 4, 5, 6, 1, 2, 6]), traffic: queue([4]) };
+  const r = withEntropy({ type: "reroll", dieIds: [0, 2] }, dice);
+  check("a reroll gets one value per die", r.type === "reroll" && r.values.join() === "1,2");
+  const a = withEntropy({ type: "anticipate", dieId: 1 }, dice);
+  check("Anticipation gets a value", a.type === "anticipate" && a.value === 3);
+  const p = { type: "placeDie", dieId: 0, target: { kind: "radio", slot: 0 } };
+  check("other commands pass through unchanged", withEntropy(p, dice) === p);
+  const game = createInitialGameState({ ...YUL_MONTREAL, approachTrack: [{ traffic: 0, trafficDice: 1 }, { traffic: 0, airport: true }] }, "P", "C");
+  const roll = roundRoll(game, { d6: () => 6, traffic: () => 5 }, 42);
+  check("roundRoll: two hands, one Traffic roll per icon, the clock", roll.pilot.join() === "6,6,6,6" && roll.copilot.length === 4 && roll.traffic.join() === "5" && roll.at === 42);
+  const settled = settle(game, { d6: () => 3, traffic: () => 2 }, () => 7);
+  check("settle rolls the pending round", settled.phase === "placement" && settled.dice.pilot.every((d) => d.value === 3) && settled.airplanes[1] === 1);
+}
+
+console.log("2g) tutorial engine: both crews, scripted dice, real rules");
+{
+  let s = tut.start({ pilot: [3, 4, 6, 6], copilot: [3, 4, 6, 6] });
+  check("starts in placement with the given hands", s.phase === "placement" && s.dice.pilot.map((d) => d.value).join() === "3,4,6,6");
+  check("the Pilot acts first in round 1", tut.actingCrew(s) === "pilot");
+  const dice = tut.scriptedDice({ d6: [5] });
+  s = tut.apply(s, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  check("a move is played through the reducer", s.axis.pilot === 3 && tut.actingCrew(s) === "copilot");
+  const before = s;
+  let threw = false;
+  try { tut.apply(s, tut.place("copilot", 3, tut.engine("pilot")), dice); } catch { threw = true; }
+  check("an illegal move throws and leaves the state alone", threw && before.engines.pilot === null);
+  check("scripted dice hand out their values, then random 1–6", dice.d6() === 5 && [1, 2, 3, 4, 5, 6].includes(dice.d6()));
+  const sw = tut.start({ abilities: ["workingTogether"], pilot: [1, 3, 6, 6], copilot: [5, 3, 6, 6] });
+  const offered = tut.apply(sw, tut.swap("pilot", 1), dice);
+  check("the other crew answers a swap", tut.actingCrew(offered) === "copilot");
+}
+
+console.log("2h) every tutorial plays out under the current rules");
+{
+  check("a tutorial for every module and ability", [...MODULE_IDS, ...ABILITY_IDS].every((id) => TUTORIALS[id]?.id === id));
+  for (const t of Object.values(TUTORIALS)) {
+    let s = t.setup();
+    const dice = tut.scriptedDice(t.script);
+    const failures = [];
+    for (const [i, step] of t.steps.entries()) {
+      try {
+        for (const m of step.auto ?? []) s = tut.apply(s, m, dice);
+        const before = s;
+        if (step.info) continue;
+        if (step.done(s, before)) failures.push(`step ${i + 1} done before its moves`);
+        for (const m of step.solution) s = tut.apply(s, m, dice);
+        if (!step.done(s, before)) failures.push(`step ${i + 1} not done after its moves`);
+      } catch (e) {
+        failures.push(`step ${i + 1}: ${e.message}`);
+        break;
+      }
+    }
+    check(`${t.title}: ${t.steps.length} steps play out${failures.length ? ` — ${failures.join("; ")}` : ""}`, failures.length === 0);
+  }
+}
+
+console.log("2i) tutorial session: steps, Next and Reset never block or rewind");
+{
+  // Next on any step — even one whose automatic moves need a later round — moves on.
+  for (const t of Object.values(TUTORIALS)) {
+    let sess = ses.initSession(t);
+    const dice = tut.scriptedDice(t.script);
+    let stuck = null;
+    for (let i = 0; i < t.steps.length; i++) {
+      try {
+        const next = ses.skip(sess, t, dice);
+        if (next.stepIndex !== sess.stepIndex + 1) stuck = `Next from step ${i + 1} stayed on step ${next.stepIndex + 1}`;
+        sess = next;
+      } catch (e) {
+        stuck = `Next from step ${i + 1} threw: ${e.message}`;
+      }
+      if (stuck) break;
+    }
+    check(`${t.title}: Next walks every step to free play${stuck ? ` — ${stuck}` : ""}`, !stuck && sess.stepIndex === t.steps.length);
+  }
+  // A completed step is marked done; advancing it twice (a stale timer) doesn't skip a step.
+  const m = TUTORIALS.mastery;
+  const dice = tut.scriptedDice(m.script);
+  let sess = ses.play(ses.initSession(m), m, tut.place("pilot", 4, tut.engine("pilot")), dice);
+  check("finishing a step marks it done, still on it", sess.done && sess.stepIndex === 0);
+  const once = ses.advance(sess, m, dice);
+  check("advance moves to the next step", once.stepIndex === 1 && !once.done);
+  check("advancing an already-advanced session is a no-op", ses.advance(once, m, dice) === once);
+  // A move in the window before the advance keeps the latest board.
+  sess = ses.play(sess, m, tut.place("copilot", 4, tut.engine("copilot")), dice);
+  check("a move made before the advance is kept", sess.game.engines.copilot === 4);
+  // A refused move reports the rules' message and leaves the board alone.
+  const c = TUTORIALS.control;
+  const c0 = ses.initSession(c);
+  const refused = ses.play(c0, c, tut.place("copilot", 3, tut.axis("copilot")), tut.scriptedDice());
+  check("a refused move keeps the board and explains why", refused.game === c0.game && typeof refused.error === "string" && refused.error.length > 0);
+  // Real Time: the clock waits for the first move.
+  const rt = TUTORIALS.realTime;
+  const r0 = ses.initSession(rt);
+  check("Real Time: the clock is paused until the first move", r0.game.timerEndsAt === null && r0.game.timerRemainingMs > 0);
+  const r1 = ses.play(r0, rt, tut.place("pilot", 3, tut.axis("pilot")), tut.scriptedDice(rt.script));
+  check("…and starts with it", r1.game.timerEndsAt !== null && r1.game.axis.pilot === 3);
+}
+
+console.log("2j) tutorial session: automatic moves and already-finished steps");
+{
+  const base = { id: "kerosene", title: "Synthetic", description: "", show: [], setup: () => tut.start({ pilot: [3, 4, 6, 6], copilot: [3, 4, 6, 6] }) };
+  const withAuto = { ...base, steps: [{ text: "", auto: [tut.place("pilot", 3, tut.axis("pilot"))], solution: [], done: () => false }] };
+  check("step 1's automatic moves are played at the start", ses.initSession(withAuto).game.axis.pilot === 3);
+  const already = {
+    ...base,
+    steps: [
+      { text: "", solution: [tut.place("pilot", 3, tut.axis("pilot"))], done: (s) => s.axis.pilot === 3 },
+      { text: "", solution: [], done: (s) => s.axis.pilot === 3 },
+    ],
+  };
+  const dice = tut.scriptedDice();
+  const after1 = ses.advance(ses.play(ses.initSession(already), already, tut.place("pilot", 3, tut.axis("pilot")), dice), already, dice);
+  check("a step that's already complete when it starts is marked done", after1.stepIndex === 1 && after1.done);
 }
 
 // 3) CORS origin check -------------------------------------------------------

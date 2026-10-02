@@ -25,6 +25,7 @@ import { Module } from "./Module";
 import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
+import type { CockpitSection } from "./cockpitSections";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
@@ -34,10 +35,17 @@ const TRAFFIC_DIE = -2;
 export function Cockpit({
   snapshot,
   onCommand,
+  show,
+  clockOffset: clockOffsetOverride,
 }: {
   snapshot: RoomSnapshot;
   onCommand: (command: GameCommand) => void;
+  /** Tutorials: draw only these sections (the dice tray always shows). Unset = everything. */
+  show?: CockpitSection[];
+  /** Tutorials run on the local clock: pass 0 instead of the server offset. */
+  clockOffset?: number;
 }) {
+  const vis = (section: CockpitSection) => !show || show.includes(section);
   const game = snapshot.game!;
   const myCrew: Crew | null =
     game.pilotId === snapshot.you.playerId
@@ -213,7 +221,8 @@ export function Cockpit({
   const realTimeInPlay = game.scenario.modules?.includes("realTime") ?? false;
   const realTimeOn = realTimeInPlay || previewModule("realTime");
   const [previewEndsAt] = useState(() => Date.now() + REAL_TIME_SECONDS * 1000);
-  const clockOffset = useGame((s) => s.clockOffset);
+  const serverOffset = useGame((s) => s.clockOffset);
+  const clockOffset = clockOffsetOverride ?? serverOffset;
   // Who the paused clock is waiting for (the host flies as Pilot).
   const awaited = snapshot.seats.find((s) => s.connection === "disconnected");
   const pausedNote = awaited ? `waiting for the ${awaited.role === "host" ? "Pilot" : "Co-Pilot"} to reconnect` : undefined;
@@ -249,6 +258,8 @@ export function Cockpit({
   // Ice Brakes replaces the Brakes row (dev `?preview=` shows it disabled).
   const iceInPlay = game.scenario.modules?.includes("iceBrakes") ?? false;
   const iceOn = iceInPlay || previewModule("iceBrakes");
+  // The brake column shows either Ice Brakes or the normal Brakes.
+  const brakesVis = iceOn ? vis("iceBrakes") : vis("brakes");
   // Only the next step (the marker's position) is open; its top space is the
   // Pilot's, the bottom either crew's, and both need the step's value.
   const iceOpen = (i: number, space: "top" | "bottom") =>
@@ -359,6 +370,7 @@ export function Cockpit({
   // board into reach. The dragged die is position:fixed, so it stays under the
   // pointer as the page moves beneath it.
   const autoScroll = useRef<{ raf: number | null; x: number; y: number }>({ raf: null, x: 0, y: 0 });
+  const boardRef = useRef<HTMLDivElement>(null);
   const stepAutoScroll = () => {
     const a = autoScroll.current;
     const EDGE = 96; // px zone at top/bottom edge that triggers scrolling
@@ -368,11 +380,15 @@ export function Cockpit({
     if (a.y < EDGE) dy = -Math.ceil(((EDGE - a.y) / EDGE) * MAX);
     else if (h - a.y < EDGE) dy = Math.ceil(((EDGE - (h - a.y)) / EDGE) * MAX);
     if (dy !== 0) {
-      const before = window.scrollY;
-      window.scrollBy(0, dy);
+      // Inside a tutorial the dialog scrolls, not the page.
+      const box = boardRef.current?.closest(".tutorial-backdrop");
+      const scrolled = () => (box ? box.scrollTop : window.scrollY);
+      const before = scrolled();
+      if (box) box.scrollBy(0, dy);
+      else window.scrollBy(0, dy);
       // The page moved under a possibly-still pointer — re-resolve the hovered
       // slot so the drop ring keeps tracking even when no pointermove fires.
-      if (window.scrollY !== before) {
+      if (scrolled() !== before) {
         const slot = validSlotUnder(a.x, a.y);
         const r = slot?.getBoundingClientRect();
         setHoverRect(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
@@ -461,12 +477,13 @@ export function Cockpit({
 
   return (
     <ExtraDieContext.Provider value={filledByExtra}>
-      <div className={`board${keroseneOn ? " with-kerosene" : ""}${windOn ? " with-wind" : ""}`}>
+      <div ref={boardRef} className={`board${keroseneOn ? " with-kerosene" : ""}${windOn ? " with-wind" : ""}${show ? " tutorial" : ""}`}>
         {/* Full-width status tracks above the console: approach path + altitude */}
+        {(vis("tracks") || (realTimeOn && vis("realTime"))) && (
         <section className="tracks">
-          <Approach game={game} airportIdx={airportIdx} />
-          <Altitude game={game} />
-          {realTimeOn && (
+          {vis("tracks") && <Approach game={game} airportIdx={airportIdx} />}
+          {vis("tracks") && <Altitude game={game} />}
+          {realTimeOn && vis("realTime") && (
             <RealTime
               endsAt={realTimeInPlay ? game.timerEndsAt : previewEndsAt}
               remainingMs={realTimeInPlay ? game.timerRemainingMs : null}
@@ -475,11 +492,13 @@ export function Cockpit({
             />
           )}
         </section>
+        )}
 
         {/* Central dial-stack. The crew rails are placed after the deck (see below)
             so they can reflow beneath the main panel on narrow screens; on wide
             screens the .board grid areas position them back beside the dial. */}
         <div className="dial-stack">
+            {vis("axis") && (
             <div className="axis-cluster">
               {/* Elbow leads: a diagonal up from each dial rim, then a horizontal
                   stub into the inner edge of the (top-aligned) dice space. */}
@@ -491,18 +510,23 @@ export function Cockpit({
               <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
               <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis", side: "copilot" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis", side: "copilot" })} enabled={can(mine("copilot") && game.axis.copilot === null)} />
             </div>
+            )}
+            {vis("engines") && (
+            <>
             <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />
             <div className="engines">
               <Slot tone="blue" noSwitch dice mandatory target={{ kind: "engine", side: "pilot" }} taken={game.engines.pilot !== null} label={face(game.engines.pilot)} onClick={() => place({ kind: "engine", side: "pilot" })} enabled={can(mine("pilot") && game.engines.pilot === null)} />
               <span className="engine-plus" aria-hidden="true">+</span>
               <Slot tone="orange" noSwitch dice mandatory target={{ kind: "engine", side: "copilot" }} taken={game.engines.copilot !== null} label={face(game.engines.copilot)} onClick={() => place({ kind: "engine", side: "copilot" })} enabled={can(mine("copilot") && game.engines.copilot === null)} />
             </div>
-            <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />
+            </>
+            )}
+            {brakesVis && <BrakesGauge deployed={game.brakesDeployed} values={iceOn ? ICE_BRAKE_VALUES : undefined} />}
             {/* Brake dice spaces — filled left-to-right (2 → 4 → 6); the arrows
                 between them signal the mandatory order. Fine leads tie each space
                 up to the brake gauge (left "[", middle "|", right "]"). The Ice
                 Brakes module swaps in its own 2 → 5 pair-of-spaces track. */}
-            {iceOn ? (
+            {!brakesVis ? null : iceOn ? (
               <IceBrakes
                 steps={game.iceBrakeSlots}
                 deployed={game.brakesDeployed}
@@ -536,7 +560,9 @@ export function Cockpit({
 
         {/* Main deck: shared modules, styled like the crew-rail modules (one
             panel each). Intern (module) sits under Concentration. */}
+        {(vis("concentration") || (internOn && vis("intern"))) && (
         <section className="deck">
+          {vis("concentration") && (
           <Module title="Concentration" tone="split" className="mod-concentration">
             <div className="slots-row concentration">
               {game.concentrationSlots.map((cell, i) => {
@@ -565,7 +591,8 @@ export function Cockpit({
               </span>
             </div>
           </Module>
-          {internOn && (
+          )}
+          {internOn && vis("intern") && (
             <Intern
               tokens={internTokens}
               trainers={game.internSlots}
@@ -574,15 +601,17 @@ export function Cockpit({
             />
           )}
         </section>
+        )}
 
         {/* Crew rails. In DOM they follow the deck so they stack under the main
             panel on narrow screens; on wide screens the .board grid places the
             pilot rail left of the dial and the co-pilot rail right of it. */}
+        {((keroseneOn && vis("kerosene")) || vis("radio") || vis("gear")) && (
         <div className="rail rail-pilot">
           {/* Kerosene runs down the left of the Radio + Landing Gear (rail grid:
               see .with-kerosene). Either crew may use it — except with the
               Leak, where the space is blocked. */}
-          {keroseneOn && (
+          {keroseneOn && vis("kerosene") && (
             <Kerosene
               leak={leakOn}
               level={game.kerosene}
@@ -591,11 +620,14 @@ export function Cockpit({
               onClick={() => place({ kind: "kerosene" })}
             />
           )}
+          {vis("radio") && (
           <Module title="Radio" tone="blue" className="mod-radio-pilot">
             <div className="slots-row">
               <Slot tone="blue" noSwitch dice icon={<Headset />} target={{ kind: "radio", slot: 0, side: "pilot" }} taken={game.radioPilot !== null} label={face(game.radioPilot)} onClick={() => place({ kind: "radio", slot: 0, side: "pilot" })} enabled={canFree(mine("pilot") && game.radioPilot === null)} />
             </div>
           </Module>
+          )}
+          {vis("gear") && (
           <Module title="Landing Gear" tone="blue" className="mod-gear">
             <div className="slots-col">
               {game.gearGreen.map((green, i) => (
@@ -613,10 +645,14 @@ export function Cockpit({
               ))}
             </div>
           </Module>
+          )}
         </div>
+        )}
+        {((windOn && vis("wind")) || vis("radio") || vis("flaps")) && (
         <div className="rail rail-copilot">
           {/* Wind sits right of the Co-Pilot's Radio (rail grid: see .with-wind). */}
-          {windOn && <Wind position={game.windPosition ?? 0} />}
+          {windOn && vis("wind") && <Wind position={game.windPosition ?? 0} />}
+          {vis("radio") && (
           <Module title="Radio" tone="orange" className="mod-radio-copilot">
             <div className="slots-col">
               {game.radioCopilot.map((val, i) => (
@@ -624,6 +660,8 @@ export function Cockpit({
               ))}
             </div>
           </Module>
+          )}
+          {vis("flaps") && (
           <Module title="Flaps" tone="orange" className="mod-flaps">
             {/* Flaps deploy top-to-bottom; the down arrows signal that order. */}
             <div className="slots-col">
@@ -644,7 +682,9 @@ export function Cockpit({
               ))}
             </div>
           </Module>
+          )}
         </div>
+        )}
 
         {/* Dice tray + log */}
         <section className="tray">
@@ -710,7 +750,7 @@ export function Cockpit({
                   </span>
                 </span>
               </div>
-              <Abilities
+              {vis("abilities") && <Abilities
                 abilities={game.scenario.abilities ?? []}
                 actions={{
                   adaptation:
@@ -735,7 +775,7 @@ export function Cockpit({
                         : pickButton("anticipate", "Reroll a die", canAnticipate, "Before your first die: tap one of your dice to reroll it")
                       : undefined,
                 }}
-              />
+              />}
               <div className="controls">
                 {rerollActive ? (
                   <span className="reroll-pick">
@@ -767,20 +807,24 @@ export function Cockpit({
                         <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
                       </span>
                     )}
-                    <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
-                      Reroll 🎲 ×{game.rerollTokens}
-                    </button>
+                    {vis("reroll") && (
+                      <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
+                        Reroll 🎲 ×{game.rerollTokens}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
             </div>
           )}
 
-          <ul className="log">
-            {game.log.slice(-7).map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
+          {!show && (
+            <ul className="log">
+              {game.log.slice(-7).map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* Pointer-positioned overlays live on <body>, outside the board: on
