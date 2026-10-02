@@ -166,7 +166,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
+  game = reduce(game, roundRoll(game), "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
@@ -190,7 +190,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   room.status = "in_progress";
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
+  game = reduce(game, roundRoll(game), "").state;
   room.game = game;
   room.version = 0;
   await saveRoom(room);
@@ -213,6 +213,14 @@ function shuffledInternTokens(): DieValue[] {
 /** Roll a fresh hand of dice (server-owned entropy). */
 function rollHand(): DieValue[] {
   return Array.from({ length: DICE_PER_PLAYER }, () => randomInt(1, 7) as DieValue);
+}
+
+/** A round's roll: both hands, plus one Traffic die roll per Traffic icon on
+ *  the Current Position — stamped with the clock for Real-Time. */
+function roundRoll(game: GameState): ReduceCommand {
+  const trafficDice = game.scenario.approachTrack[game.position]?.trafficDice ?? 0;
+  const traffic = Array.from({ length: trafficDice }, () => TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)]);
+  return { type: "roll", pilot: rollHand(), copilot: rollHand(), traffic, at: Date.now() };
 }
 
 async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
@@ -273,7 +281,7 @@ function settle(game: GameState): GameState {
     game = reduce(game, { type: "rollTraffic", value }, "").state;
   }
   while (game.phase === "rolling" && !game.outcome) {
-    game = reduce(game, { type: "roll", pilot: rollHand(), copilot: rollHand(), at: Date.now() }, "").state;
+    game = reduce(game, roundRoll(game), "").state;
   }
   return game;
 }

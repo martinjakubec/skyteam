@@ -22,7 +22,7 @@
 // hostnames), ONLY (comma-separated combos of "+"-joined lobby labels, e.g.
 // "Intern,Kerosene+Ice Brakes"; default: all), REPEAT (games per combo,
 // default 1), OUT (dir for failure screenshots), AIRPORT (scenario id from the
-// lobby's airport list, e.g. "YUL_TURNS"; default: the lobby's default).
+// lobby's airport list, e.g. "green-HND"; default: the lobby's default).
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://host.docker.internal:5173";

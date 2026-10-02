@@ -4,6 +4,7 @@
 // Run via `npm test` (builds shared first; the server imports its dist).
 import {
   ABILITY_IDS,
+  APPROACH_TRACKS,
   DEFAULT_SETUP,
   DIFFICULTIES,
   EXCLUSIVE_MODULE_GROUPS,
@@ -190,7 +191,35 @@ console.log("2d) SCENARIO_TEMPLATES match the rulebook's 21 scenario cards");
   check("yellow ATL: Kerosene Leak, ★1", get("yellow-ATL")?.modules.join() === "keroseneLeak" && get("yellow-ATL").abilityCount === 1);
   check("red OSL: Kerosene Leak + Ice Brakes, ★2", get("red-OSL")?.modules.join() === "keroseneLeak,iceBrakes" && get("red-OSL").abilityCount === 2);
   check("black KEF: Wind + Ice Brakes, ★2", get("black-KEF")?.modules.join() === "wind,iceBrakes" && get("black-KEF").abilityCount === 2);
-  check("boards other than YUL are still pending", T.filter((t) => t.board === null).length === 20);
+  check("every card has a playable board, offered in the lobby", T.every((t) => t.board && SCENARIOS[t.id === "green-YUL" ? "YUL" : t.id] === t.board));
+  check("boards use their card's strip and ★ count", T.every((t) => t.board.approachTrack.length === APPROACH_TRACKS[t.id].length && (t.board.maxAbilities ?? 0) === t.abilityCount));
+  check(
+    "reroll rounds follow the Altitude Track side: green/yellow 6,000 + 2,000 ft, red/black 6,000 only",
+    T.every((t) => t.board.rerollRounds.join() === (["green", "yellow"].includes(t.difficulty) ? "1,5" : "1")) && YUL_MONTREAL.rerollRounds.join() === "1,5",
+  );
+  check("every board has 7 rounds from 6,000 ft", T.every((t) => t.board.rounds === 7 && t.board.startAltitudeFeet === 6000));
+  check("a card's lobby setup is accepted with its printed modules", T.every((t) => SetSetupPayload.safeParse({ scenarioId: t.id === "green-YUL" ? "YUL" : t.id, modules: t.modules }).success));
+}
+
+console.log("2e) APPROACH_TRACKS: one well-formed track per card, as printed on the strips");
+{
+  const ids = SCENARIO_TEMPLATES.map((t) => t.id);
+  check("a track for every card, and no others", ids.every((id) => APPROACH_TRACKS[id]) && Object.keys(APPROACH_TRACKS).length === ids.length);
+  const tracks = Object.entries(APPROACH_TRACKS);
+  check("the airport is the last space, and only the last", tracks.every(([, t]) => t.at(-1).airport && t.filter((s) => s.airport).length === 1));
+  check("traffic and dice counts are whole numbers ≥ 0", tracks.every(([, t]) => t.every((s) => Number.isInteger(s.traffic) && s.traffic >= 0 && (s.trafficDice === undefined || (Number.isInteger(s.trafficDice) && s.trafficDice > 0)))));
+  check(
+    "turns list 1–4 distinct positions within ±2, never on the airport",
+    tracks.every(([, t]) => t.every((s) => !s.axisAllowed || (!s.airport && s.axisAllowed.length >= 1 && s.axisAllowed.length <= 4 && new Set(s.axisAllowed).size === s.axisAllowed.length && s.axisAllowed.every((o) => Number.isInteger(o) && Math.abs(o) <= 2)))),
+  );
+  // Strip lengths: the long strips have 8 spaces, Galeão 7, Paro / Heathrow / Keflavík 6, Toncontín 5.
+  const length = { YUL: 8, HND: 8, OSL: 8, PRG: 8, ATL: 8, KUL: 8, GIG: 7, PBH: 6, LHR: 6, KEF: 6, TGU: 5 };
+  check("track lengths match the strips", SCENARIO_TEMPLATES.every((t) => APPROACH_TRACKS[t.id].length === length[t.code]));
+  check("no board starts with more than the 12 Airplane tokens", tracks.every(([, t]) => t.reduce((n, s) => n + s.traffic, 0) <= 12));
+  const tr = (id) => APPROACH_TRACKS[id].map((s) => `${s.traffic}${s.trafficDice ? `d${s.trafficDice}` : ""}${s.axisAllowed ? `t${s.axisAllowed.join("/")}` : ""}`).join(" ");
+  check("spot check green HND (left turns)", tr("green-HND") === "0d2 1 1t1/0 2 1t2/1 0t2/1/0 2 1");
+  check("spot check yellow PRG (no start dice)", tr("yellow-PRG") === "0 0 1 3d1 0 3d1 2 3");
+  check("spot check black KEF", tr("black-KEF") === "0d2 0t2/1/0 2d1 1t0/-1/-2 1t1/0/-1 0");
 }
 
 // 3) CORS origin check -------------------------------------------------------

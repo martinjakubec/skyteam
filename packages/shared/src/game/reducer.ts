@@ -10,7 +10,9 @@ import {
   placementKey,
   type GameState,
 } from "./state";
+import { TRAFFIC_DIE_FACES } from "./abilities";
 import {
+  AIRPLANE_TOKENS,
   BRAKE_VALUES,
   CONCENTRATION_SLOTS,
   DICE_PER_PLAYER,
@@ -49,7 +51,8 @@ export class GameRuleError extends Error {
  */
 export type ReduceCommand =
   /** `at`: the server's clock (epoch ms) — Real-Time starts its countdown from it. */
-  | { type: "roll"; pilot: DieValue[]; copilot: DieValue[]; at?: number }
+  /** `traffic`: Traffic die results, one per icon on the Current Position. */
+  | { type: "roll"; pilot: DieValue[]; copilot: DieValue[]; traffic?: DieValue[]; at?: number }
   | { type: "reroll"; dieIds: number[]; values: DieValue[] }
   | { type: "placeDie"; dieId: number; target: PlacementTarget; coffeeDelta?: number }
   | { type: "placeIntern"; target: PlacementTarget }
@@ -124,7 +127,7 @@ function dispatch(draft: GameState, command: ReduceCommand, byPlayerId: PlayerId
 
 function handleRoll(
   s: GameState,
-  cmd: { pilot: DieValue[]; copilot: DieValue[]; at?: number },
+  cmd: { pilot: DieValue[]; copilot: DieValue[]; traffic?: DieValue[]; at?: number },
 ): ReduceResult {
   if (s.phase !== "rolling") throw new GameRuleError("Not awaiting a roll.");
   const realTime = hasModule(s, "realTime");
@@ -132,6 +135,12 @@ function handleRoll(
   if (cmd.pilot.length !== DICE_PER_PLAYER || cmd.copilot.length !== DICE_PER_PLAYER) {
     throw new GameRuleError("A roll must provide four dice per crew.");
   }
+  const traffic = cmd.traffic ?? [];
+  const trafficDue = s.scenario.approachTrack[s.position]?.trafficDice ?? 0;
+  if (traffic.length !== trafficDue) {
+    throw new GameRuleError(`This round needs ${trafficDue} Traffic die roll(s), not ${traffic.length}.`);
+  }
+  if (traffic.some((v) => !TRAFFIC_DIE_FACES.includes(v))) throw new GameRuleError("Not a Traffic die face.");
 
   s.dice = {
     pilot: cmd.pilot.map((value, id) => ({ id, value, placed: false })),
@@ -177,7 +186,25 @@ function handleRoll(
   s.timerRemainingMs = null;
 
   s.log.push(`Round ${s.round}: dice rolled (${altitudeLabel(s)}). ${crewLabel(s.turn)} leads.`);
+  for (const value of traffic) addTraffic(s, value);
   return { state: s, description: `Round ${s.round} begins.` };
+}
+
+/**
+ * Traffic die (Approach Track effect): a result adds an Airplane token that
+ * many spaces along, counting the Current Position as the first — past the end
+ * of the track it goes on the Airport. None is placed once the supply is out.
+ */
+function addTraffic(s: GameState, value: DieValue): void {
+  if (airplanesRemaining(s) >= AIRPLANE_TOKENS) {
+    s.log.push(`Traffic die: ${value}, but no Airplane tokens are left to place.`);
+    return;
+  }
+  const airport = airportIndex(s.scenario);
+  const at = Math.min(s.position + value - 1, airport);
+  s.airplanes[at] += 1;
+  const where = at === airport ? "the airport" : `${at - s.position} space${at - s.position === 1 ? "" : "s"} ahead`;
+  s.log.push(`Traffic die: ${value} — an airplane joins the approach ${where}.`);
 }
 
 // --- Real-Time --------------------------------------------------------------

@@ -3,13 +3,15 @@ import {
   ABILITY_LABELS,
   ABILITY_TEXT,
   DEFAULT_MAX_ABILITIES,
+  DIFFICULTIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   conflictingModules,
   MODULE_IDS,
   MODULE_LABELS,
-  SCENARIO_IDS,
   SCENARIOS,
+  SCENARIO_TEMPLATES,
+  templateFor,
   type AbilityId,
   type GameSetup,
   type ModuleId,
@@ -78,19 +80,28 @@ function SetupPicker({
     });
   };
 
+  // Picking a card switches on the modules printed on it (the host can still
+  // change them) and drops abilities, whose cap comes from the new card.
+  const pickAirport = (scenarioId: ScenarioId) =>
+    onChange({
+      scenarioId,
+      modules: MODULE_IDS.filter((m) => templateFor(scenarioId)?.modules.includes(m) && IMPLEMENTED_MODULES.includes(m)),
+      abilities: [],
+    });
+
   return (
     <div className="setup">
       <label className="row">
         <span className="setup-label">Airport</span>
-        <select
-          value={setup.scenarioId}
-          disabled={!editable}
-          onChange={(e) => onChange({ ...setup, scenarioId: e.target.value as ScenarioId })}
-        >
-          {SCENARIO_IDS.map((id) => (
-            <option key={id} value={id}>
-              {SCENARIOS[id].name}
-            </option>
+        <select value={setup.scenarioId} disabled={!editable} onChange={(e) => pickAirport(e.target.value)}>
+          {DIFFICULTIES.map((d) => (
+            <optgroup key={d.id} label={d.label}>
+              {SCENARIO_TEMPLATES.filter((t) => t.difficulty === d.id).map((t) => (
+                <option key={t.id} value={t.id === "green-YUL" ? "YUL" : t.id}>
+                  {t.code} {t.airport}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </label>

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
-import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS, SCENARIO_IDS, SCENARIOS, type GameSetup } from "./game/scenario";
+import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS } from "./game/scenario";
+import { SCENARIO_IDS, SCENARIOS, type GameSetup } from "./game/catalog";
 import { ABILITY_IDS, DEFAULT_MAX_ABILITIES } from "./game/abilities";
 
 // ---------------------------------------------------------------------------

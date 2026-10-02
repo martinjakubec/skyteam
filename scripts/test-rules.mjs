@@ -7,6 +7,7 @@ import {
   DEFAULT_MAX_ABILITIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
+  APPROACH_TRACKS,
   SCENARIOS,
   REAL_TIME_SECONDS,
   SetSetupPayload,
@@ -36,7 +37,8 @@ const C = "C";
 // Drive helpers -------------------------------------------------------------
 // Every roll carries the server's clock (Real-Time starts its countdown from it).
 const ROLL_AT = 1_000_000;
-const roll = (s, pilot, copilot) => reduce(s, { type: "roll", pilot, copilot, at: ROLL_AT }, "").state;
+// `traffic`: the Traffic die results the round needs (one per icon on the Current Position).
+const roll = (s, pilot, copilot, traffic) => reduce(s, { type: "roll", pilot, copilot, at: ROLL_AT, ...(traffic && { traffic }) }, "").state;
 function place(s, who, value, target, coffeeDelta) {
   const crew = who === P ? "pilot" : "copilot";
   const die = s.dice[crew].find((d) => !d.placed && d.value === value);
@@ -350,8 +352,8 @@ console.log("12) Joint reroll: one token, initiator picks dice, the other player
 // Shared driver for the remaining sections: play one full round with the given
 // Axis/Engine values; every crew's two spare dice (6s) go on harmless spaces
 // (Radio past the end of the track, Concentration).
-function playRound(s, { pilot, copilot }) {
-  s = roll(s, [pilot[0], pilot[1], 6, 6], [copilot[0], copilot[1], 6, 6]);
+function playRound(s, { pilot, copilot, traffic }) {
+  s = roll(s, [pilot[0], pilot[1], 6, 6], [copilot[0], copilot[1], 6, 6], traffic);
   const moves = {
     [P]: [[pilot[0], { kind: "axis" }], [pilot[1], { kind: "engine" }], [6, { kind: "radio", slot: 0 }], [6, { kind: "concentration", slot: 0 }]],
     [C]: [[copilot[0], { kind: "axis" }], [copilot[1], { kind: "engine" }], [6, { kind: "radio", slot: 0 }], [6, { kind: "radio", slot: 1 }]],
@@ -1121,11 +1123,65 @@ console.log("30) Turns: advancing needs the Axis in a permitted position");
   check("the landing round doesn't move: a turn on the airport space is ignored", s.phase === "won");
 
   check("Turns are board data, not a lobby module", !SetSetupPayload.safeParse({ scenarioId: "YUL", modules: ["turns"] }).success);
-  const test = SCENARIOS.YUL_TURNS;
+  const hnd = SCENARIOS["green-HND"];
   check(
-    "TEMPORARY: a YUL Turns test board is playable from the lobby",
-    !!test && test.approachTrack.some((sp) => sp.axisAllowed) && SetSetupPayload.safeParse({ scenarioId: "YUL_TURNS", modules: [] }).success,
+    "a board with turns (green Haneda) is playable from the lobby",
+    !!hnd && hnd.approachTrack.some((sp) => sp.axisAllowed) && SetSetupPayload.safeParse({ scenarioId: "green-HND", modules: [] }).success,
   );
+}
+
+console.log("31) Traffic dice: rolled at the start of a round on a space showing them");
+{
+  // Space 0 shows 2 Traffic dice, space 3 one. Five spaces, so the Radio's 6s reach nothing.
+  const track = [{ traffic: 0, trafficDice: 2 }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, trafficDice: 1 }, { traffic: 0, airport: true }];
+  const dice = (over = {}) => init(scn({ rounds: 7, approachTrack: track, ...over }));
+  const hand = [3, 3, 6, 6];
+
+  expectThrow("a round on a Traffic space needs its rolls", () => roll(dice(), hand, hand));
+  expectThrow("…exactly one per icon", () => roll(dice(), hand, hand, [3]));
+  expectThrow("…and only Traffic die faces (2–5)", () => roll(dice(), hand, hand, [3, 6]));
+  expectThrow("no Traffic rolls on a space without icons", () => roll(init(scn({ rounds: 7 })), hand, hand, [3]));
+
+  let s = roll(dice(), hand, hand, [3, 2]);
+  check("a 3 lands on the third space, counting the Current Position as the first", s.airplanes[2] === 1);
+  check("a 2 lands on the space right ahead", s.airplanes[1] === 1 && s.airplanes.join() === "0,1,1,0,0");
+  check("the rolls are logged", s.log.some((l) => /Traffic die/i.test(l) && /3/.test(l)));
+
+  s = roll(dice(), hand, hand, [5, 5]);
+  check("a result reaching the airport puts the token on it", s.airplanes[4] === 2);
+  s = init(scn({ rounds: 7, approachTrack: [{ traffic: 0, trafficDice: 1 }, { traffic: 0 }, { traffic: 0, airport: true }] }));
+  s = roll(s, hand, hand, [5]);
+  check("a result past the airport puts the token on the airport", s.airplanes.join() === "0,0,1");
+
+  // Staying put: the space's dice are rolled again next round.
+  s = playRound(dice(), { ...level(1, 1), traffic: [4, 4] }); // speed 2 → no advance
+  check("(setup: the plane stayed on space 0)", s.position === 0 && s.phase === "rolling");
+  expectThrow("staying on a Traffic space rolls again next round", () => roll(s, hand, hand));
+  s = roll(s, hand, hand, [4, 4]);
+  check("…and adds the new tokens", s.airplanes[3] === 4);
+
+  // Flying through a Traffic space on a 2-space advance doesn't roll it.
+  s = init(scn({ rounds: 7, approachTrack: [{ traffic: 0 }, { traffic: 0, trafficDice: 1 }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, airport: true }] }));
+  s = playRound(s, level(4, 5)); // speed 9 → advance 2, through space 1 to space 2
+  check("(setup: advanced 2 to space 2)", s.position === 2 && s.phase === "rolling");
+  s = roll(s, hand, hand);
+  check("passing through a Traffic space: no roll", s.phase === "placement" && s.airplanes.every((n) => n === 0));
+
+  // Arriving on one does roll, at the start of the next round.
+  s = init(scn({ rounds: 7, approachTrack: track }));
+  s.position = 2;
+  s = playRound(s, level(2, 3)); // speed 5 → advance 1 onto space 3
+  check("(setup: on space 3)", s.position === 3);
+  s = roll(s, hand, hand, [2]);
+  check("arriving on a Traffic space rolls next round", s.airplanes[4] === 1);
+
+  // Supply: 12 Airplane tokens; cleared ones go back to it.
+  s = init(scn({ rounds: 7, approachTrack: [{ traffic: 0, trafficDice: 2 }, { traffic: 11 }, { traffic: 0 }, { traffic: 0, airport: true }] }));
+  s = roll(s, hand, hand, [3, 3]);
+  check("only the tokens left in the supply are placed", s.airplanes.join() === "0,11,1,0");
+
+  const hnd = init(scn({ rounds: 7, approachTrack: APPROACH_TRACKS["red-HND"] }));
+  check("a real board: red Haneda rolls 3 dice in round 1", roll(hnd, hand, hand, [2, 3, 4]).airplanes.slice(0, 4).join() === "1,1,2,2");
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

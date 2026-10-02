@@ -104,6 +104,12 @@ export interface ApproachSpace {
    * the Co-Pilot (banking right).
    */
   axisAllowed?: number[];
+  /**
+   * Traffic dice printed on this space (the black dice in a white box; on the
+   * start space, the box beside the clouds). Read off the scenario strips; the
+   * rules that use them aren't implemented yet. Undefined = none.
+   */
+  trafficDice?: number;
 }
 
 export interface Scenario {
@@ -128,9 +134,9 @@ export interface Scenario {
 
   /**
    * 1-based rounds at the start of which a Reroll token is granted (the rounds
-   * whose Altitude space carries a Reroll icon). Round 1 (6,000 ft) always has
-   * one per the rulebook; the others depend on the scenario's difficulty
-   * (YUL: round 4).
+   * whose Altitude space carries a Reroll icon). The Altitude Track is
+   * double-sided: green/yellow has icons at 6,000 and 2,000 ft (rounds 1 and
+   * 5), red/black only at 6,000 ft.
    */
   rerollRounds: number[];
 
@@ -199,6 +205,9 @@ export const RADIO_COPILOT_SLOTS = 2;
 export const CONCENTRATION_SLOTS = 2;
 export const MAX_COFFEE = 3;
 export const DICE_PER_PLAYER = 4;
+/** Airplane tokens in the box. Traffic dice add from this supply; tokens the
+ *  Radio clears go back to it. */
+export const AIRPLANE_TOKENS = 12;
 
 /**
  * The default base-game scenario.
@@ -222,7 +231,7 @@ export const YUL_MONTREAL: Scenario = {
   rounds: 7,
   startAltitudeFeet: 6000,
   feetPerRound: 1000,
-  rerollRounds: [1, 4], // confirmed: round 1 (rulebook) and round 4 (YUL's difficulty)
+  rerollRounds: [1, 5], // green/yellow Altitude Track: 6,000 ft and 2,000 ft (round 5)
   // The plane may sit at most 2 pips off-centre; reaching the 3rd pip (±3) spins out.
   axisSpinAt: 3,
   aeroBlueStart: AERO_BLUE_START,
@@ -230,47 +239,4 @@ export const YUL_MONTREAL: Scenario = {
   maxAbilities: 0, // the green YUL card has no Special Abilities
 };
 
-/**
- * TEMPORARY — a YUL board with turns, to try the Turns effect from the lobby
- * until real scenario boards land. Remove with its lobby entry and the
- * "TEMPORARY" rule test once a scenario with turns is playable.
- */
-export const YUL_TURNS_TEST: Scenario = {
-  ...YUL_MONTREAL,
-  name: "YUL Montréal — Turns test",
-  approachTrack: [
-    { traffic: 0 }, // 0: start
-    { traffic: 1, axisAllowed: [1, 2] }, // 1: left turn
-    { traffic: 2, axisAllowed: [0, 1] }, // 2: easing out of the left turn
-    { traffic: 1 }, // 3
-    { traffic: 2, axisAllowed: [-1, -2] }, // 4: right turn
-    { traffic: 1, axisAllowed: [-1, 0, 1] }, // 5: gentle
-    { traffic: 1 }, // 6
-    { traffic: 0, airport: true }, // 7: airport
-  ],
-};
-
 export const DEFAULT_SCENARIO = YUL_MONTREAL;
-
-/** Every playable airport, keyed by the id a room's setup refers to. */
-export const SCENARIOS = {
-  YUL: YUL_MONTREAL,
-  YUL_TURNS: YUL_TURNS_TEST, // TEMPORARY (see YUL_TURNS_TEST)
-} as const satisfies Record<string, Scenario>;
-export type ScenarioId = keyof typeof SCENARIOS;
-export const SCENARIO_IDS = Object.keys(SCENARIOS) as [ScenarioId, ...ScenarioId[]];
-
-/** What the host picks in the lobby: the airport, advanced modules and Special Abilities. */
-export interface GameSetup {
-  scenarioId: ScenarioId;
-  modules: ModuleId[];
-  abilities: AbilityId[];
-}
-
-export const DEFAULT_SETUP: GameSetup = { scenarioId: "YUL", modules: [], abilities: [] };
-
-/** The concrete Scenario a game is created from: the airport's board data with
- *  the chosen modules and Special Abilities switched on. */
-export function scenarioForSetup(setup: GameSetup): Scenario {
-  return { ...SCENARIOS[setup.scenarioId], modules: [...setup.modules], abilities: [...(setup.abilities ?? [])] };
-}
