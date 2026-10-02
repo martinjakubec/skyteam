@@ -18,6 +18,7 @@ import {
 } from "@skyteam/shared";
 import { useState } from "react";
 import { ScenarioPicker } from "./ScenarioPicker";
+import type { TutorialId } from "../tutorials/types";
 import { TutorialModal } from "./TutorialModal";
 
 export function Lobby({
@@ -90,17 +91,20 @@ function SetupPicker({
       abilities: [],
     });
 
-  // The ⓘ beside each module and ability opens its tutorial — for host and
+  // The ℹ️ beside each module and ability opens its tutorial — for host and
   // guest alike (it runs locally; nothing is sent).
-  const [tutorial, setTutorial] = useState<ModuleId | AbilityId | null>(null);
+  const [tutorial, setTutorial] = useState<TutorialId | null>(null);
   const info = (id: ModuleId | AbilityId, name: string) => (
     <button type="button" className="info-btn" aria-label={`How ${name} works`} title={`How ${name} works`} onClick={() => setTutorial(id)}>
-      ⓘ
+      ℹ️
     </button>
   );
 
   return (
     <div className="setup">
+      <button type="button" className="how-to-play" onClick={() => setTutorial("basics")}>
+        How to play
+      </button>
       <div className="setup-airport">
         <span className="setup-label">Scenario</span>
         <ScenarioPicker value={setup.scenarioId} disabled={!editable} onChange={pickAirport} />

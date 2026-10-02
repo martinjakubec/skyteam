@@ -26,7 +26,7 @@ import {
 } from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
 import * as tut from "../packages/client/src/tutorials/engine.ts";
-import { TUTORIALS } from "../packages/client/src/tutorials/index.ts";
+import { BASICS, TUTORIALS } from "../packages/client/src/tutorials/index.ts";
 import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
@@ -266,7 +266,7 @@ console.log("2g) tutorial engine: both crews, scripted dice, real rules");
 console.log("2h) every tutorial plays out under the current rules");
 {
   check("a tutorial for every module and ability", [...MODULE_IDS, ...ABILITY_IDS].every((id) => TUTORIALS[id]?.id === id));
-  for (const t of Object.values(TUTORIALS)) {
+  for (const t of [...Object.values(TUTORIALS), BASICS]) {
     let s = t.setup();
     const dice = tut.scriptedDice(t.script);
     const failures = [];
@@ -284,13 +284,14 @@ console.log("2h) every tutorial plays out under the current rules");
       }
     }
     check(`${t.title}: ${t.steps.length} steps play out${failures.length ? ` — ${failures.join("; ")}` : ""}`, failures.length === 0);
+    if (t === BASICS) check(`${t.title}: the flight ends in a landing`, s.outcome?.result === "won");
   }
 }
 
 console.log("2i) tutorial session: steps, Next and Reset never block or rewind");
 {
   // Next on any step — even one whose automatic moves need a later round — moves on.
-  for (const t of Object.values(TUTORIALS)) {
+  for (const t of [...Object.values(TUTORIALS), BASICS]) {
     let sess = ses.initSession(t);
     const dice = tut.scriptedDice(t.script);
     let stuck = null;
@@ -345,6 +346,59 @@ console.log("2j) tutorial session: automatic moves and already-finished steps");
   const dice = tut.scriptedDice();
   const after1 = ses.advance(ses.play(ses.initSession(already), already, tut.place("pilot", 3, tut.axis("pilot")), dice), already, dice);
   check("a step that's already complete when it starts is marked done", after1.stepIndex === 1 && after1.done);
+}
+
+console.log("2k) tutorial session: Retry step, strict steps, the full-game tutorial");
+{
+  const d = tut.scriptedDice({ d6: [1, 2, 3] });
+  d.d6();
+  check("scripted dice report how many values they've handed out", JSON.stringify(d.used()) === JSON.stringify({ d6: 1, traffic: 0 }));
+  check("…and can restart from there", tut.scriptedDice({ d6: [1, 2, 3] }, d.used()).d6() === 2);
+
+  const base = { id: "kerosene", title: "Synthetic", description: "", show: [], setup: () => tut.start({ pilot: [3, 4, 6, 6], copilot: [3, 4, 6, 6] }) };
+  const loose = { ...base, steps: [{ text: "Axis", solution: [tut.place("pilot", 3, tut.axis("pilot"))], done: (s) => s.axis.pilot === 3 && s.axis.copilot === 3 }] };
+  const dice = tut.scriptedDice();
+  const s0 = ses.initSession(loose, dice);
+  const s1 = ses.play(s0, loose, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  const back = ses.retry(s1, loose);
+  check("Retry step rewinds to where the step began", back.game === s0.game && back.stepIndex === 0 && !back.done && back.error === null);
+  check("…and remembers the dice used by then", JSON.stringify(back.diceAt) === JSON.stringify(s0.diceAt));
+
+  const strict = {
+    ...base,
+    strict: true,
+    steps: [
+      { text: "Pilot: 6 on Concentration, then the Co-Pilot's 6 too.", solution: [tut.free("pilot", 6, "concentration"), tut.free("copilot", 6, "concentration")], done: (s) => s.coffee === 2 },
+      { text: "Read this.", info: true, solution: [], done: () => false },
+    ],
+  };
+  const t0 = ses.initSession(strict, dice);
+  const wrong = ses.play(t0, strict, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  check("strict: a legal move that isn't the step's is refused with the step's hint", wrong.game === t0.game && wrong.error?.includes("Pilot: 6 on Concentration"));
+  const other = ses.play(t0, strict, tut.place("pilot", 6, tut.conc(1)), dice);
+  check("strict: the same die on another free Concentration space counts", other.error === null && other.game.coffee === 1);
+  const skipped = ses.skip(other, strict, dice);
+  check("Next plays only the step's moves not yet made", skipped.stepIndex === 1 && skipped.game.coffee === 2);
+  const info = ses.play(skipped, strict, tut.place("pilot", 3, tut.axis("pilot")), dice);
+  check("strict: no moves during a note", info.game === skipped.game && typeof info.error === "string");
+
+  check("the full-game tutorial is strict, on a copy of YUL", BASICS.strict === true && BASICS.setup().scenario.approachTrack.length === 8);
+  check("…with a chapter on every step", BASICS.steps.every((st) => typeof st.chapter === "string" && st.chapter.length > 0));
+}
+
+console.log("2l) tutorial session: is there progress to lose on close?");
+{
+  const t = TUTORIALS.kerosene;
+  const dice = tut.scriptedDice(t.script);
+  const s0 = ses.initSession(t, dice);
+  check("a fresh tutorial has nothing to lose", !ses.hasProgress(s0, t));
+  const s1 = ses.play(s0, t, tut.place("pilot", 2, { kind: "kerosene" }), dice);
+  check("a move on step 1 is progress", ses.hasProgress(s1, t));
+  const s2 = ses.skip(s0, t, dice);
+  check("a later step is progress", ses.hasProgress(s2, t));
+  let end = s0;
+  for (let i = 0; i < t.steps.length; i++) end = ses.skip(end, t, dice);
+  check("a finished tutorial has nothing to lose", end.stepIndex === t.steps.length && !ses.hasProgress(end, t));
 }
 
 // 3) CORS origin check -------------------------------------------------------

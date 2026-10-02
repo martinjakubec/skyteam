@@ -12,6 +12,7 @@ import {
   type GameState,
   type ModuleId,
   type PlacementTarget,
+  type Scenario,
 } from "@skyteam/shared";
 import type { Move, Tutorial } from "./types";
 
@@ -19,13 +20,26 @@ export const PILOT_ID = "tutorial-pilot";
 export const COPILOT_ID = "tutorial-copilot";
 const idOf = (crew: Crew) => (crew === "pilot" ? PILOT_ID : COPILOT_ID);
 
-/** Dice that hand out a tutorial's scripted values in order, then random ones. */
-export function scriptedDice(script: Tutorial["script"] = {}): Dice {
-  const d6 = [...(script.d6 ?? [])];
-  const traffic = [...(script.traffic ?? [])];
+/** How many scripted values of each kind have been handed out. */
+export interface DiceCursor {
+  d6: number;
+  traffic: number;
+}
+
+export interface ScriptedDice extends Dice {
+  used(): DiceCursor;
+}
+
+/** Dice that hand out a tutorial's scripted values in order (from `from`, to
+ *  replay a step), then random ones. */
+export function scriptedDice(script: Tutorial["script"] = {}, from: DiceCursor = { d6: 0, traffic: 0 }): ScriptedDice {
+  const at = { ...from };
+  const d6 = script.d6 ?? [];
+  const traffic = script.traffic ?? [];
   return {
-    d6: () => d6.shift() ?? ((1 + Math.floor(Math.random() * 6)) as DieValue),
-    traffic: () => traffic.shift() ?? TRAFFIC_DIE_FACES[Math.floor(Math.random() * TRAFFIC_DIE_FACES.length)],
+    d6: () => d6[at.d6++] ?? ((1 + Math.floor(Math.random() * 6)) as DieValue),
+    traffic: () => traffic[at.traffic++] ?? TRAFFIC_DIE_FACES[Math.floor(Math.random() * TRAFFIC_DIE_FACES.length)],
+    used: () => ({ ...at }),
   };
 }
 
@@ -51,6 +65,8 @@ export function apply(s: GameState, move: Move, dice: Dice, now: () => number = 
 const TRACK = [{ traffic: 0 }, { traffic: 0 }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, airport: true }];
 
 export interface StartOptions {
+  /** The board to play on; a short traffic-free track by default. */
+  scenario?: Scenario;
   modules?: ModuleId[];
   abilities?: AbilityId[];
   /** Round 1's hands. */
@@ -64,7 +80,8 @@ export interface StartOptions {
 
 /** A tutorial's starting position: round 1 rolled with fixed hands. */
 export function start(o: StartOptions): GameState {
-  const scenario = { ...YUL_MONTREAL, name: "Tutorial", approachTrack: TRACK, modules: o.modules ?? [], abilities: o.abilities ?? [], maxAbilities: 2 };
+  const board = o.scenario ?? { ...YUL_MONTREAL, name: "Tutorial", approachTrack: TRACK };
+  const scenario = { ...board, modules: o.modules ?? [], abilities: o.abilities ?? [], maxAbilities: 2 };
   let s = createInitialGameState(scenario, PILOT_ID, COPILOT_ID, { internTokens: [3, 1, 5, 6, 2, 4] });
   s = reduce(s, { type: "roll", pilot: o.pilot, copilot: o.copilot, at: Date.now() }, "").state;
   const dice = scriptedDice();
@@ -97,6 +114,24 @@ export const swap = (crew: Crew, value: number): Move => (s) => ({ crew, command
 export const adapt = (crew: Crew, value: number): Move => (s) => ({ crew, command: { type: "adapt", dieId: dieOf(s, crew, value) } });
 export const anticipate = (crew: Crew, value: number): Move => (s) => ({ crew, command: { type: "anticipate", dieId: dieOf(s, crew, value) } });
 export const timeUp: Move = () => "timeUp";
+/** A die on the first free Radio or Concentration space (which one doesn't matter). */
+export const free = (crew: Crew, value: number, kind: "radio" | "concentration"): Move => (s) => {
+  const slot =
+    kind === "concentration"
+      ? s.concentrationSlots.findIndex((c) => c == null)
+      : crew === "pilot" ? 0 : s.radioCopilot.findIndex((r) => r === null);
+  return place(crew, value, kind === "radio" ? radio(crew, slot) : conc(slot))(s);
+};
+/** Reroll the unplaced dice of these values (none = decline an offered reroll). */
+export const reroll = (crew: Crew, values: number[]): Move => (s) => {
+  const ids: number[] = [];
+  for (const v of values) {
+    const die = s.dice[crew].find((d) => !d.placed && d.value === v && !ids.includes(d.id));
+    if (!die) throw new Error(`Tutorial script: no unplaced ${v} for the ${crew} to reroll.`);
+    ids.push(die.id);
+  }
+  return { crew, command: { type: "reroll", dieIds: ids } };
+};
 
 export const axis = (side: Crew): PlacementTarget => ({ kind: "axis", side });
 export const engine = (side: Crew): PlacementTarget => ({ kind: "engine", side });

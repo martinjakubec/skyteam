@@ -9,6 +9,8 @@ export type { CockpitSection };
 export type Move = (s: GameState) => { crew: Crew; command: GameCommand } | "timeUp";
 
 export interface Step {
+  /** Which part of the lesson this is, shown in place of the step count (e.g. "Round 3 · Reroll"). */
+  chapter?: string;
   /** What to do, or what just happened. */
   text: string;
   /** A note with nothing to do: shown until the player presses Next. */
@@ -21,8 +23,11 @@ export interface Step {
   solution: Move[];
 }
 
+/** The full-game tutorial, or one module's or Special Ability's. */
+export type TutorialId = ModuleId | AbilityId | "basics";
+
 export interface Tutorial {
-  id: ModuleId | AbilityId;
+  id: TutorialId;
   title: string;
   description: string;
   show: CockpitSection[];
@@ -30,4 +35,8 @@ export interface Tutorial {
   /** Values the scripted dice hand out, in order; random once used up. */
   script?: { d6?: DieValue[]; traffic?: DieValue[] };
   steps: Step[];
+  /** Only the current step's moves are accepted (others are refused with its hint). */
+  strict?: boolean;
+  /** Shown once the last step is done, in place of the free-play line. */
+  outro?: string;
 }

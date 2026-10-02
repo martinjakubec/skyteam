@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETUP, type GameCommand, type GameState, type RoomSnapshot } from "@skyteam/shared";
 import { COPILOT_ID, PILOT_ID, actingCrew, scriptedDice, timeUp } from "./engine";
-import { advance, initSession, play, skip, type Session } from "./session";
+import { advance, hasProgress, initSession, play, retry, skip, type Session } from "./session";
 import type { Move, Tutorial } from "./types";
 
 /** How long a completed step shows as done before the next one starts. */
@@ -76,6 +76,12 @@ export function useSandbox(tutorial: Tutorial) {
     commit(initSession(tutorial, dice.current));
     setResets((n) => n + 1);
   };
+  const retryStep = () => {
+    cancelAdvance();
+    dice.current = scriptedDice(tutorial.script, latest.current.diceAt);
+    commit(retry(latest.current, tutorial));
+    setResets((n) => n + 1);
+  };
   useEffect(() => cancelAdvance, []);
 
   // Real-Time: the countdown runs on this machine's clock.
@@ -90,6 +96,10 @@ export function useSandbox(tutorial: Tutorial) {
   return {
     snapshot: snapshotFor(game),
     step: tutorial.steps[sess.stepIndex] ?? null,
+    /** Closing now would lose progress (so it asks first). */
+    hasProgress: hasProgress(sess, tutorial),
+    /** The board has changed since the current step began. */
+    canRetry: !!tutorial.steps[sess.stepIndex] && sess.game !== sess.before,
     stepIndex: sess.stepIndex,
     error: sess.error,
     flash: sess.done,
@@ -97,6 +107,7 @@ export function useSandbox(tutorial: Tutorial) {
     send,
     next,
     reset,
+    retryStep,
     skipTime: () => playMove(timeUp),
     timerRunning,
   };
