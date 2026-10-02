@@ -26,6 +26,7 @@ import {
 } from "../packages/shared/src/index.ts";
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
 import * as tut from "../packages/client/src/tutorials/engine.ts";
+import { TUTORIALS } from "../packages/client/src/tutorials/index.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
@@ -259,6 +260,30 @@ console.log("2g) tutorial engine: both crews, scripted dice, real rules");
   const sw = tut.start({ abilities: ["workingTogether"], pilot: [1, 3, 6, 6], copilot: [5, 3, 6, 6] });
   const offered = tut.apply(sw, tut.swap("pilot", 1), dice);
   check("the other crew answers a swap", tut.actingCrew(offered) === "copilot");
+}
+
+console.log("2h) every tutorial plays out under the current rules");
+{
+  check("a tutorial for every module and ability", [...MODULE_IDS, ...ABILITY_IDS].every((id) => TUTORIALS[id]?.id === id));
+  for (const t of Object.values(TUTORIALS)) {
+    let s = t.setup();
+    const dice = tut.scriptedDice(t.script);
+    const failures = [];
+    for (const [i, step] of t.steps.entries()) {
+      try {
+        for (const m of step.auto ?? []) s = tut.apply(s, m, dice);
+        const before = s;
+        if (step.info) continue;
+        if (step.done(s, before)) failures.push(`step ${i + 1} done before its moves`);
+        for (const m of step.solution) s = tut.apply(s, m, dice);
+        if (!step.done(s, before)) failures.push(`step ${i + 1} not done after its moves`);
+      } catch (e) {
+        failures.push(`step ${i + 1}: ${e.message}`);
+        break;
+      }
+    }
+    check(`${t.title}: ${t.steps.length} steps play out${failures.length ? ` — ${failures.join("; ")}` : ""}`, failures.length === 0);
+  }
 }
 
 // 3) CORS origin check -------------------------------------------------------
