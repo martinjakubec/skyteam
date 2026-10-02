@@ -13,7 +13,7 @@
     "dev:server": "npm run build:shared && npm run dev -w @skyteam/server",
     "dev:client": "npm run build:shared && npm run dev -w @skyteam/client",
     "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
-    "test": "npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs",
+    "test": "npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs && tsx scripts/test-bot.mjs",
     "run:docker": "docker compose -f docker-compose.dev.yml up -d"
   },
   "devDependencies": {

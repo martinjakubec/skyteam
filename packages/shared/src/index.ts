@@ -6,3 +6,4 @@ export * from "./game/abilities";
 export * from "./game/state";
 export * from "./game/reducer";
 export * from "./game/entropy";
+export * from "./bot";
