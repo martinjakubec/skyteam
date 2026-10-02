@@ -4,3 +4,5 @@ export * from "./moves";
 export * from "./actor";
 export * from "./evaluate";
 export * from "./policy";
+export * from "./setups";
+export * from "./selfplay";

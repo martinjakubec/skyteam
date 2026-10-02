@@ -47,6 +47,7 @@ console.log("2) legalMoves from the bot's own (redacted) view");
 console.log("3) actorFor, evaluate, chooseMove (Navigator)");
 {
   const { actorFor, chooseMove, evaluate, redactGameStateFor, createInitialGameState, reduce, scenarioForSetup } = await import("../packages/shared/src/index.ts");
+  const t0 = () => fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   const setup = (mods = [], abs = [], scenarioId = "YUL") => ({ scenarioId, modules: mods, abilities: abs });
   const fresh = (dp, dc, s = setup()) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
 
@@ -62,6 +63,40 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   const m = chooseMove(redactGameStateFor(s, P), "pilot", "navigator", mulberry32(1));
   check("doesn't spin the plane", !(m.type === "placeDie" && m.target.kind === "axis" && s.dice.pilot[m.dieId].value === 1));
 
+  // Keep the die that saves the Axis: the Co-Pilot's 6 is down, so only the
+  // Pilot's 5 avoids a spin — it must not be spent on the Radio or Gear first.
+  let k = fresh([5, 1, 1, 2], [6, 1, 1, 1]);
+  k.turn = "copilot";
+  k = reduce(k, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const keep = chooseMove(redactGameStateFor(k, P), "pilot", "navigator", mulberry32(4));
+  check("keeps the only die that avoids a spin for the Axis", !(keep.type === "placeDie" && k.dice.pilot[keep.dieId].value === 5 && keep.target.kind !== "axis"));
+
+  // First Axis die, partner's unknown: a 1 spins on any partner 4–6, a 3 only on a 6.
+  const half = (v) => redactGameStateFor(reduce(fresh([v, 2, 2, 2], [1, 1, 1, 1]), { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P).state, P);
+  check("a first Axis die near the middle beats an extreme one (spin risk)", evaluate(half(3), "pilot") > evaluate(half(1), "pilot"));
+
+  // Partner's Axis die unknown: the Pilot's 3 is its safest Axis die (1s and 6s
+  // spin on half the partner's faces), so it isn't spent elsewhere first.
+  const r = fresh([3, 1, 6, 6], [1, 1, 1, 1]);
+  const first = chooseMove(redactGameStateFor(r, P), "pilot", "navigator", mulberry32(5));
+  check("keeps its safest Axis die rather than spending it elsewhere", !(first.type === "placeDie" && r.dice.pilot[first.dieId].value === 3 && first.target.kind !== "axis"));
+
+  // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6.
+  const paced = (position) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), engines: { pilot: 3, copilot: 3 }, position, airplanes: Array(8).fill(0) });
+  check("pace counts the rounds left after this round's move", evaluate(paced(2), "pilot") > evaluate(paced(1), "pilot"));
+  // Behind schedule (round 5, 3 spaces left, 1 moving round after this one): a
+  // hand that can reach speed 9+ for a double move beats one that can't.
+  const behind = (hand) => ({ ...fresh(hand, [1, 1, 1, 1]), round: 5, position: 4, airplanes: Array(8).fill(0) });
+  check("pace: keeps the fast Engine dice it needs to catch up", evaluate(behind([6, 6, 6, 6]), "pilot") - evaluate(behind([1, 1, 1, 1]), "pilot") > 500);
+  check("pace: leaving a space with an airplane on it is fatal", evaluate({ ...behind([6, 6, 6, 6]), airplanes: [0, 0, 0, 0, 1, 0, 0, 0] }, "pilot") < evaluate(behind([6, 6, 6, 6]), "pilot") - 2000);
+
+  // Landing round: the Axis must end level, and the speed must fit the last Brakes.
+  const landing = (hand, extra = {}) => ({ ...fresh([1, 1, 1, 1], hand), round: 7, axis: { pilot: 3, copilot: null, offset: 0 }, ...extra });
+  check("landing round: an Axis die that leaves the plane tilted is fatal", evaluate(landing([3, 1, 1, 1]), "copilot") - evaluate(landing([4, 4, 4, 4]), "copilot") > 2000);
+  const brakes = (hand) => landing(hand, { axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: 3, copilot: null }, brakesDeployed: 2 });
+  check("landing round: an Engine die too fast for the Brakes is fatal", evaluate(brakes([1, 1, 1, 1]), "copilot") - evaluate(brakes([6, 6, 6, 6]), "copilot") > 2000);
+  check("more Brakes are better (a normal landing speed needs them)", evaluate({ ...t0(), brakesDeployed: 2 }, "pilot") > evaluate({ ...t0(), brakesDeployed: 1 }, "pilot"));
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
@@ -74,6 +109,22 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
 
   const over = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), phase: "lost" };
   check("no legal move → null", chooseMove(over, "pilot", "navigator", mulberry32(3)) === null);
+}
+
+console.log("4) Self-play: every card, every module combination, every ability");
+{
+  const { selfPlay, representativeSetups, cardSetups, ABILITY_IDS } = await import("../packages/shared/src/index.ts");
+  check("all 21 cards are covered", cardSetups().length === 21);
+  const setups = representativeSetups();
+  check("every ability is played", ABILITY_IDS.every((a) => setups.some((s) => s.abilities.includes(a))));
+  const label = (s) => `${s.scenarioId}: ${[...s.modules, ...s.abilities].join("+") || "base"}`;
+  const results = setups.map((s, i) => ({ s, r: selfPlay(s, { pilot: "navigator", copilot: "navigator" }, 1000 + i) }));
+  const stuck = results.filter(({ r }) => r.outcome === "stuck");
+  check(`${setups.length} setups each play to a finished game`, stuck.length === 0);
+  stuck.slice(0, 5).forEach(({ s, r }) => console.log(`     ↳ stuck: ${label(s)} — ${r.reason}`));
+  const a = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
+  const b = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
+  check("same seed, same game", JSON.stringify(a) === JSON.stringify(b));
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

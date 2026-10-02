@@ -32,8 +32,17 @@ grace-timer logic.
 ## Tests
 
 ```bash
-npm test   # rules + unit suites (run inside a node:22 container; see below)
+npm test    # rules + unit + bot suites (run inside a node:22 container; see below)
+npm run bench -- [games=30] [level=navigator] [ALL]   # bot win rate
 ```
+
+`npm run bench` plays the bot against itself and prints, per setup, the win
+rate, the average round reached and the top loss reasons, then the overall win
+rate. By default it covers every scenario card, every module combination and
+each Special Ability; `ALL` plays every module combination × every ability set
+(slow — use a small game count). `ONLY="intern,kerosene"` keeps only setups
+containing all those ids (scenario id, module or ability). Games are seeded, so
+a run is reproducible.
 
 `scripts/validate.mjs` is an end-to-end check against a running server
 (`BASE=http://server:3001` on the compose network).
