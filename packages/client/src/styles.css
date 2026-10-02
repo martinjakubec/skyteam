@@ -2366,3 +2366,78 @@ ul {
     animation: none;
   }
 }
+
+/* Tutorials: a dialog over the lobby with a trimmed, playable cockpit. Above
+   the page (900), below the drag overlays (.drop-ring 999, .drag-die 1000). */
+.tutorial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+  background: rgba(8, 11, 16, 0.72);
+}
+.tutorial-panel {
+  width: min(1000px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  outline: none;
+}
+.tutorial-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tutorial-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tutorial-close {
+  padding: 0.2rem 0.6rem;
+}
+.tutorial-desc {
+  margin: 0;
+}
+.tutorial-stage {
+  padding: 0;
+  max-width: none;
+}
+.tutorial-as {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+.tutorial-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: var(--recess);
+  color: var(--paper);
+  transition: background 0.2s;
+}
+.tutorial-steps.done {
+  background: #1f4a2a;
+}
+.tutorial-count {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.tutorial-text {
+  margin: 0;
+}
