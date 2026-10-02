@@ -32,7 +32,6 @@ export const MODULE_IDS = [
   "wind",
   "iceBrakes",
   "realTime",
-  "trafficDie",
 ] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
@@ -44,7 +43,6 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
   wind: "Wind",
   iceBrakes: "Ice Brakes",
   realTime: "Real Time",
-  trafficDie: "Traffic Die",
 };
 
 /**
