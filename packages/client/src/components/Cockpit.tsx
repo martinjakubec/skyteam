@@ -488,7 +488,7 @@ export function Cockpit({
               <span className="axis-lead h-right" aria-hidden="true" />
               <span className="axis-lead d-right" aria-hidden="true" />
               <Slot tone="blue" noSwitch dice mandatory target={{ kind: "axis", side: "pilot" }} taken={game.axis.pilot !== null} label={face(game.axis.pilot)} onClick={() => place({ kind: "axis", side: "pilot" })} enabled={can(mine("pilot") && game.axis.pilot === null)} />
-              <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} />
+              <Window offset={game.axis.offset} spinAt={game.scenario.axisSpinAt} outcome={game.outcome} turn={game.scenario.approachTrack[game.position]?.axisAllowed} />
               <Slot tone="orange" noSwitch dice mandatory target={{ kind: "axis", side: "copilot" }} taken={game.axis.copilot !== null} label={face(game.axis.copilot)} onClick={() => place({ kind: "axis", side: "copilot" })} enabled={can(mine("copilot") && game.axis.copilot === null)} />
             </div>
             <SpeedGauge blue={game.aeroBlue} orange={game.aeroOrange} speed={game.lastSpeed} />

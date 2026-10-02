@@ -1,4 +1,5 @@
 import { clamp } from "../util";
+import { CROSS, TRIANGLE } from "./Approach";
 
 // The cockpit window IS the axis indicator: the plane points straight up when
 // level (offset 0) and banks with the tilt. Drawn as SVG so orientation doesn't
@@ -7,14 +8,19 @@ export function Window({
   offset,
   spinAt,
   outcome,
+  turn,
 }: {
   offset: number;
   spinAt: number;
   outcome: { result: string } | null;
+  /** On a Turns space: the Axis positions the plane may fly on from. */
+  turn?: number[];
 }) {
   // Each axis step banks the plane STEP degrees, so the nose lines up with the
   // matching pip on the bank scale above the dial. 7 pips: a hollow centre mark,
-  // four white dots, and a red ✕ at each outer (danger) limit.
+  // four white dots, and a red ✕ at each outer (danger) limit. On a Turns space
+  // the inner five pips become the same marks as the Approach Track (green ▽,
+  // filled at level; red ✕ where forbidden), tilted to face the dial centre.
   const STEP = 24;
   // +offset means the Pilot's die was higher → tilt toward the Pilot, who sits on
   // the left of the dial, which is a counter-clockwise (negative-degree) bank.
@@ -30,6 +36,20 @@ export function Window({
           const rad = (i * STEP * Math.PI) / 180;
           const x = 88 + R * Math.sin(rad);
           const y = 88 - R * Math.cos(rad);
+          // Pip i sits where the nose points at offset −i (+offset banks left).
+          const o = -i;
+          if (turn && Math.abs(i) < 3) {
+            const ok = turn.includes(o);
+            return (
+              <svg key={i} className="pip pip--turn" viewBox="-5 -5 10 10" style={{ left: `${x}px`, top: `${y}px` }}>
+                <path
+                  className={ok ? (o === 0 ? "turn-ok level" : "turn-ok") : "turn-no"}
+                  d={ok ? TRIANGLE : CROSS}
+                  transform={`rotate(${i * STEP})`}
+                />
+              </svg>
+            );
+          }
           return (
             <span key={i} className={`pip pip--${kind}`} style={{ left: `${x}px`, top: `${y}px` }}>
               {kind === "x" ? "✕" : null}

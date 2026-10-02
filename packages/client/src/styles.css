@@ -641,6 +641,12 @@ ul {
   border: 2px solid #f6f8f3;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
+.pip--turn {
+  width: 12px;
+  height: 12px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
 .pip--x {
   width: auto;
   height: auto;
@@ -1543,7 +1549,7 @@ ul {
   background: linear-gradient(180deg, #235c39, #143620);
   border-color: var(--green);
 }
-/* Turns: the permitted Axis positions along the bottom of a turn space. */
+/* Turns: permitted (▽) and forbidden (✕) Axis positions along the bottom of a turn space. */
 .turn-marks {
   position: absolute;
   left: 50%;
@@ -1554,13 +1560,19 @@ ul {
   pointer-events: none;
 }
 .turn-ok {
-  fill: #57d65f;
-  stroke: #0e3d12;
-  stroke-width: 0.8;
+  fill: none;
+  stroke: #57d65f;
+  stroke-width: 1.4;
   stroke-linejoin: round;
 }
+.turn-ok.level {
+  fill: #57d65f;
+}
 .turn-no {
-  fill: rgba(220, 230, 240, 0.35);
+  fill: none;
+  stroke: #ff5a4f;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 .appr-cell .me {
   position: absolute;
@@ -2090,8 +2102,9 @@ ul {
     scrollbar-width: thin;
     scrollbar-color: #3a4a5e transparent;
   }
+  /* Grow to fill the width when the track fits; scroll only when it doesn't. */
   .approach-track.scroll > .appr-cell {
-    flex: 0 0 76px;
+    flex: 1 0 76px;
   }
 }
 /* Phones narrower than the board's natural width: the dial column (Speed
