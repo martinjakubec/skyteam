@@ -641,12 +641,6 @@ ul {
   border: 2px solid #f6f8f3;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
-.pip--turn {
-  width: 12px;
-  height: 12px;
-  overflow: visible;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
-}
 .pip--x {
   width: auto;
   height: auto;
@@ -1549,14 +1543,47 @@ ul {
   background: linear-gradient(180deg, #235c39, #143620);
   border-color: var(--green);
 }
-/* Turns: permitted (▽) and forbidden (✕) Axis positions along the bottom of a turn space. */
-.turn-marks {
-  position: absolute;
-  left: 50%;
-  bottom: 3px;
-  transform: translateX(-50%);
-  width: 54px;
-  height: 17px;
+/* Turns: each turn space has a small tab hanging from the bottom of the
+   track, holding its permitted (▽) and forbidden (✕) Axis positions. The tab
+   row mirrors the track's columns (same gap, padding and flex sizing). */
+.approach-scroll {
+  position: relative; /* offset parent for useFollow */
+  display: flex;
+  flex-direction: column;
+}
+.turn-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px;
+}
+.turn-slot {
+  flex: 1;
+  min-width: 34px;
+  display: flex;
+  justify-content: center;
+}
+.turn-tab {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px; /* fuse with the track's bottom edge */
+  width: calc(100% - 10px);
+  max-width: 76px;
+  padding: 3px 4px 4px;
+  border-radius: 0 0 8px 8px;
+  background: #05070b;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: center;
+}
+.turn-tab .turn-marks {
+  flex: 1;
+  max-width: 64px;
+  height: 22px;
+  padding: 2px 3px 1px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #2a3543, #1a222d);
+  border: 1px solid #0a0e13;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
 .turn-ok {
@@ -2096,15 +2123,21 @@ ul {
    sideways (following the plane / current round — see useFollow) instead of
    squeezing every space into the screen width. */
 @media (max-width: 760px) {
-  .approach-track.scroll {
+  .scroll {
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
     scrollbar-color: #3a4a5e transparent;
   }
   /* Grow to fill the width when the track fits; scroll only when it doesn't. */
-  .approach-track.scroll > .appr-cell {
+  .scroll .appr-cell,
+  .scroll .turn-slot {
     flex: 1 0 76px;
+    min-width: 76px;
+  }
+  /* The track and its turn tabs scroll as one, so both span the full content. */
+  .approach-scroll > * {
+    min-width: max-content;
   }
 }
 /* Phones narrower than the board's natural width: the dial column (Speed

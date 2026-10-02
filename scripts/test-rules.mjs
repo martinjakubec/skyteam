@@ -1095,6 +1095,16 @@ console.log("30) Turns: advancing needs the Axis in a permitted position");
   s.axis.offset = -1;
   s = go(s, [3, 3], [4, 5]); // tilt −1 kept, advance 2 through 0 (right turn ✓) and 1 (free)
   check("advance 2 through a turn and a free space", s.position === 2 && !s.outcome);
+  // Two turns back to back: satisfying only the first still loses on the second.
+  const twoTurns = (allowed2, offset) => {
+    const t = init(scn({ rounds: 7, axisSpinAt: 3, approachTrack: [{ traffic: 0, axisAllowed: [-2, -1] }, { traffic: 0, axisAllowed: allowed2 }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, airport: true }] }));
+    t.axis.offset = offset;
+    return go(t, [3, 3], [4, 5]); // tilt kept, speed 9 → advance 2
+  };
+  s = twoTurns([1, 2], -1); // first turn (right) ✓, second (left) ✗
+  check("advance 2: only the first turn satisfied → lost on the second", lostFor(s, /turn/i) && s.position === 1);
+  s = twoTurns([-1, 0], -1); // both allow −1
+  check("advance 2: both turns satisfied → flies through both", s.position === 2 && !s.outcome);
   s = turns();
   s.position = 1;
   s.axis.offset = 1;

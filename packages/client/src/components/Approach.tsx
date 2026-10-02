@@ -2,30 +2,48 @@ import type { Game } from "../types";
 import { useFollow } from "../useFollow";
 
 export function Approach({ game, airportIdx }: { game: Game; airportIdx: number }) {
-  // On phones the track scrolls sideways; keep the plane's space in view.
-  const track = useFollow<HTMLDivElement>(game.position);
+  // On phones the track (and its turn tabs) scrolls sideways; keep the plane's
+  // space in view.
+  const scroller = useFollow<HTMLDivElement>(game.position, ".appr-cell");
+  const turns = game.scenario.approachTrack.map((s) => s.axisAllowed);
   return (
     <div className="approach">
       <span className="approach-tag">{game.scenario.name}</span>
-      <div className="approach-track scroll" ref={track}>
-        {game.airplanes.map((planes, i) => (
-          <div
-            key={i}
-            className={`appr-cell ${i === game.position ? "here" : ""} ${i === airportIdx ? "airport" : ""}`}
-            title={turnTitle(game.scenario.approachTrack[i]?.axisAllowed)}
-          >
-            {i === game.position && <span className="me">✈</span>}
-            {i === airportIdx && i !== game.position && <span className="rwy">🛬</span>}
-            <TurnMarks allowed={game.scenario.approachTrack[i]?.axisAllowed} />
-            <span className="traffic">
-              {Array.from({ length: planes }, (_, k) => (
-                <span key={k} className="traffic-plane">
-                  ✈
-                </span>
-              ))}
-            </span>
+      <div className="approach-scroll scroll" ref={scroller}>
+        <div className="approach-track">
+          {game.airplanes.map((planes, i) => (
+            <div
+              key={i}
+              className={`appr-cell ${i === game.position ? "here" : ""} ${i === airportIdx ? "airport" : ""}`}
+              title={turnTitle(turns[i])}
+            >
+              {i === game.position && <span className="me">✈</span>}
+              {i === airportIdx && i !== game.position && <span className="rwy">🛬</span>}
+              <span className="traffic">
+                {Array.from({ length: planes }, (_, k) => (
+                  <span key={k} className="traffic-plane">
+                    ✈
+                  </span>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Turns hang below the track as small tabs, one under each turn space
+            (an empty slot under the others keeps the columns aligned). */}
+        {turns.some(Boolean) && (
+          <div className="turn-row">
+            {game.airplanes.map((_, i) => (
+              <div key={i} className="turn-slot">
+                {turns[i] && (
+                  <div className="turn-tab" title={turnTitle(turns[i])}>
+                    <TurnMarks allowed={turns[i]} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -42,15 +60,16 @@ function turnTitle(allowed?: number[]): string | undefined {
 }
 
 /**
- * Turns (Approach Track effect): the five Axis positions on a small arc, like
+ * Turns (Approach Track effect), drawn in a turn space's tab: the five Axis
+ * positions on a small arc, like
  * the top of the dial. A permitted position (one the plane may be in when it
  * advances off this space) is a green ▽, filled for level (0); a forbidden one
  * is a red ✕. Each mark is tilted to face the arc's centre.
  */
 const ARC_R = 52; // arc radius (viewBox units); its centre sits below the svg
 const ARC_STEP = 11; // degrees between neighbouring positions
-export const TRIANGLE = "M-2.1 -3.3 L2.1 -3.3 L0 3.9 Z"; // a narrow ▽ (so its tilt reads clearly), centred on the origin
-export const CROSS = "M-2.8 -2.8 L2.8 2.8 M2.8 -2.8 L-2.8 2.8";
+const TRIANGLE = "M-2.1 -3.3 L2.1 -3.3 L0 3.9 Z"; // a narrow ▽ (so its tilt reads clearly), centred on the origin
+const CROSS = "M-2.8 -2.8 L2.8 2.8 M2.8 -2.8 L-2.8 2.8";
 
 function TurnMarks({ allowed }: { allowed?: number[] }) {
   if (!allowed) return null;
