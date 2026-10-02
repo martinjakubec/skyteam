@@ -44,5 +44,37 @@ console.log("2) legalMoves from the bot's own (redacted) view");
   check("off-turn: only off-turn actions (Adaptation)", legalMoves(redactGameStateFor(full, C), "copilot").every((m) => m.type === "adapt"));
 }
 
+console.log("3) actorFor, evaluate, chooseMove (Navigator)");
+{
+  const { actorFor, chooseMove, evaluate, redactGameStateFor, createInitialGameState, reduce, scenarioForSetup } = await import("../packages/shared/src/index.ts");
+  const setup = (mods = [], abs = [], scenarioId = "YUL") => ({ scenarioId, modules: mods, abilities: abs });
+  const fresh = (dp, dc, s = setup()) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+
+  check("actor: turn by default", actorFor(fresh([1, 1, 1, 1], [1, 1, 1, 1])) === "pilot");
+  const swap = reduce(fresh([1, 2, 3, 4], [6, 5, 4, 3], setup([], ["workingTogether"])), { type: "swap", dieId: 0 }, P).state;
+  check("actor: the player who must answer a swap", actorFor(swap) === "copilot");
+  check("actor: nobody once the game is over", actorFor({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), outcome: { result: "won" }, phase: "won" }) === null);
+
+  // Avoid a spin (YUL spins at ±3): the Co-Pilot's Axis is a 6; the Pilot holds 1, 5, 6, 6 → must not play the 1.
+  let s = fresh([1, 5, 6, 6], [6, 1, 1, 1]);
+  s.turn = "copilot";
+  s = reduce(s, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const m = chooseMove(redactGameStateFor(s, P), "pilot", "navigator", mulberry32(1));
+  check("doesn't spin the plane", !(m.type === "placeDie" && m.target.kind === "axis" && s.dice.pilot[m.dieId].value === 1));
+
+  const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
+  check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
+
+  // Turns: on a space whose Turn forbids the current tilt the plane can't fly on.
+  const turn = { ...t, scenario: { ...t.scenario, approachTrack: t.scenario.approachTrack.map((sp, i) => (i === 0 ? { ...sp, axisAllowed: [1, 0] } : sp)) } };
+  check("evaluate penalises a tilt the Turn forbids", evaluate({ ...turn, axis: { ...turn.axis, offset: -1 } }, "pilot") < evaluate({ ...turn, axis: { ...turn.axis, offset: 1 } }, "pilot"));
+
+  const n = reduce(fresh([2, 1, 1, 1], [1, 1, 1, 1], setup(["intern"])), { type: "placeDie", dieId: 0, target: { kind: "intern" } }, P).state;
+  check("places a held Intern token", chooseMove(redactGameStateFor(n, P), "pilot", "navigator", mulberry32(2))?.type === "placeIntern");
+
+  const over = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), phase: "lost" };
+  check("no legal move → null", chooseMove(over, "pilot", "navigator", mulberry32(3)) === null);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
