@@ -3,14 +3,12 @@ import {
   ABILITY_LABELS,
   ABILITY_TEXT,
   DEFAULT_MAX_ABILITIES,
-  DIFFICULTIES,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   conflictingModules,
   MODULE_IDS,
   MODULE_LABELS,
   SCENARIOS,
-  SCENARIO_TEMPLATES,
   templateFor,
   type AbilityId,
   type GameSetup,
@@ -18,6 +16,7 @@ import {
   type RoomSnapshot,
   type ScenarioId,
 } from "@skyteam/shared";
+import { ScenarioPicker } from "./ScenarioPicker";
 
 export function Lobby({
   snapshot,
@@ -91,20 +90,10 @@ function SetupPicker({
 
   return (
     <div className="setup">
-      <label className="row">
-        <span className="setup-label">Airport</span>
-        <select value={setup.scenarioId} disabled={!editable} onChange={(e) => pickAirport(e.target.value)}>
-          {DIFFICULTIES.map((d) => (
-            <optgroup key={d.id} label={d.label}>
-              {SCENARIO_TEMPLATES.filter((t) => t.difficulty === d.id).map((t) => (
-                <option key={t.id} value={t.id === "green-YUL" ? "YUL" : t.id}>
-                  {t.code} {t.airport}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
+      <div className="setup-airport">
+        <span className="setup-label">Scenario</span>
+        <ScenarioPicker value={setup.scenarioId} disabled={!editable} onChange={pickAirport} />
+      </div>
       <fieldset className="setup-modules">
         <legend className="setup-label">Modules</legend>
         {MODULE_IDS.map((id) => {

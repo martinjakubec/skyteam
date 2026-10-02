@@ -22,13 +22,17 @@
 // hostnames), ONLY (comma-separated combos of "+"-joined lobby labels, e.g.
 // "Intern,Kerosene+Ice Brakes"; default: all), REPEAT (games per combo,
 // default 1), OUT (dir for failure screenshots), AIRPORT (scenario id from the
-// lobby's airport list, e.g. "green-HND"; default: the lobby's default).
+// lobby's airport list, e.g. "green-HND"; default: the lobby's default), CARDS
+// (set to play every scenario card instead: its printed modules, plus as many
+// Special Abilities as its ★ allows, rotating through them; ONLY then filters
+// card ids, e.g. "red-HND,black-KEF").
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://host.docker.internal:5173";
 const REPEAT = Number(process.env.REPEAT ?? 1);
 const OUT = process.env.OUT ?? ".";
 const AIRPORT = process.env.AIRPORT;
+const CARDS = !!process.env.CARDS;
 const ONLY = process.env.ONLY?.split(",").map((c) => c.split("+").map((m) => m.trim()).filter(Boolean));
 const MAX_MOVES = 150;
 
@@ -259,8 +263,48 @@ async function act(p, crew, log) {
   return JSON.parse(best.t);
 }
 
+/** Pick a scenario card in the host's picker and wait for the guest to see it. */
+async function pickScenario(a, b, id) {
+  await a.page.locator(".picker-trigger").click();
+  await a.page.locator(`.picker-option[data-value="${id}"]`).click();
+  await b.page.waitForFunction((id) => document.querySelector(".picker")?.dataset.value === id, id);
+}
+
+/** Tick exactly the lobby boxes named in `labels` (modules and abilities). */
+async function setTicks(a, b, labels) {
+  const boxes = () => a.page.evaluate(() =>
+    [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].map((l) => [l.textContent, l.querySelector("input").checked]),
+  );
+  for (const [label, checked] of await boxes()) {
+    if (checked === labels.includes(label)) continue;
+    await a.page.getByLabel(label, { exact: true }).click();
+    await b.page.waitForFunction(([m, on]) => [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].some((l) => l.textContent === m && l.querySelector("input").checked === on), [label, !checked]);
+  }
+}
+
+/** The board as drawn vs the state: planes, Traffic dice icons and Turn tabs per space. */
+async function boardMismatch(p) {
+  const drawn = await p.page.evaluate(() =>
+    [...document.querySelector(".approach .approach-track").querySelectorAll(".appr-cell")].map((c) => [
+      c.querySelectorAll(".traffic-plane").length,
+      c.querySelectorAll(".traffic-dice svg").length,
+    ]),
+  );
+  const tabs = await p.page.evaluate(() => [...document.querySelectorAll(".turn-slot")].map((s) => !!s.querySelector(".turn-tab")));
+  const g = p.game;
+  const bad = g.scenario.approachTrack.flatMap((sp, i) => {
+    const want = [g.airplanes[i], sp.trafficDice ?? 0];
+    const out = [];
+    if (drawn[i]?.[0] !== want[0]) out.push(`space ${i}: ${drawn[i]?.[0]} planes drawn, ${want[0]} in play`);
+    if (drawn[i]?.[1] !== want[1]) out.push(`space ${i}: ${drawn[i]?.[1]} dice drawn, ${want[1]} printed`);
+    if ((tabs[i] ?? false) !== !!sp.axisAllowed) out.push(`space ${i}: turn tab ${tabs[i] ? "drawn" : "missing"}`);
+    return out;
+  });
+  return bad.join(", ");
+}
+
 /** Play one game with `combo`; returns a result, or null if the lobby refuses the combination. */
-async function playGame(combo, tag) {
+async function playGame(combo, tag, airport = AIRPORT) {
   const a = await player(1280);
   const b = await player(390);
   try {
@@ -268,20 +312,16 @@ async function playGame(combo, tag) {
     await a.page.getByRole("button", { name: "Create a room" }).click();
     await b.page.goto(await a.page.locator(".panel input").first().inputValue());
     await b.page.getByRole("button", { name: "Ready up" }).waitFor();
-    if (AIRPORT) {
-      await a.page.locator(".setup select").selectOption(AIRPORT);
-      await b.page.waitForFunction((id) => document.querySelector(".setup select")?.value === id, AIRPORT);
-    }
-    for (const m of combo) {
-      await a.page.getByLabel(m, { exact: true }).click();
-      await b.page.waitForFunction((m) => [...document.querySelectorAll(".setup-modules label, .setup-abilities label")].some((l) => l.textContent === m && l.querySelector("input").checked), m);
-    }
+    if (airport) await pickScenario(a, b, airport);
+    await setTicks(a, b, combo);
     await sleep(300);
     if ((await ticked(a)).length !== combo.length) return null; // an exclusive pair unticked one
     await a.page.getByRole("button", { name: "Ready up" }).click();
     await b.page.getByRole("button", { name: "Ready up" }).click();
     await a.page.getByRole("button", { name: "Start game" }).click();
     for (let k = 0; k < 100 && !(a.game && b.game); k++) await sleep(50);
+    await sleep(500); // let both screens draw round 1
+    const boardProblem = (await boardMismatch(a)) || (await boardMismatch(b));
 
     const log = [];
     let moves = 0;
@@ -337,6 +377,7 @@ async function playGame(combo, tag) {
       b.pageError && `co-pilot page error: ${b.pageError}`,
       unmarked && `${unmarked} space(s) filled by an extra die not drawn in its colours`,
       windMismatch && `Wind ring disagreed with the server ${windMismatch} time(s)`,
+      boardProblem && `board drawn wrong at the start: ${boardProblem}`,
     ].filter(Boolean);
     return {
       ok: problems.length === 0,
@@ -366,23 +407,49 @@ const modules = await probe.page.evaluate(() =>
 const abilities = await probe.page.evaluate(() =>
   [...document.querySelectorAll(".setup-abilities label")].map((l) => l.textContent),
 );
+// Every scenario card, as the picker lists it: id, label, and its ★ count
+// (read off the lobby after picking it).
+const cards = [];
+if (CARDS) {
+  const b0 = await player(390);
+  await b0.page.goto(await probe.page.locator(".panel input").first().inputValue());
+  await b0.page.getByRole("button", { name: "Ready up" }).waitFor();
+  await probe.page.locator(".picker-trigger").click();
+  const listed = await probe.page.evaluate(() =>
+    [...document.querySelectorAll(".picker-option")].map((o) => [o.dataset.value, o.querySelector(".pick-code").textContent]),
+  );
+  await probe.page.keyboard.press("Escape");
+  for (const [id, code] of listed) {
+    if (ONLY && !ONLY.some((c) => c.join("+") === id)) continue;
+    await pickScenario(probe, b0, id);
+    const printed = await probe.page.evaluate(() =>
+      [...document.querySelectorAll(".setup-modules label")].filter((l) => l.querySelector("input").checked).map((l) => l.textContent),
+    );
+    const stars = Number((await probe.page.locator(".setup-note").first().textContent()).match(/up to (\d+)/)?.[1] ?? 0);
+    cards.push({ id, code, printed, stars });
+  }
+  await b0.ctx.close();
+}
 await probe.ctx.close();
 const rich = ["Kerosene", "Ice Brakes", "Intern"].filter((m) => modules.includes(m));
-const combos =
-  ONLY ??
+let nextAbility = 0;
+const combos = CARDS
+  ? cards.map((c) => [...c.printed, ...Array.from({ length: c.stars }, () => abilities[nextAbility++ % abilities.length])])
+  : ONLY ??
   [
     ...modules.reduce((acc, m) => [...acc, ...acc.map((c) => [...c, m])], [[]]),
     ...abilities.flatMap((ab) => [[ab], [...rich, ab]]),
   ];
-console.log(`Modules offered: ${modules.join(", ")}; abilities: ${abilities.join(", ")} — ${combos.length} combination(s) × ${REPEAT}`);
+console.log(`Modules offered: ${modules.join(", ")}; abilities: ${abilities.join(", ")} — ${combos.length} ${CARDS ? "card(s)" : "combination(s)"} × ${REPEAT}`);
 
 let ran = 0;
 let failed = 0;
 let refused = 0;
-for (const combo of combos) {
-  const name = combo.join(" + ") || "base game";
+for (const [k, combo] of combos.entries()) {
+  const card = CARDS ? cards[k] : null;
+  const name = `${card ? `${card.id}: ` : ""}${combo.join(" + ") || "base game"}`;
   for (let r = 1; r <= REPEAT; r++) {
-    const res = await playGame(combo, `${name.replace(/[^a-z0-9]+/gi, "-")}-${r}`);
+    const res = await playGame(combo, `${name.replace(/[^a-z0-9]+/gi, "-")}-${r}`, card?.id);
     if (res === null) {
       refused++;
       console.log(`⊘ ${name} — not allowed together (lobby unticked one)`);
