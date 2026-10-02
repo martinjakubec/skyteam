@@ -23,5 +23,7 @@ export interface Room {
   /** Monotonic game-command counter (also used by clients to detect gaps). */
   version: number;
   game: GameState | null;
+  /** Shown in the lobby, e.g. who ended the last game. Cleared on the next start. */
+  notice?: string | null;
   updatedAt: number;
 }

@@ -7,7 +7,7 @@ import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
 
 export function App() {
-  const { snapshot, connected, lastError, connect, setReady, setSetup, startGame, resetGame, sendCommand } =
+  const { snapshot, connected, lastError, connect, setReady, setSetup, startGame, resetGame, exitGame, sendCommand } =
     useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,6 +75,17 @@ export function App() {
           <span className={`conn ${connected ? "on" : "off"}`}>
             {connected ? "● linked" : "○ reconnecting"}
           </span>
+          {inGame && snapshot?.you.kind === "player" && (
+            <button
+              className="reset-btn exit-btn"
+              onClick={() => {
+                if (window.confirm("End the game and return both players to the lobby? All progress will be lost."))
+                  exitGame();
+              }}
+            >
+              Exit to lobby
+            </button>
+          )}
           {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
             <button
               className="reset-btn"
@@ -93,6 +104,7 @@ export function App() {
       {!inGame && (
         <>
           <InviteBox url={inviteUrl} />
+          {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
           <Seats snapshot={snapshot} />
           {snapshot &&
             snapshot.you.kind === "player" &&

@@ -20,6 +20,7 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
     setup: room.setup,
     version: room.version,
     game: room.game ? redactGameStateFor(room.game, viewerId) : null,
+    notice: room.notice ?? null,
     you: { playerId: viewerId, kind, role: seat?.role },
     serverTime: Date.now(),
   };

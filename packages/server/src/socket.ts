@@ -66,6 +66,7 @@ export function attachSocket(server: http.Server): IOServer {
     socket.on("room:setup", (payload, ack) => void onSetup(io, socket, payload, ack));
     socket.on("game:start", (ack) => void onStart(io, socket, ack));
     socket.on("game:reset", (ack) => void onReset(io, socket, ack));
+    socket.on("game:exit", (ack) => void onExit(io, socket, ack));
     socket.on("game:command", (payload, ack) => void onCommand(io, socket, payload, ack));
     socket.on("disconnect", () => void onDisconnect(io, socket));
   });
@@ -163,6 +164,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
 
   room.status = "in_progress";
+  room.notice = null;
   // Create the game, then roll round 1's dice. Randomness lives on the server,
   // never in the pure reducer — we thread rolled values in via a `roll` command.
   let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
@@ -198,6 +200,30 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   ack({ ok: true });
   broadcastState(io, room);
   await syncClock(io, room);
+}
+
+/**
+ * Either player ends the current (or finished) game: both return to the
+ * room's lobby with the same setup, un-readied, and the lobby says who left.
+ */
+async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const seat = room.seats.find((s) => s.playerId === playerId);
+  if (!seat) return ack({ ok: false, error: "Only the crew can end the game." });
+  if (room.status !== "in_progress" && room.status !== "finished")
+    return ack({ ok: false, error: "There is no game to leave." });
+
+  clearClock(room.id);
+  room.status = "lobby";
+  room.game = null;
+  room.version = 0;
+  for (const s of room.seats) s.ready = false;
+  room.notice = `The ${seat.role === "host" ? "Pilot" : "Co-Pilot"} ended the game.`;
+  await saveRoom(room);
+
+  ack({ ok: true });
+  broadcastState(io, room);
 }
 
 /** The Intern tokens 1..6 in a random face-up order (Fisher–Yates). */

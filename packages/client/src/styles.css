@@ -124,6 +124,21 @@ h1,
 .reset-btn:hover {
   filter: brightness(1.12);
 }
+/* Exit to lobby: the same compact control, in the console's slate rather than red. */
+.exit-btn {
+  color: #e3ebf3;
+  background: linear-gradient(180deg, #41576f, #2a3a4d);
+  border-color: #16212d;
+  border-top-color: #6a819a;
+}
+.notice {
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(20, 26, 35, 0.85);
+  color: #f6e7c8;
+  font-size: 0.9rem;
+}
 .conn.on {
   color: var(--green);
 }

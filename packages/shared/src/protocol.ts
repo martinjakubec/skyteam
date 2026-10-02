@@ -183,6 +183,8 @@ export interface RoomSnapshot {
   /** Monotonic counter incremented on every applied game command. */
   version: number;
   game: GameState | null;
+  /** A lobby message about the room, e.g. "The Co-Pilot ended the game." */
+  notice: string | null;
   /** Who the recipient is, so the UI knows which seat is "me". */
   you: { playerId: PlayerId; kind: ParticipantKind; role?: SeatRole };
   /** The server's clock when this was sent (epoch ms), so a client can map a
@@ -218,6 +220,8 @@ export interface ClientToServerEvents {
   "room:setup": (payload: SetSetupPayload, ack: (res: Ack) => void) => void;
   "game:start": (ack: (res: Ack) => void) => void;
   "game:reset": (ack: (res: Ack) => void) => void;
+  /** End the game for both players and return the room to its lobby. */
+  "game:exit": (ack: (res: Ack) => void) => void;
   "game:command": (payload: GameCommandPayload, ack: (res: Ack) => void) => void;
 }
 

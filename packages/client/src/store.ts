@@ -27,6 +27,7 @@ interface GameStore {
   setSetup: (setup: GameSetup) => void;
   startGame: () => void;
   resetGame: () => void;
+  exitGame: () => void;
   sendCommand: (command: GameCommand) => void;
 }
 
@@ -98,6 +99,11 @@ export const useGame = create<GameStore>((set, get) => ({
 
   resetGame: () =>
     get().socket?.emit("game:reset", (res) => {
+      if (!res.ok) set({ lastError: res.error });
+    }),
+
+  exitGame: () =>
+    get().socket?.emit("game:exit", (res) => {
       if (!res.ok) set({ lastError: res.error });
     }),
 
