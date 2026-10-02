@@ -25,7 +25,7 @@ import { Module } from "./Module";
 import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
-import type { CockpitSection } from "../tutorials/types";
+import type { CockpitSection } from "./cockpitSections";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
@@ -370,6 +370,7 @@ export function Cockpit({
   // board into reach. The dragged die is position:fixed, so it stays under the
   // pointer as the page moves beneath it.
   const autoScroll = useRef<{ raf: number | null; x: number; y: number }>({ raf: null, x: 0, y: 0 });
+  const boardRef = useRef<HTMLDivElement>(null);
   const stepAutoScroll = () => {
     const a = autoScroll.current;
     const EDGE = 96; // px zone at top/bottom edge that triggers scrolling
@@ -379,11 +380,15 @@ export function Cockpit({
     if (a.y < EDGE) dy = -Math.ceil(((EDGE - a.y) / EDGE) * MAX);
     else if (h - a.y < EDGE) dy = Math.ceil(((EDGE - (h - a.y)) / EDGE) * MAX);
     if (dy !== 0) {
-      const before = window.scrollY;
-      window.scrollBy(0, dy);
+      // Inside a tutorial the dialog scrolls, not the page.
+      const box = boardRef.current?.closest(".tutorial-backdrop");
+      const scrolled = () => (box ? box.scrollTop : window.scrollY);
+      const before = scrolled();
+      if (box) box.scrollBy(0, dy);
+      else window.scrollBy(0, dy);
       // The page moved under a possibly-still pointer — re-resolve the hovered
       // slot so the drop ring keeps tracking even when no pointermove fires.
-      if (window.scrollY !== before) {
+      if (scrolled() !== before) {
         const slot = validSlotUnder(a.x, a.y);
         const r = slot?.getBoundingClientRect();
         setHoverRect(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
@@ -472,7 +477,7 @@ export function Cockpit({
 
   return (
     <ExtraDieContext.Provider value={filledByExtra}>
-      <div className={`board${keroseneOn ? " with-kerosene" : ""}${windOn ? " with-wind" : ""}${show ? " tutorial" : ""}`}>
+      <div ref={boardRef} className={`board${keroseneOn ? " with-kerosene" : ""}${windOn ? " with-wind" : ""}${show ? " tutorial" : ""}`}>
         {/* Full-width status tracks above the console: approach path + altitude */}
         {(vis("tracks") || (realTimeOn && vis("realTime"))) && (
         <section className="tracks">
@@ -802,9 +807,11 @@ export function Cockpit({
                         <button disabled={!selValue || selValue >= 6 || Math.abs(coffeeDelta + 1) > game.coffee} onClick={() => setCoffeeDelta((d) => d + 1)}>+1</button>
                       </span>
                     )}
-                    <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
-                      Reroll 🎲 ×{game.rerollTokens}
-                    </button>
+                    {vis("reroll") && (
+                      <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
+                        Reroll 🎲 ×{game.rerollTokens}
+                      </button>
+                    )}
                   </>
                 )}
               </div>

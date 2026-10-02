@@ -13,6 +13,6 @@ export const adaptation: Tutorial = {
       solution: [adapt("pilot", 1)],
       done: (s) => s.adaptationUsed.pilot && s.dice.pilot.filter((d) => d.value === 6).length === 3,
     },
-    { text: "The Co-Pilot has a flip of their own — once per game each, usable on either player's turn.", info: true, solution: [], done: () => true },
+    { text: "The Co-Pilot has a flip of their own — one per game each. In a real game you may also flip while your partner is placing.", info: true, solution: [], done: () => true },
   ],
 };

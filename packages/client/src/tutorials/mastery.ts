@@ -5,7 +5,7 @@ export const mastery: Tutorial = {
   id: "mastery",
   title: "Mastery",
   description: "When both Engine dice show the same value, regain a spent Reroll token.",
-  show: ["engines"],
+  show: ["engines", "reroll"],
   setup: () =>
     start({
       abilities: ["mastery"],

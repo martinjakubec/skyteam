@@ -24,7 +24,9 @@ export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClo
       const f = panel.current.querySelectorAll<HTMLElement>("button:not(:disabled), [tabindex]:not([tabindex='-1'])");
       if (f.length === 0) return;
       const [first, last] = [f[0], f[f.length - 1]];
-      if (e.shiftKey && document.activeElement === first) {
+      // The dialog itself (focused on open) counts as the start of the cycle.
+      const atStart = document.activeElement === first || document.activeElement === panel.current;
+      if (e.shiftKey && atStart) {
         last.focus();
         e.preventDefault();
       } else if (!e.shiftKey && document.activeElement === last) {

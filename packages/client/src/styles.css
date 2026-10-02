@@ -2460,3 +2460,13 @@ ul {
 .tutorial-text {
   margin: 0;
 }
+/* Phones: a slimmer frame so the board (zoomed like the game stage) fits
+   without sideways scrolling. */
+@media (max-width: 480px) {
+  .tutorial-backdrop {
+    padding: 0.5rem 0.25rem;
+  }
+  .tutorial-panel {
+    padding: 0.6rem 0.4rem;
+  }
+}

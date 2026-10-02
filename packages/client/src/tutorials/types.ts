@@ -1,9 +1,7 @@
 import type { AbilityId, Crew, DieValue, GameCommand, GameState, ModuleId } from "@skyteam/shared";
+import type { CockpitSection } from "../components/cockpitSections";
 
-/** Cockpit sections a tutorial can show (the dice tray is always shown). */
-export type CockpitSection =
-  | "tracks" | "axis" | "engines" | "brakes" | "radio" | "gear" | "flaps" | "concentration"
-  | "kerosene" | "wind" | "intern" | "iceBrakes" | "realTime" | "abilities";
+export type { CockpitSection };
 
 /** One player action in a tutorial, resolved against the state it's played on
  *  (dice are named by value, so the die's id is looked up then). "timeUp" ends
