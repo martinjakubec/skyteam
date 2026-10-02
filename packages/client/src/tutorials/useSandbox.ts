@@ -37,25 +37,22 @@ function snapshotFor(game: GameState): RoomSnapshot {
  */
 export function useSandbox(tutorial: Tutorial) {
   const dice = useRef(scriptedDice(tutorial.script));
-  const [sess, setSess] = useState<Session>(() => initSession(tutorial));
+  const [sess, setSess] = useState<Session>(() => initSession(tutorial, dice.current));
   const latest = useRef(sess);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Bumped on Reset so the board remounts with no leftover selection. */
   const [resets, setResets] = useState(0);
 
-  const commit = useCallback((next: Session) => {
-    latest.current = next;
-    setSess(next);
-  }, []);
   const cancelAdvance = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
   };
-
-  const playMove = useCallback(
-    (move: Move) => {
-      const next = play(latest.current, tutorial, move, dice.current);
-      commit(next);
+  // Every new session goes through here; a completed step (by a move, or
+  // already complete on entry) moves on after a short pause.
+  const commit = useCallback(
+    (next: Session) => {
+      latest.current = next;
+      setSess(next);
       if (next.done && !timer.current) {
         timer.current = setTimeout(() => {
           timer.current = null;
@@ -63,8 +60,10 @@ export function useSandbox(tutorial: Tutorial) {
         }, STEP_PAUSE_MS);
       }
     },
-    [tutorial, commit],
+    [tutorial],
   );
+
+  const playMove = useCallback((move: Move) => commit(play(latest.current, tutorial, move, dice.current)), [tutorial, commit]);
 
   const send = useCallback((command: GameCommand) => playMove((s) => ({ crew: actingCrew(s), command })), [playMove]);
   const next = () => {
@@ -74,7 +73,7 @@ export function useSandbox(tutorial: Tutorial) {
   const reset = () => {
     cancelAdvance();
     dice.current = scriptedDice(tutorial.script);
-    commit(initSession(tutorial));
+    commit(initSession(tutorial, dice.current));
     setResets((n) => n + 1);
   };
   useEffect(() => cancelAdvance, []);

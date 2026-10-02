@@ -330,6 +330,23 @@ console.log("2i) tutorial session: steps, Next and Reset never block or rewind")
   check("…and starts with it", r1.game.timerEndsAt !== null && r1.game.axis.pilot === 3);
 }
 
+console.log("2j) tutorial session: automatic moves and already-finished steps");
+{
+  const base = { id: "kerosene", title: "Synthetic", description: "", show: [], setup: () => tut.start({ pilot: [3, 4, 6, 6], copilot: [3, 4, 6, 6] }) };
+  const withAuto = { ...base, steps: [{ text: "", auto: [tut.place("pilot", 3, tut.axis("pilot"))], solution: [], done: () => false }] };
+  check("step 1's automatic moves are played at the start", ses.initSession(withAuto).game.axis.pilot === 3);
+  const already = {
+    ...base,
+    steps: [
+      { text: "", solution: [tut.place("pilot", 3, tut.axis("pilot"))], done: (s) => s.axis.pilot === 3 },
+      { text: "", solution: [], done: (s) => s.axis.pilot === 3 },
+    ],
+  };
+  const dice = tut.scriptedDice();
+  const after1 = ses.advance(ses.play(ses.initSession(already), already, tut.place("pilot", 3, tut.axis("pilot")), dice), already, dice);
+  check("a step that's already complete when it starts is marked done", after1.stepIndex === 1 && after1.done);
+}
+
 // 3) CORS origin check -------------------------------------------------------
 console.log("3) originChecker: wildcard, allowlist, missing origin");
 {

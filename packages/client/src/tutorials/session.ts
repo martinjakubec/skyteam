@@ -1,5 +1,5 @@
 import { GameRuleError, type Dice, type GameState } from "@skyteam/shared";
-import { apply } from "./engine";
+import { apply, scriptedDice } from "./engine";
 import type { Move, Tutorial } from "./types";
 
 /**
@@ -20,9 +20,9 @@ export interface Session {
   error: string | null;
 }
 
-export function initSession(tutorial: Tutorial): Session {
-  const game = tutorial.setup();
-  return { game, stepIndex: 0, before: game, done: false, error: null };
+/** A fresh start: the tutorial's setup, entering step 1 (with its automatic moves). */
+export function initSession(tutorial: Tutorial, dice: Dice = scriptedDice(tutorial.script)): Session {
+  return enter(tutorial.setup(), 0, tutorial, dice);
 }
 
 /** Play a move on the latest board; a refused one leaves it and says why. */
@@ -61,7 +61,8 @@ export function skip(sess: Session, tutorial: Tutorial, dice: Dice): Session {
   return enter(game, sess.stepIndex + 1, tutorial, dice);
 }
 
-/** Enter step `i` on `game`, playing its automatic moves when they fit. */
+/** Enter step `i` on `game`, playing its automatic moves when they fit. A
+ *  step that's already complete on entry (the board satisfies it) is done. */
 function enter(game: GameState, i: number, tutorial: Tutorial, dice: Dice): Session {
   let s = game;
   try {
@@ -69,5 +70,6 @@ function enter(game: GameState, i: number, tutorial: Tutorial, dice: Dice): Sess
   } catch {
     s = game;
   }
-  return { game: s, stepIndex: i, before: s, done: false, error: null };
+  const step = tutorial.steps[i];
+  return { game: s, stepIndex: i, before: s, done: !!step && !step.info && step.done(s, s), error: null };
 }
