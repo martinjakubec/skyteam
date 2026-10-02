@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_SETUP, GameRuleError, type GameCommand, type GameState, type RoomSnapshot } from "@skyteam/shared";
-import { COPILOT_ID, PILOT_ID, actingCrew, apply, scriptedDice, timeUp } from "./engine";
+import { DEFAULT_SETUP, type GameCommand, type GameState, type RoomSnapshot } from "@skyteam/shared";
+import { COPILOT_ID, PILOT_ID, actingCrew, scriptedDice, timeUp } from "./engine";
+import { advance, initSession, play, skip, type Session } from "./session";
 import type { Move, Tutorial } from "./types";
+
+/** How long a completed step shows as done before the next one starts. */
+const STEP_PAUSE_MS = 700;
 
 /** A view of the sandbox game as the crew who must act now (hot-seat). */
 function snapshotFor(game: GameState): RoomSnapshot {
@@ -25,63 +29,76 @@ function snapshotFor(game: GameState): RoomSnapshot {
   };
 }
 
-/** Runs one tutorial locally: real rules, scripted dice, both crews, step tracking. */
+/**
+ * Runs one tutorial locally: real rules, scripted dice, both crews, step
+ * tracking. The session lives in a ref as well as in state, so a move always
+ * applies to the latest board (a drag that started before a time-up, say),
+ * and the step-advance timer is tracked so Reset / Next / unmount cancel it.
+ */
 export function useSandbox(tutorial: Tutorial) {
   const dice = useRef(scriptedDice(tutorial.script));
-  const [game, setGame] = useState(() => tutorial.setup());
-  const [stepIndex, setStepIndex] = useState(0);
-  const [before, setBefore] = useState<GameState>(game);
-  const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState(false);
-  const step = tutorial.steps[stepIndex] ?? null;
+  const [sess, setSess] = useState<Session>(() => initSession(tutorial));
+  const latest = useRef(sess);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Bumped on Reset so the board remounts with no leftover selection. */
+  const [resets, setResets] = useState(0);
 
-  /** Start step `i` on `state`: play its automatic moves, remember where it began. */
-  const enterStep = useCallback(
-    (i: number, state: GameState) => {
-      let s = state;
-      for (const m of tutorial.steps[i]?.auto ?? []) s = apply(s, m, dice.current);
-      setGame(s);
-      setBefore(s);
-      setStepIndex(i);
-    },
-    [tutorial],
-  );
-
-  const play = useCallback(
-    (move: Move) => {
-      setError(null);
-      try {
-        const s = apply(game, move, dice.current);
-        setGame(s);
-        if (step && !step.info && step.done(s, before)) {
-          setFlash(true);
-          setTimeout(() => {
-            setFlash(false);
-            enterStep(stepIndex + 1, s);
-          }, 700);
-        }
-      } catch (e) {
-        setError(e instanceof GameRuleError ? e.message : "That move isn't allowed.");
-      }
-    },
-    [game, step, before, stepIndex, enterStep],
-  );
-
-  const send = useCallback((command: GameCommand) => play(() => ({ crew: actingCrew(game), command })), [play, game]);
-  const next = () => enterStep(stepIndex + 1, game);
-  const reset = () => {
-    dice.current = scriptedDice(tutorial.script);
-    setError(null);
-    enterStep(0, tutorial.setup());
+  const commit = useCallback((next: Session) => {
+    latest.current = next;
+    setSess(next);
+  }, []);
+  const cancelAdvance = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
   };
 
+  const playMove = useCallback(
+    (move: Move) => {
+      const next = play(latest.current, tutorial, move, dice.current);
+      commit(next);
+      if (next.done && !timer.current) {
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          commit(advance(latest.current, tutorial, dice.current));
+        }, STEP_PAUSE_MS);
+      }
+    },
+    [tutorial, commit],
+  );
+
+  const send = useCallback((command: GameCommand) => playMove((s) => ({ crew: actingCrew(s), command })), [playMove]);
+  const next = () => {
+    cancelAdvance();
+    commit(skip(latest.current, tutorial, dice.current));
+  };
+  const reset = () => {
+    cancelAdvance();
+    dice.current = scriptedDice(tutorial.script);
+    commit(initSession(tutorial));
+    setResets((n) => n + 1);
+  };
+  useEffect(() => cancelAdvance, []);
+
   // Real-Time: the countdown runs on this machine's clock.
+  const { game } = sess;
   const timerRunning = game.timerEndsAt !== null && game.phase === "placement";
   useEffect(() => {
     if (!timerRunning) return;
-    const t = setTimeout(() => play(timeUp), Math.max(0, game.timerEndsAt! - Date.now()));
+    const t = setTimeout(() => playMove(timeUp), Math.max(0, game.timerEndsAt! - Date.now()));
     return () => clearTimeout(t);
-  }, [timerRunning, game.timerEndsAt, play]);
+  }, [timerRunning, game.timerEndsAt, playMove]);
 
-  return { snapshot: snapshotFor(game), step, stepIndex, error, flash, send, next, reset, skipTime: () => play(timeUp), timerRunning };
+  return {
+    snapshot: snapshotFor(game),
+    step: tutorial.steps[sess.stepIndex] ?? null,
+    stepIndex: sess.stepIndex,
+    error: sess.error,
+    flash: sess.done,
+    resets,
+    send,
+    next,
+    reset,
+    skipTime: () => playMove(timeUp),
+    timerRunning,
+  };
 }

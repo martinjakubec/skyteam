@@ -27,6 +27,7 @@ import {
 import { toSnapshot } from "../packages/server/src/snapshot.ts";
 import * as tut from "../packages/client/src/tutorials/engine.ts";
 import { TUTORIALS } from "../packages/client/src/tutorials/index.ts";
+import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
@@ -284,6 +285,49 @@ console.log("2h) every tutorial plays out under the current rules");
     }
     check(`${t.title}: ${t.steps.length} steps play out${failures.length ? ` — ${failures.join("; ")}` : ""}`, failures.length === 0);
   }
+}
+
+console.log("2i) tutorial session: steps, Next and Reset never block or rewind");
+{
+  // Next on any step — even one whose automatic moves need a later round — moves on.
+  for (const t of Object.values(TUTORIALS)) {
+    let sess = ses.initSession(t);
+    const dice = tut.scriptedDice(t.script);
+    let stuck = null;
+    for (let i = 0; i < t.steps.length; i++) {
+      try {
+        const next = ses.skip(sess, t, dice);
+        if (next.stepIndex !== sess.stepIndex + 1) stuck = `Next from step ${i + 1} stayed on step ${next.stepIndex + 1}`;
+        sess = next;
+      } catch (e) {
+        stuck = `Next from step ${i + 1} threw: ${e.message}`;
+      }
+      if (stuck) break;
+    }
+    check(`${t.title}: Next walks every step to free play${stuck ? ` — ${stuck}` : ""}`, !stuck && sess.stepIndex === t.steps.length);
+  }
+  // A completed step is marked done; advancing it twice (a stale timer) doesn't skip a step.
+  const m = TUTORIALS.mastery;
+  const dice = tut.scriptedDice(m.script);
+  let sess = ses.play(ses.initSession(m), m, tut.place("pilot", 4, tut.engine("pilot")), dice);
+  check("finishing a step marks it done, still on it", sess.done && sess.stepIndex === 0);
+  const once = ses.advance(sess, m, dice);
+  check("advance moves to the next step", once.stepIndex === 1 && !once.done);
+  check("advancing an already-advanced session is a no-op", ses.advance(once, m, dice) === once);
+  // A move in the window before the advance keeps the latest board.
+  sess = ses.play(sess, m, tut.place("copilot", 4, tut.engine("copilot")), dice);
+  check("a move made before the advance is kept", sess.game.engines.copilot === 4);
+  // A refused move reports the rules' message and leaves the board alone.
+  const c = TUTORIALS.control;
+  const c0 = ses.initSession(c);
+  const refused = ses.play(c0, c, tut.place("copilot", 3, tut.axis("copilot")), tut.scriptedDice());
+  check("a refused move keeps the board and explains why", refused.game === c0.game && typeof refused.error === "string" && refused.error.length > 0);
+  // Real Time: the clock waits for the first move.
+  const rt = TUTORIALS.realTime;
+  const r0 = ses.initSession(rt);
+  check("Real Time: the clock is paused until the first move", r0.game.timerEndsAt === null && r0.game.timerRemainingMs > 0);
+  const r1 = ses.play(r0, rt, tut.place("pilot", 3, tut.axis("pilot")), tut.scriptedDice(rt.script));
+  check("…and starts with it", r1.game.timerEndsAt !== null && r1.game.axis.pilot === 3);
 }
 
 // 3) CORS origin check -------------------------------------------------------

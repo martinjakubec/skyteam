@@ -38,10 +38,12 @@ export function actingCrew(s: GameState): Crew {
   return s.turn;
 }
 
-/** Play one move through the real rules (throws GameRuleError if illegal). */
+/** Play one move through the real rules (throws GameRuleError if illegal).
+ *  A Real-Time clock held at the start (see `start`) begins with the first move. */
 export function apply(s: GameState, move: Move, dice: Dice, now: () => number = Date.now): GameState {
   const m = move(s);
   if (m === "timeUp") return settle(reduce(s, { type: "timeUp" }, "").state, dice, now);
+  if (s.timerRemainingMs !== null) s = reduce(s, { type: "resumeTimer", at: now() }, "").state;
   return settle(reduce(s, withEntropy(m.command, dice), idOf(m.crew)).state, dice, now);
 }
 
@@ -68,6 +70,12 @@ export function start(o: StartOptions): GameState {
   const dice = scriptedDice();
   for (const m of o.moves ?? []) s = apply(s, m, dice);
   o.tweak?.(s);
+  // Real Time: hold the countdown until the player's first move, so reading
+  // the description doesn't use up the round.
+  if (s.timerEndsAt !== null) {
+    s.timerRemainingMs = s.timerEndsAt - Date.now();
+    s.timerEndsAt = null;
+  }
   return s;
 }
 

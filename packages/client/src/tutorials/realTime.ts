@@ -11,7 +11,7 @@ export const realTime: Tutorial = {
   script: { d6: [3, 4, 6, 6, 3, 4, 6, 6] },
   steps: [
     {
-      text: "The clock is running: put the 3s on the Axis and the 4s on the Engines.",
+      text: "The 60-second clock starts with your first die: put the 3s on the Axis and the 4s on the Engines.",
       solution: [place("pilot", 3, axis("pilot")), place("copilot", 3, axis("copilot")), place("pilot", 4, engine("pilot")), place("copilot", 4, engine("copilot"))],
       done: (s) => s.engines.pilot !== null && s.engines.copilot !== null,
     },

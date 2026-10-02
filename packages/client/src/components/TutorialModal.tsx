@@ -9,13 +9,17 @@ export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClo
   const tutorial = TUTORIALS[id];
   const sb = useSandbox(tutorial);
   const panel = useRef<HTMLDivElement>(null);
+  // The lobby passes a new onClose on every render; keep the latest without
+  // re-running the focus setup (which would pull focus off the footer).
+  const close = useRef(onClose);
+  close.current = onClose;
 
   // Escape closes; focus moves into the dialog and stays there; the page behind doesn't scroll.
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     panel.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close.current();
       if (e.key !== "Tab" || !panel.current) return;
       const f = panel.current.querySelectorAll<HTMLElement>("button:not(:disabled), [tabindex]:not([tabindex='-1'])");
       if (f.length === 0) return;
@@ -36,7 +40,7 @@ export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClo
       document.body.style.overflow = overflow;
       opener?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   const total = tutorial.steps.length;
   const crew = sb.snapshot.you.role === "host" ? "Pilot" : "Co-Pilot";
@@ -54,7 +58,9 @@ export function TutorialModal({ id, onClose }: { id: ModuleId | AbilityId; onClo
           <p className="tutorial-as">
             Playing as: <b>{crew}</b>
           </p>
-          <Cockpit snapshot={sb.snapshot} onCommand={sb.send} show={tutorial.show} clockOffset={0} />
+          {/* Remounted on Reset and whenever the other crew takes over, so no
+              selected die or Coffee carries across. */}
+          <Cockpit key={`${sb.resets}:${sb.snapshot.you.playerId}`} snapshot={sb.snapshot} onCommand={sb.send} show={tutorial.show} clockOffset={0} />
         </div>
         <footer className={`tutorial-steps${sb.flash ? " done" : ""}`}>
           <span className="tutorial-count">{sb.step ? `Step ${sb.stepIndex + 1} of ${total}` : "Free play"}</span>
