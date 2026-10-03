@@ -165,12 +165,12 @@ async function main() {
     badSolo = e.message;
   }
   check("a malformed solo request is refused (not turned into a multiplayer room)", badSolo.endsWith("-> 400"));
-  const soloRoom = await post("/rooms", { solo: { crew: "copilot", level: "navigator" } });
+  const soloRoom = await post("/rooms", { solo: { crew: "copilot" } });
   const h = connect();
   await waitFor(h, "connect");
   await emit(h, "room:join", { roomId: soloRoom.roomId, token: soloRoom.token });
   const lobbyS = h.state?.seats?.length === 2 ? h.state : await waitFor(h, "room:state", (st) => st.seats.length === 2);
-  check("solo room: a bot fills the other seat, ready", lobbyS.seats.some((st) => st.bot === "navigator" && st.ready));
+  check("solo room: a bot fills the other seat, ready", lobbyS.seats.some((st) => st.bot === "aviator" && st.ready));
   check("solo room: the human flies Co-Pilot", lobbyS.hostCrew === "copilot");
   const readyS = waitFor(h, "room:state", (st) => st.status === "ready");
   await emit(h, "seat:ready", { ready: true });

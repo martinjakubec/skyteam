@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import { DEFAULT_SETUP, ROOM_TTL_SECONDS, SCENARIOS, normalizeGameState } from "@skyteam/shared";
+import { DEFAULT_SETUP, ROOM_TTL_SECONDS, SCENARIOS, normalizeBotLevel, normalizeGameState } from "@skyteam/shared";
 import { env } from "./env";
 import type { Room } from "./types";
 
@@ -42,6 +42,7 @@ export async function getRoom(id: string): Promise<Room | null> {
   room.setup ??= structuredClone(DEFAULT_SETUP);
   room.setup.abilities ??= []; // rooms saved before Special Abilities existed
   room.hostCrew ??= "pilot"; // rooms saved before seats chose their crew
+  for (const seat of room.seats) if (seat.bot) seat.bot = normalizeBotLevel(seat.bot); // retired levels fly as Aviator
   // An airport that's since been removed (e.g. the old Turns test board).
   if (!SCENARIOS[room.setup.scenarioId]) room.setup = structuredClone(DEFAULT_SETUP);
   // A game saved by an older build lacks newer state fields: fill them in.

@@ -26,7 +26,7 @@ export function scheduleNpc(io: IOServer, roomId: string, delayMs = env.NPC_DELA
       if (!room || !turn) return;
       const started = Date.now();
       const game = room.game!;
-      const move = await think(redactGameStateFor(game, turn.botId), turn.crew, turn.level, randomInt(0, 2 ** 31));
+      const move = await think(redactGameStateFor(game, turn.botId), turn.crew, randomInt(0, 2 ** 31));
       // Thinking took time already: count it toward the pause before the bot's next move.
       const thought = Date.now() - started;
       // The game moved on while the bot was thinking (every change replaces

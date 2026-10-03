@@ -1,4 +1,4 @@
-// Count the rollout policy's Navigator fallbacks (each lists every legal move) and their cost.
+// Count the rollout policy's quick-strategy fallbacks (each lists every legal move) and their cost.
 import { newGame, determinize, redactGameStateFor, mulberry32, DEFAULT_SETUP, fastMove, applyIntentInPlace, actorFor, playerIdOf } from "../packages/shared/src/index.ts";
 const views = Array.from({ length: 20 }, (_, i) => redactGameStateFor(newGame(DEFAULT_SETUP, "P", "C", mulberry32(i), 0), "P"));
 let slow = 0, slowMs = 0, all = 0, allMs = 0; const why = {};

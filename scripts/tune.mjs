@@ -5,7 +5,7 @@
 // more games; the result is then checked on held-out seeds.
 //
 // Usage: npm run tune -- [games=200] [passes=2] [eval]
-//   eval: tune the evaluator's weights (EVAL_WEIGHTS) on the Navigator's own
+//   eval: tune the evaluator's weights (EVAL_WEIGHTS) on the quick strategy's own
 //   self-play landings instead (each weight tried at ×0.5 and ×2).
 import { newGame, rolloutGame, selfPlay, mulberry32, DEFAULT_SETUP, POLICY_PARAMS, EVAL_WEIGHTS } from "../packages/shared/src/index.ts";
 
@@ -33,7 +33,7 @@ function landings(from) {
   let won = 0;
   for (let i = from; i < from + N; i++) {
     const won1 = EVAL
-      ? selfPlay({ scenarioId: "YUL", modules: [], abilities: [] }, { pilot: "navigator", copilot: "navigator" }, i).outcome === "won"
+      ? selfPlay({ scenarioId: "YUL", modules: [], abilities: [] }, i, 400, { strategy: "quick" }).outcome === "won"
       : rolloutGame(newGame(DEFAULT_SETUP, "P", "C", mulberry32(i), 0), mulberry32(100000 + i)).outcome?.result === "won";
     if (won1) won++;
   }

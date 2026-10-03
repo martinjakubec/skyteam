@@ -9,9 +9,21 @@ import { rankMoves } from "./policy";
 import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
 import { mulberry32 } from "./rng";
 
-/** The moves the search compares: the Navigator's best few, plus the rollout
- *  policy's own choice — the Navigator scores one step ahead and can miss what
+/** The moves the search compares: the quick strategy's best few, plus the rollout
+ *  policy's own choice — the quick strategy scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
+/**
+ * Real-Time: the round can end any second, and an open Axis or Engine then
+ * loses the game — while the crew's own are open, only those are worth
+ * searching (rollouts don't model the clock, so they'd happily wait).
+ */
+export function realTimeFirst(view: GameState, crew: Crew, moves: GameCommand[]): GameCommand[] {
+  if (!view.scenario.modules?.includes("realTime") || view.phase !== "placement") return moves;
+  if (view.axis[crew] !== null && view.engines[crew] !== null) return moves;
+  const first = moves.filter((m) => m.type === "placeDie" && (m.target.kind === "axis" || m.target.kind === "engine"));
+  return first.length > 0 ? first : moves;
+}
+
 export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew), dedupe = true): GameCommand[] {
   // Moves that lead to the same game — a die of the same value, the same
   // Coffee spent, on the same space (however the space is spelled: a target
@@ -32,7 +44,7 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
     ranked.push(m);
   }
   const own = fastMove(view, crew, rand);
-  if (own && !ranked.some((m) => key(m) === key(own))) {
+  if (own && moves.some((m) => key(m) === key(own)) && !ranked.some((m) => key(m) === key(own))) {
     if (ranked.length < shortlist) ranked.push(own);
     else ranked[shortlist - 1] = own;
   }
@@ -88,7 +100,7 @@ export function searchStats(
   rand: Rand,
   { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given }: SearchOptions,
 ): SearchStats {
-  const moves = given ?? legalMoves(view, crew);
+  const moves = given ?? realTimeFirst(view, crew, legalMoves(view, crew));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
   const candidates = given ?? searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);

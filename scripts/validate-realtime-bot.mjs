@@ -56,7 +56,7 @@ const emit = (s, event, ...args) => new Promise((resolve) => s.emit(event, ...ar
 /** One solo game: true if a time-up opened round 2 and the bot played in it,
  *  false if the time-up lost the game (retry), throws on anything else. */
 async function attempt(n) {
-  const room = await post("/rooms", { solo: { crew: "pilot", level: "navigator" } });
+  const room = await post("/rooms", { solo: { crew: "pilot" } });
   const s = io(BASE, { transports: ["websocket"], reconnection: false, forceNew: true });
   let game = null;
   let status = "lobby";

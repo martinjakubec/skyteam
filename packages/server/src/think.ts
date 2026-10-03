@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { chooseMove, mulberry32, pickBest, type BotLevel, type Crew, type GameCommand, type GameState, type SearchStats } from "@skyteam/shared";
+import { mulberry32, pickBest, quickMove, type Crew, type GameCommand, type GameState, type SearchStats } from "@skyteam/shared";
 import { env } from "./env";
 
 /** One search worker: its thread, whether it has loaded, and its requests in flight. */
@@ -20,12 +20,12 @@ export function setPoolSizeForTests(n: number): void {
 let pool: Slot[] = [];
 let nextId = 0;
 const pending = new Map<number, (m: SearchStats | Error) => void>();
-/** Aviator answers that came from workers vs. Navigator fallbacks, and how many
+/** Aviator answers that came from workers vs. quick-strategy fallbacks, and how many
  *  workers the last decision searched on (for logs and tests). */
 export const thinkStats = { worker: 0, fallback: 0, lastWorkers: 0 };
 
 /** Worker failures in a row (each worker of the pool counts); past this many,
- *  stop restarting them (Aviator plays as Navigator). */
+ *  stop restarting them (Aviator plays its quick strategy). */
 const maxRestarts = () => 3 * poolSize;
 let failures = 0;
 
@@ -61,7 +61,7 @@ function lost(slot: Slot, why: string): void {
   for (const id of slot.inFlight) pending.get(id)?.(new Error(`worker ${why}`));
   failures += 1;
   if (failures <= maxRestarts()) setTimeout(() => void warmThinking(), 500).unref();
-  else console.error("[npc] search workers keep failing — Aviator plays as Navigator");
+  else console.error("[npc] search workers keep failing — Aviator plays its quick strategy");
 }
 
 /** Keep a worker referenced only while it has work: idle workers never keep
@@ -91,30 +91,25 @@ export function crashWorkerForTest(): void {
   for (const s of pool) s.w.postMessage({ crash: true });
 }
 
-/** The bot's move. Aviator thinks in a pooled worker (never blocking other
- *  rooms); any failure or timeout falls back to Navigator, so the bot always
- *  moves. Resolves null only if even the fallback fails (the room gives up). */
+/** The bot's move. Aviator searches in pooled workers (never blocking other
+ *  rooms); any failure or timeout falls back to its quick strategy, so the bot
+ *  always moves. Resolves null only if even that fails (the room gives up). */
 export function think(
   view: GameState,
   crew: Crew,
-  level: BotLevel,
   seed: number,
   test?: { simulateWorkerError?: boolean; timeoutMs?: number },
 ): Promise<GameCommand | null> {
-  const navigator = (lv: BotLevel = "navigator") => {
+  const fallback = (why = "simulated") => {
+    thinkStats.fallback += 1;
+    if (!test) console.warn(`[npc] Aviator fell back to its quick strategy (${why})`);
     try {
-      return chooseMove(view, crew, lv, mulberry32(seed));
+      return quickMove(view, crew, mulberry32(seed));
     } catch (e) {
-      console.error(`[npc] the ${lv} bot failed:`, e);
+      console.error("[npc] the quick strategy failed:", e);
       return null;
     }
   };
-  const fallback = (why = "simulated") => {
-    thinkStats.fallback += 1;
-    if (!test) console.warn(`[npc] Aviator fell back to Navigator (${why})`);
-    return navigator();
-  };
-  if (level !== "aviator") return Promise.resolve(navigator(level));
   if (test?.simulateWorkerError || failures > maxRestarts()) return Promise.resolve(fallback("no search worker"));
   if (pool.length === 0) void warmThinking();
   // Search on the idle workers that have loaded — each samples its own share of
@@ -128,7 +123,7 @@ export function think(
   thinkStats.lastWorkers = slots.length;
   const timeoutMs = test?.timeoutMs ?? env.NPC_THINK_MS + 400;
   const deadline = Date.now() + timeoutMs;
-  return Promise.all(slots.map((slot, k) => ask(slot, { view, crew, level, seed: seed + 1 + k, candidateSeed: seed, budgetMs: env.NPC_THINK_MS, deadline }, timeoutMs))).then(
+  return Promise.all(slots.map((slot, k) => ask(slot, { view, crew, seed: seed + 1 + k, candidateSeed: seed, budgetMs: env.NPC_THINK_MS, deadline }, timeoutMs))).then(
     (results) => {
       const stats = results.filter((r): r is SearchStats => r !== null);
       const skipped = stats.reduce((a, st) => a + (st.errors ?? 0), 0);

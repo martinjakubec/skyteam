@@ -4,13 +4,12 @@ import type { Crew, DieValue } from "../game/scenario";
 import type { GameState } from "../game/state";
 import type { Rand } from "../game/entropy";
 import { evaluate } from "./evaluate";
-import type { BotLevel } from "./levels";
 import { legalMoves, playerIdOf } from "./moves";
 import { searchMove } from "./search";
 
 /** Score a move by the state it leads to. Random outcomes (rerolls) are scored
- *  with the dice unchanged — neutral, so Navigator never rerolls on purpose
- *  (Phase 3's search values them properly). */
+ *  with the dice unchanged — neutral, so the quick strategy never rerolls on
+ *  purpose (the search values them properly). */
 function scoreMove(view: GameState, crew: Crew, move: GameCommand): number {
   const cmd: ReduceCommand =
     move.type === "reroll" ? { ...move, values: move.dieIds.map((id) => view.dice[crew].find((d) => d.id === id)!.value as DieValue) }
@@ -44,24 +43,21 @@ export function rankMoves(view: GameState, crew: Crew, moves: GameCommand[], ran
   return scored.sort((a, b) => b.s - a.s).map(({ m }) => m); // stable: ties keep the shuffle
 }
 
-/** How often a Cadet plays a lesser move, and how far down it reaches. */
-const CADET_SLIP_PERCENT = 35;
-const CADET_SLIP_DEPTH = 3; // 2nd–4th best
+/**
+ * Aviator's quick strategy: the best one-step score (ties broken at random),
+ * no lookahead. It answers at once — the fallback when there's no time to
+ * search, and the rollouts' last resort. Null when nothing is legal.
+ */
+export function quickMove(view: GameState, crew: Crew, rand: Rand): GameCommand | null {
+  const moves = legalMoves(view, crew);
+  return moves.length === 0 ? null : rankMoves(view, crew, moves, rand)[0];
+}
 
 /**
- * Pick the bot's next command from its own view (null when nothing is legal):
- * - Navigator: the best one-step score (ties broken at random).
- * - Cadet: the same, but now and then one of the next few moves instead.
- * - Aviator: Monte Carlo search over the dice it can't see, within `budgetMs`.
+ * The bot's next command from its own view (null when nothing is legal):
+ * Monte Carlo search over the dice it can't see, within `budgetMs` — or, for
+ * benchmarks, a fixed number of samples per candidate.
  */
-export function chooseMove(view: GameState, crew: Crew, level: BotLevel, rand: Rand, opts?: { budgetMs?: number; samples?: number }): GameCommand | null {
-  const moves = legalMoves(view, crew);
-  if (moves.length === 0) return null;
-  // Aviator: within a time budget, or (benchmarks) a fixed number of samples per candidate.
-  if (level === "aviator") {
-    return searchMove(view, crew, rand, opts?.samples ? { budgetMs: Infinity, maxSamples: opts.samples } : { budgetMs: opts?.budgetMs ?? 600 });
-  }
-  const ranked = rankMoves(view, crew, moves, rand);
-  if (level === "cadet" && rand(100) < CADET_SLIP_PERCENT) return ranked[Math.min(ranked.length - 1, 1 + rand(CADET_SLIP_DEPTH))];
-  return ranked[0];
+export function chooseMove(view: GameState, crew: Crew, rand: Rand, opts?: { budgetMs?: number; samples?: number }): GameCommand | null {
+  return searchMove(view, crew, rand, opts?.samples ? { budgetMs: Infinity, maxSamples: opts.samples } : { budgetMs: opts?.budgetMs ?? 600 });
 }

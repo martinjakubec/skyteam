@@ -456,8 +456,15 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("default: host flies Pilot", JSON.stringify(seatCrews({ ...base, seats })) === JSON.stringify({ pilotId: "H", copilotId: "G" }));
   check("hostCrew copilot: host flies Co-Pilot", JSON.stringify(seatCrews({ ...base, seats, hostCrew: "copilot" })) === JSON.stringify({ pilotId: "G", copilotId: "H" }));
   check("crewOf maps a player to the crew they fly", crewOf({ ...base, seats, hostCrew: "copilot" }, "H") === "copilot" && crewOf({ ...base, seats }, "X") === null);
-  const solo = { ...base, hostCrew: "copilot", seats: [seats[0], { ...seats[1], playerId: "bot:1", bot: "cadet" }] };
-  check("bot seat found", botSeat(solo)?.bot === "cadet" && botSeat({ ...base, seats }) === null);
+  const solo = { ...base, hostCrew: "copilot", seats: [seats[0], { ...seats[1], playerId: "bot:1", bot: "aviator" }] };
+  {
+    const { SoloRoomRequest } = await import("../packages/shared/src/index.ts");
+    const level = (body) => { const r = SoloRoomRequest.safeParse(body); return r.success ? r.data.level : "refused"; };
+    check("solo request: old levels (Cadet, Navigator) and none at all play Aviator; nonsense is refused",
+      level({ crew: "pilot", level: "cadet" }) === "aviator" && level({ crew: "pilot", level: "navigator" }) === "aviator" &&
+      level({ crew: "pilot" }) === "aviator" && level({ crew: "pilot", level: "ace" }) === "refused");
+  }
+  check("bot seat found", botSeat(solo)?.bot === "aviator" && botSeat({ ...base, seats }) === null);
   check("a setup change keeps the bot ready", unreadyOthers(solo.seats, "H").find((s) => s.bot).ready === true);
   check("…and un-readies the other humans", unreadyOthers(seats, "H").find((s) => s.playerId === "G").ready === false);
   check("exit to lobby (keep nobody): humans un-ready, the bot stays ready", JSON.stringify(unreadyOthers(solo.seats, null).map((s) => s.ready)) === "[false,true]");
@@ -504,34 +511,33 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   const legal = (m) => { try { return !!m && !!apply(g, m, "P", mulberry32(1), () => 0); } catch { return false; } };
   await warmThinking(); // the worker takes a few seconds to load
   const t0 = Date.now();
-  const m = await think(view, "pilot", "aviator", 1);
+  const m = await think(view, "pilot", 1);
   check("Aviator answers through the worker within its budget", Date.now() - t0 < 2000 && legal(m) && thinkStats.worker === 1 && thinkStats.fallback === 0);
-  check("a worker failure falls back to Navigator", legal(await think(view, "pilot", "aviator", 1, { simulateWorkerError: true })) && thinkStats.fallback === 1);
-  check("Cadet and Navigator answer inline", legal(await think(view, "pilot", "cadet", 2)) && legal(await think(view, "pilot", "navigator", 3)));
+  check("a worker failure falls back to the quick strategy", legal(await think(view, "pilot", 1, { simulateWorkerError: true })) && thinkStats.fallback === 1);
   // The real failure paths, through the worker:
   const { crashWorkerForTest } = await import("../packages/server/src/think.ts");
   const before = thinkStats.fallback;
   crashWorkerForTest(); // the worker handles this first, then dies with the request below pending
-  const during = think(view, "pilot", "aviator", 4);
-  check("a worker crash mid-request falls back to Navigator", legal(await during) && thinkStats.fallback === before + 1);
+  const during = think(view, "pilot", 4);
+  check("a worker crash mid-request falls back to the quick strategy", legal(await during) && thinkStats.fallback === before + 1);
   await warmThinking(); // a crashed worker is replaced by a fresh one
   const w0 = thinkStats.worker;
-  check("…and the next Aviator move comes from a fresh worker", legal(await think(view, "pilot", "aviator", 5)) && thinkStats.worker === w0 + 1);
+  check("…and the next Aviator move comes from a fresh worker", legal(await think(view, "pilot", 5)) && thinkStats.worker === w0 + 1);
   const f0 = thinkStats.fallback;
-  check("a timed-out request falls back to Navigator", legal(await think(view, "pilot", "aviator", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
+  check("a timed-out request falls back to the quick strategy", legal(await think(view, "pilot", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
   // Step 5: a pool — two Aviator rooms thinking at once are both answered by workers.
   await warmThinking();
   // One decision with idle workers searches on all of them at once, and merges.
   await warmThinking();
   const wP = thinkStats.worker;
-  const par = await think(view, "pilot", "aviator", 31);
+  const par = await think(view, "pilot", 31);
   check("with idle workers, one Aviator decision searches on several at once", legal(par) && thinkStats.lastWorkers >= 2 && thinkStats.worker === wP + 1);
   const w3 = thinkStats.worker, fb3 = thinkStats.fallback;
   // Generous time limits: the queued third room waits for a whole search first.
-  const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", "aviator", seed, { timeoutMs: 3000 })));
+  const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", seed, { timeoutMs: 3000 })));
   check("three rooms thinking at once are all answered by search workers (one worker would time out the third)", three.every(legal) && thinkStats.worker === w3 + 3 && thinkStats.fallback === fb3);
   let crashed = false;
-  const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));
+  const none = await think(null, "pilot", 7).catch(() => (crashed = true));
   check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);
   await stopThinking(); // let the test process exit
 }

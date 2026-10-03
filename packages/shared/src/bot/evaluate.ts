@@ -4,7 +4,7 @@ import { BRAKE_VALUES, ICE_BRAKE_VALUES, WIND_RING, type Crew } from "../game/sc
 export const WIN = 10_000;
 
 /** The evaluator's weights — tunable by scripts/tune-eval.mjs against the
- *  Navigator's landing rate. Defaults are the tuned values. */
+ *  quick strategy's landing rate. Defaults are the tuned values. */
 export const EVAL_WEIGHTS = {
   /** Per airplane within two spaces / further along the path. */
   airplaneNear: 120,

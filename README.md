@@ -33,11 +33,10 @@ grace-timer logic.
 
 ```bash
 npm test    # rules + unit + bot suites (run inside a node:22 container; see below)
-npm run bench -- [games=30] [level=navigator] [ALL]   # bot win rate
+npm run bench -- [games=30] [quick|samples] [ALL]   # bot win rate
+npm run bench -- [games=40] landing [samples=20|600ms]   # YUL landings (MODULES="kerosene,intern" adds modules)
 ```
 
-`npm run bench -- 20 compare` plays Cadet, Navigator and Aviator on the same
-setups and checks they rank in that order (see "Running it").
 `npm run bench` plays the bot against itself and prints, per setup, the win
 rate, the average round reached and the top loss reasons, then the overall win
 rate. By default it covers every scenario card, every module combination and
@@ -90,25 +89,15 @@ human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
 seat would see, and answers Reroll and Working Together offers on its own.
 Opening a solo room's invite link makes you an observer.
 
-The bot has three levels:
-
-- **Cadet** plays the Navigator's choice, but about a third of the time picks
-  one of the next few moves instead.
-- **Navigator** scores every legal move one step ahead (approach pace, traffic,
-  tilt, switches, the landing) and plays the best.
-- **Aviator** searches: for its best few moves it repeatedly fills in the dice
-  it can't see, plays the round out, and keeps the move that does best on
-  average, within `NPC_THINK_MS`. It thinks in a worker thread, so it never
-  blocks other rooms, and falls back to Navigator if that fails.
-
-`npm run bench -- 20 compare` plays all three on the same 6 setups, starting
-from the same seeds (Aviator at 50 ms a move). The levels draw on the random
-stream differently, so their games soon diverge, and Aviator's results depend
-on machine speed (its search is time-budgeted): treat the numbers as
-indicative, not as a paired comparison. Measured: Cadet 0.8% won, progress 3.86 · Navigator
-0.8% won, progress 5.12 · Aviator 0.0% won, progress 5.87 (progress = rounds
-survived, +1 for a landing). The levels are in order, but all three still land
-rarely — the evaluator is the place to improve them.
+The bot is **Aviator**. It searches: for its best few moves it repeatedly
+fills in the dice it can't see, plays the game out with a fast rollout
+policy, and keeps the move that lands most often, within `NPC_THINK_MS`. It
+thinks in worker threads, so it never blocks other rooms. Its **quick
+strategy** — every legal move scored one step ahead (approach pace, traffic,
+tilt, switches, the landing) — is what it falls back to if a search fails,
+and what the rollouts use when nothing cheap fits. In Real-Time it fills its
+own Axis and Engine before anything else. Rooms and clients from before the
+levels were retired (Cadet, Navigator) get Aviator.
 
 ### Development (hot reload)
 

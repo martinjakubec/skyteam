@@ -6,7 +6,7 @@ import { airportIndex, type GameState } from "../game/state";
 import { actorFor } from "./actor";
 import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
-import { chooseMove } from "./policy";
+import { quickMove } from "./policy";
 
 /** Give every hidden die a random value — one plausible world consistent with the view. */
 export function determinize(view: GameState, rand: Rand): GameState {
@@ -121,11 +121,11 @@ const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : s
  * approach needs, or on the landing round one the Brakes hold); clear the
  * airplane in the way; deploy Flaps, Landing Gear and Brakes with dice that
  * fit; then its own Axis and Engine with the dice best kept for them; then
- * anything legal. Prompts (held extras, reroll/swap answers) go to Navigator.
+ * anything legal. Prompts (held extras, reroll/swap answers) go to the quick strategy.
  */
 export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | null {
   const P = POLICY_PARAMS;
-  if (s.internHeld || s.trafficHeld || s.pendingSwap) return chooseMove(s, crew, "navigator", rand);
+  if (s.internHeld || s.trafficHeld || s.pendingSwap) return quickMove(s, crew, rand);
   if (s.pendingReroll) return { type: "reroll", dieIds: [] }; // keep our dice
   const hand = s.dice[crew].filter((d) => !d.placed && d.value !== undefined);
   if (!hand.length) return null;
@@ -273,7 +273,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   if (planned) return planned;
   // 6. Catch-all, only when nothing planned fits: any die on any of the crew's
   // spaces, with Coffee if needed — so an odd die (one that fits only a set
-  // switch, say) needs no Navigator.
+  // switch, say) needs no quick strategy.
   tries.length = 0;
   const anySpace: PlacementTarget[] = [
     { kind: "axis" },
@@ -288,7 +288,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   for (const d of [...spare, ...hand]) for (const c of coffeeOptions(d.value!)) for (const t of anySpace) at(d.id, t, c);
   const any = firstLegal(tries);
   if (any) return any;
-  return chooseMove(s, crew, "navigator", rand); // nothing cheap fits: Navigator over all moves
+  return quickMove(s, crew, rand); // nothing cheap fits: the quick strategy over all moves
 }
 
 /** Play on until the round changes or the game ends (full information, both crews). */
