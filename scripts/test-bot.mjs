@@ -2,6 +2,8 @@
 import { newGame, applyIntent, randDice, shuffledInternTokens, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
 
 let failures = 0;
+/** The rules accept this move from `who` on `state` (the same move can be spelled differently). */
+const accepts = (state, who, m) => { try { return !!m && !!applyIntent(state, m, who, mulberry32(1), () => 0); } catch { return false; } };
 const check = (label, cond) => { console.log(`${cond ? "  ✅" : "  ❌"} ${label}`); if (!cond) failures++; };
 const P = "P", C = "C";
 const clock = () => 0;
@@ -185,7 +187,7 @@ console.log("5) Monte Carlo search (Aviator)");
   const moves = legalMoves(view, "pilot");
   check("rankMoves orders every legal move", rankMoves(view, "pilot", moves, mulberry32(9)).length === moves.length);
   const m = searchMove(view, "pilot", mulberry32(3), { budgetMs: 150, shortlist: 4, maxSamples: 20 });
-  check("search returns a legal move", moves.some((x) => JSON.stringify(x) === JSON.stringify(m)));
+  check("search returns a legal move", accepts(g, P, m));
   // One legal move → returned at once: the Pilot's last die, Axis done, Engine open.
   const lastDie = fresh([1, 1, 1, 4], [1, 1, 1, 1]);
   lastDie.dice.pilot.slice(0, 3).forEach((x) => (x.placed = true));
@@ -212,9 +214,11 @@ console.log("6) Difficulty levels behave differently");
   const picks = (view, level, n = 30) => new Set(Array.from({ length: n }, (_, i) => JSON.stringify(chooseMove(view, "pilot", level, mulberry32(i)))));
   // A position where the Navigator's best move is unique (the same across seeds).
   let view = null;
+  let full = null;
   for (let seed = 21; seed < 60 && !view; seed++) {
-    const v = redactGameStateFor(newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(seed), 0), P);
-    if (picks(v, "navigator").size === 1) view = v;
+    const gs = newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(seed), 0);
+    const v = redactGameStateFor(gs, P);
+    if (picks(v, "navigator").size === 1) [view, full] = [v, gs];
   }
   check("(setup: a position with a unique best move)", !!view);
   const ranked = rankMoves(view, "pilot", legalMoves(view, "pilot"), mulberry32(0)).map((m) => JSON.stringify(m));
@@ -224,7 +228,7 @@ console.log("6) Difficulty levels behave differently");
   const t0 = Date.now();
   const a = chooseMove(view, "pilot", "aviator", mulberry32(1), { budgetMs: 150 });
   const spent = Date.now() - t0;
-  check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && legalMoves(view, "pilot").some((m) => JSON.stringify(m) === JSON.stringify(a)));
+  check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && accepts(full, P, a));
 }
 
 console.log("7) Measurement: landing checklist; dice independent of the bots");
@@ -311,7 +315,7 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
     rolloutValue({ ...end, round: 7, outcome: { result: "lost", reason: "Landing failed: plane not level." } }, "pilot") > rolloutValue({ ...end, round: 3, outcome: { result: "lost", reason: "The plane went into a spin!" } }, "pilot"));
   const v = redactGameStateFor(g, P);
   const m = searchMove(v, "pilot", mulberry32(14), { budgetMs: Infinity, maxSamples: 3 });
-  check("search over full-game rollouts returns a legal move", legalMoves(v, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m)));
+  check("search over full-game rollouts returns a legal move", accepts(g, P, m));
 }
 
 console.log("9) Aviator's candidates include the rollout policy's own choice");
@@ -324,6 +328,15 @@ console.log("9) Aviator's candidates include the rollout policy's own choice");
     if (searchCandidates(v, "pilot", mulberry32(seed), 6).some((m) => JSON.stringify(m) === own)) included++;
   }
   check("the policy's move is always among the candidates", included === 10);
+  // Step 5: no two candidates lead to the same game (same value on the same space).
+  const key = (v, m) => m.type === "placeDie" ? `${JSON.stringify(m.target)}=${v.dice.pilot.find((d) => d.id === m.dieId).value + (m.coffeeDelta ?? 0)}` : JSON.stringify(m);
+  let dupes = 0;
+  for (let seed = 0; seed < 10; seed++) {
+    const v = redactGameStateFor({ ...newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), coffee: 2 }, P);
+    const keys = searchCandidates(v, "pilot", mulberry32(seed), 6).map((m) => key(v, m));
+    dupes += keys.length - new Set(keys).size;
+  }
+  check("candidates are all different moves (no same-value, same-space duplicates)", dupes === 0);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

@@ -498,7 +498,9 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   const { newGame, mulberry32, redactGameStateFor, legalMoves } = await import("../packages/shared/src/index.ts");
   const g = newGame(DEFAULT_SETUP, "P", "C", mulberry32(9), 0);
   const view = redactGameStateFor(g, "P");
-  const legal = (m) => legalMoves(view, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m));
+  // Legal = the rules accept it (the same move can be spelled differently, e.g. a target with or without its side).
+  const { applyIntent: apply } = await import("../packages/shared/src/index.ts");
+  const legal = (m) => { try { return !!m && !!apply(g, m, "P", mulberry32(1), () => 0); } catch { return false; } };
   await warmThinking(); // the worker takes a few seconds to load
   const t0 = Date.now();
   const m = await think(view, "pilot", "aviator", 1);
@@ -516,6 +518,11 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   check("…and the next Aviator move comes from a fresh worker", legal(await think(view, "pilot", "aviator", 5)) && thinkStats.worker === w0 + 1);
   const f0 = thinkStats.fallback;
   check("a timed-out request falls back to Navigator", legal(await think(view, "pilot", "aviator", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
+  // Step 5: a pool — two Aviator rooms thinking at once are both answered by workers.
+  await warmThinking();
+  const w1 = thinkStats.worker, fb1 = thinkStats.fallback;
+  const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", "aviator", seed)));
+  check("three rooms thinking at once are all answered by search workers (one worker would time out the third)", three.every(legal) && thinkStats.worker === w1 + 3 && thinkStats.fallback === fb1);
   let crashed = false;
   const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));
   check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);

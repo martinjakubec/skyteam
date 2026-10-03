@@ -11,9 +11,23 @@ import { determinize, fastMove, rolloutGame, rolloutRound, rolloutValue } from "
  *  policy's own choice — the Navigator scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
 export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew)): GameCommand[] {
-  const ranked = rankMoves(view, crew, moves, rand).slice(0, shortlist);
+  // Moves that lead to the same game — the same value on the same space (by
+  // another die of that value, or Coffee) — are one candidate, not several.
+  const valueOf = (id: number) => view.dice[crew].find((d) => d.id === id)?.value ?? 0;
+  const key = (m: GameCommand) =>
+    m.type === "placeDie" ? `${JSON.stringify(m.target)}=${valueOf(m.dieId) + (m.coffeeDelta ?? 0)}`
+    : m.type === "reroll" ? `reroll:${m.dieIds.map(valueOf).sort().join()}`
+    : JSON.stringify(m);
+  const seen = new Set<string>();
+  const ranked: GameCommand[] = [];
+  for (const m of rankMoves(view, crew, moves, rand)) {
+    if (ranked.length >= shortlist) break;
+    if (seen.has(key(m))) continue;
+    seen.add(key(m));
+    ranked.push(m);
+  }
   const own = fastMove(view, crew, rand);
-  if (own && !ranked.some((m) => JSON.stringify(m) === JSON.stringify(own))) {
+  if (own && !ranked.some((m) => key(m) === key(own))) {
     if (ranked.length < shortlist) ranked.push(own);
     else ranked[shortlist - 1] = own;
   }
@@ -41,17 +55,28 @@ export function searchMove(
   const counts = candidates.map(() => 0);
   const deadline = Date.now() + budgetMs;
   const now = () => 0;
-  for (let k = 0; k < maxSamples && Date.now() < deadline; k++) {
-    for (let i = 0; i < candidates.length && Date.now() < deadline; i++) {
+  const mean = (i: number) => totals[i] / Math.max(1, counts[i]);
+  // Successive halving: the same total samples as `maxSamples` each, but once
+  // every surviving candidate has `rung` samples, the weaker half drops out
+  // (down to two) and the rest share what's left.
+  let alive = candidates.map((_, i) => i);
+  let budget = maxSamples * candidates.length;
+  let rung = 2;
+  while (budget > 0 && Date.now() < deadline) {
+    for (const i of alive) {
+      if (budget <= 0 || Date.now() >= deadline) break;
       const world = determinize(view, rand);
       const played = applyIntent(world, candidates[i], playerIdOf(view, crew), rand, now);
       totals[i] += horizon === "game" ? rolloutValue(rolloutGame(played, rand), crew) : evaluate(rolloutRound(played, rand), crew);
       counts[i] += 1;
+      budget -= 1;
+    }
+    if (alive.length > 2 && alive.every((i) => counts[i] >= rung)) {
+      alive = [...alive].sort((a, b) => mean(b) - mean(a)).slice(0, Math.max(2, Math.ceil(alive.length / 2)));
+      rung *= 2;
     }
   }
-  let best = 0;
-  for (let i = 1; i < candidates.length; i++) {
-    if (counts[i] && totals[i] / counts[i] > totals[best] / Math.max(1, counts[best])) best = i;
-  }
+  let best = alive[0];
+  for (const i of alive) if (counts[i] && mean(i) > mean(best)) best = i;
   return candidates[best];
 }
