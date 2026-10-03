@@ -520,9 +520,14 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   check("a timed-out request falls back to Navigator", legal(await think(view, "pilot", "aviator", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
   // Step 5: a pool — two Aviator rooms thinking at once are both answered by workers.
   await warmThinking();
-  const w1 = thinkStats.worker, fb1 = thinkStats.fallback;
+  // One decision with idle workers searches on all of them at once, and merges.
+  await warmThinking();
+  const wP = thinkStats.worker;
+  const par = await think(view, "pilot", "aviator", 31);
+  check("with idle workers, one Aviator decision searches on several at once", legal(par) && thinkStats.lastWorkers >= 2 && thinkStats.worker === wP + 1);
+  const w3 = thinkStats.worker, fb3 = thinkStats.fallback;
   const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", "aviator", seed)));
-  check("three rooms thinking at once are all answered by search workers (one worker would time out the third)", three.every(legal) && thinkStats.worker === w1 + 3 && thinkStats.fallback === fb1);
+  check("three rooms thinking at once are all answered by search workers (one worker would time out the third)", three.every(legal) && thinkStats.worker === w3 + 3 && thinkStats.fallback === fb3);
   let crashed = false;
   const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));
   check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);

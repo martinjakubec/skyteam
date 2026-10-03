@@ -7,7 +7,9 @@
 //   ALL:     every module combination × every ability set, plus every card (slow)
 //   ONLY="intern,kerosene" (env) keeps setups containing all those ids
 //   (scenario id, module or ability).
-import { selfPlay, representativeSetups, allSetups, SetSetupPayload, landingChecks } from "../packages/shared/src/index.ts";
+import { selfPlay, representativeSetups, allSetups, SetSetupPayload, landingChecks, POLICY_PARAMS } from "../packages/shared/src/index.ts";
+// POLICY='{"peek":false}' (env) overrides rollout-policy settings for this run.
+if (process.env.POLICY) Object.assign(POLICY_PARAMS, JSON.parse(process.env.POLICY));
 const N = Number(process.argv[2] ?? 30);
 
 // landing: how often each level lands YUL, and which landing condition fails

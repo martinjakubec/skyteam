@@ -1,6 +1,6 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
-import { chooseMove, mulberry32, type BotLevel, type Crew, type GameCommand, type GameState } from "@skyteam/shared";
+import { chooseMove, mulberry32, pickBest, type BotLevel, type Crew, type GameCommand, type GameState, type SearchStats } from "@skyteam/shared";
 import { env } from "./env";
 
 /** One search worker: its thread, whether it has loaded, and its requests in flight. */
@@ -17,9 +17,10 @@ interface Slot {
 const POOL_SIZE = Math.max(1, Number(process.env.NPC_WORKERS) || Math.min(4, availableParallelism() - 1));
 let pool: Slot[] = [];
 let nextId = 0;
-const pending = new Map<number, (m: GameCommand | null | Error) => void>();
-/** Aviator answers that came from a worker vs. Navigator fallbacks (for logs and tests). */
-export const thinkStats = { worker: 0, fallback: 0 };
+const pending = new Map<number, (m: SearchStats | Error) => void>();
+/** Aviator answers that came from workers vs. Navigator fallbacks, and how many
+ *  workers the last decision searched on (for logs and tests). */
+export const thinkStats = { worker: 0, fallback: 0, lastWorkers: 0 };
 
 /** Worker failures in a row (each worker of the pool counts); past this many,
  *  stop restarting them (Aviator plays as Navigator). */
@@ -40,7 +41,7 @@ function startSlot(): Slot {
     failures = 0; // it answers: healthy again
     slot.inFlight.delete(msg.id);
     idleCheck(slot);
-    pending.get(msg.id)?.(msg.error ? new Error(msg.error) : msg.move);
+    pending.get(msg.id)?.(msg.error ? new Error(msg.error) : msg.stats);
   });
   w.on("error", (e) => lost(slot, `crashed: ${e}`));
   w.on("exit", (code) => lost(slot, `exited (code ${code})`));
@@ -114,26 +115,49 @@ export function think(
   if (level !== "aviator") return Promise.resolve(navigator(level));
   if (test?.simulateWorkerError || failures > MAX_RESTARTS) return Promise.resolve(fallback("no search worker"));
   if (pool.length === 0) void warmThinking();
-  // The least busy worker that has loaded (a loading one only if none has).
+  // Search on the idle workers that have loaded — each samples its own share of
+  // the same candidates — and merge. One idle worker stays in reserve, so
+  // another room deciding at the same moment starts at once; if none is idle,
+  // the least busy one.
   const ready = pool.filter((s) => s.isReady);
-  const slot = (ready.length ? ready : pool).reduce((a, b) => (b.inFlight.size < a.inFlight.size ? b : a));
+  const idle = ready.filter((s) => s.inFlight.size === 0);
+  const share = idle.slice(0, Math.max(1, idle.length - 1));
+  const slots = share.length ? share : [(ready.length ? ready : pool).reduce((a, b) => (b.inFlight.size < a.inFlight.size ? b : a))];
+  thinkStats.lastWorkers = slots.length;
   const timeoutMs = test?.timeoutMs ?? env.NPC_THINK_MS + 400;
+  const deadline = Date.now() + timeoutMs;
+  return Promise.all(slots.map((slot, k) => ask(slot, { view, crew, level, seed: seed + 1 + k, candidateSeed: seed, budgetMs: env.NPC_THINK_MS, deadline }, timeoutMs))).then(
+    (results) => {
+      const stats = results.filter((r): r is SearchStats => r !== null);
+      const move = stats.length ? pickBest(stats) : null;
+      if (!move) return fallback(stats.length ? "no move in the merged search" : lastError ?? "timed out");
+      thinkStats.worker += 1;
+      return move;
+    },
+  );
+}
+
+let lastError: string | undefined;
+
+/** One worker's share of a search: its stats, or null on a timeout or error. */
+function ask(slot: Slot, request: Record<string, unknown>, timeoutMs: number): Promise<SearchStats | null> {
   return new Promise((resolve) => {
     const id = nextId++;
     const timer = setTimeout(() => {
       pending.delete(id);
       slot.inFlight.delete(id);
       idleCheck(slot);
-      resolve(fallback("timed out"));
+      lastError = "timed out";
+      resolve(null);
     }, timeoutMs); // the worker skips the request too once its deadline passes
     pending.set(id, (m) => {
       clearTimeout(timer);
       pending.delete(id);
-      if (!(m instanceof Error)) thinkStats.worker += 1;
-      resolve(m instanceof Error ? fallback(m.message) : m);
+      if (m instanceof Error) lastError = m.message;
+      resolve(m instanceof Error ? null : m);
     });
     slot.inFlight.add(id);
-    slot.w.postMessage({ id, view, crew, level, seed, budgetMs: env.NPC_THINK_MS, deadline: Date.now() + timeoutMs });
+    slot.w.postMessage({ id, ...request });
     idleCheck(slot);
   });
 }

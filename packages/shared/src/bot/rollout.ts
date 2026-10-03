@@ -54,6 +54,10 @@ export const POLICY_PARAMS = {
   paceWeight: 10,
   /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */
   clearAnyDieAhead: 1,
+  /** In a sampled world, plan the Axis/Engine against the partner's (sampled)
+   *  hand. Off: only against what a player could know — the partner's dice
+   *  already down, else any face — as real partners can't see each other's dice. */
+  peek: true,
 };
 
 /**
@@ -134,7 +138,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
 
   // In a sampled world the partner's unplaced dice are known: assume it answers
   // with its best one (a hidden die — outside rollouts — counts as any face).
-  const partnerDice = s.dice[partner].filter((d) => !d.placed && d.value !== undefined).map((d) => d.value!);
+  const partnerDice = P.peek ? s.dice[partner].filter((d) => !d.placed && d.value !== undefined).map((d) => d.value!) : [];
   // Axis: the tilt our die would leave against the partner's.
   const tiltWith = (v: number, theirs: number) => s.axis.offset + (crew === "pilot" ? v - theirs : theirs - v);
   const axisCost = (v: number) => {
