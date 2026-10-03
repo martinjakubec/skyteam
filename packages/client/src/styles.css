@@ -426,6 +426,39 @@ ul {
   margin: 0;
   font-size: 0.8rem;
 }
+/* Landing: "Play solo" — the seat and the bot's level. */
+.solo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.solo h2,
+.solo p {
+  margin: 0;
+}
+/* The page's muted grey is for the dark background; on the panel, use its ink. */
+.center .solo .muted {
+  color: var(--ink);
+  opacity: 0.7;
+}
+.solo-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.6rem;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+}
+.solo-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.solo-options input[type="radio"] {
+  flex: none;
+  padding: 0;
+}
 /* A module / ability with its ℹ️ (opens the tutorial; outside the label, so it
    never toggles the checkbox). */
 .setup-item {

@@ -1,3 +1,4 @@
+import type { BotLevel, Crew } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
 import { uuid } from "./uuid";
 
@@ -48,8 +49,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function createRoom(): Promise<RoomResponse> {
-  const data = await post<RoomResponse>("/rooms", { token: getStoredToken() });
+/** Create a room as its host; with `solo`, a bot flies the other seat. */
+export async function createRoom(solo?: { crew: Crew; level: BotLevel }): Promise<RoomResponse> {
+  const data = await post<RoomResponse>("/rooms", { token: getStoredToken(), ...(solo ? { solo } : {}) });
   storeToken(data.token);
   return data;
 }

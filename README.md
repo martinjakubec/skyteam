@@ -77,6 +77,12 @@ second browser/incognito window, both **Ready up**, and the host can **Start**.
 To test reconnect: kill the browser tab's network (or stop/restart its
 connection) and bring it back within 60s — it resyncs automatically.
 
+To play alone, use **Play solo** on the landing page: pick your seat (Pilot or
+Co-Pilot) and the bot's level. A server-side bot flies the other seat at a
+human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
+seat would see, and answers Reroll and Working Together offers on its own.
+Opening a solo room's invite link makes you an observer.
+
 ### Development (hot reload)
 
 ```bash
@@ -96,6 +102,7 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | Variable | Meaning | Default |
 |---|---|---|
 | `RECONNECT_GRACE_MS` | How long a dropped player's seat is held before the game is abandoned | `60000` |
+| `NPC_DELAY_MS` | Pause before each move of a solo game's bot, so a human can follow | `900` |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |

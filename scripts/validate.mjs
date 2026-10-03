@@ -156,6 +156,45 @@ async function main() {
   check("resync still hides pilot's unplaced dice", snap.game.dice.pilot.some((d) => d.hidden));
 
   for (const s of [a, b2, o]) s.close();
+
+  console.log("9) Solo game vs the bot");
+  const soloRoom = await post("/rooms", { solo: { crew: "copilot", level: "navigator" } });
+  const h = connect();
+  await waitFor(h, "connect");
+  await emit(h, "room:join", { roomId: soloRoom.roomId, token: soloRoom.token });
+  const lobbyS = h.state?.seats?.length === 2 ? h.state : await waitFor(h, "room:state", (st) => st.seats.length === 2);
+  check("solo room: a bot fills the other seat, ready", lobbyS.seats.some((st) => st.bot === "navigator" && st.ready));
+  check("solo room: the human flies Co-Pilot", lobbyS.hostCrew === "copilot");
+  const readyS = waitFor(h, "room:state", (st) => st.status === "ready");
+  await emit(h, "seat:ready", { ready: true });
+  await readyS;
+  // Round 1 is led by the Pilot — the bot — so it must move without us.
+  const botFirst = waitFor(h, "game:event", (m) => m.game.turn === "copilot", 8000);
+  await emit(h, "game:start");
+  const botMoved = await botFirst;
+  check("the bot (Pilot) leads round 1 on its own", botMoved.game.dice.pilot.some((d) => d.placed) && botMoved.byPlayerId.startsWith("bot:"));
+  check("the bot's unplaced dice stay hidden from us", botMoved.game.dice.pilot.filter((d) => !d.placed).every((d) => d.hidden));
+  const myDie = botMoved.game.dice.copilot.find((d) => !d.placed);
+  const botReply = waitFor(h, "game:event", (m) => m.byPlayerId.startsWith("bot:"), 8000);
+  const ackS = await emit(h, "game:command", { commandId: "s1", command: { type: "placeDie", dieId: myDie.id, target: { kind: "axis" } } });
+  check("we can answer", ackS.ok === true);
+  check("…and the bot replies", !!(await botReply));
+  // Rejoin (as after a server restart): the game resyncs with us on our seat.
+  h.close();
+  const h2 = connect();
+  await waitFor(h2, "connect");
+  const back = waitFor(h2, "room:state");
+  await emit(h2, "room:join", { roomId: soloRoom.roomId, token: soloRoom.token });
+  const backS = await back;
+  check("rejoining a solo game resyncs it", backS.status === "in_progress" && backS.game?.copilotId === backS.you.playerId);
+  const spectator = await post(`/rooms/${soloRoom.inviteCode}/join`);
+  const sp = connect();
+  await waitFor(sp, "connect");
+  const spState = waitFor(sp, "room:state");
+  await emit(sp, "room:join", { roomId: spectator.roomId, token: spectator.token });
+  check("an invite link to a solo room makes an observer", (await spState).you.kind === "observer");
+  h2.close();
+  sp.close();
   console.log(failures === 0 ? "\nALL CHECKS PASSED ✅" : `\n${failures} CHECK(S) FAILED ❌`);
   process.exit(failures === 0 ? 0 : 1);
 }

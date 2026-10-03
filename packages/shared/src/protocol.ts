@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
-import type { BotLevel } from "./bot/levels";
+import { BOT_LEVELS, type BotLevel } from "./bot/levels";
 import type { Crew } from "./game/scenario";
 import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS } from "./game/scenario";
 import { SCENARIO_IDS, SCENARIOS, type GameSetup } from "./game/catalog";
@@ -152,6 +152,10 @@ export const SetSetupPayload = z.object({
   }
 }) satisfies z.ZodType<GameSetup, z.ZodTypeDef, unknown>;
 export type SetSetupPayload = z.infer<typeof SetSetupPayload>;
+
+/** Body of a solo-room request: the seat the player flies and the bot's level. */
+export const SoloRoomRequest = z.object({ crew: z.enum(["pilot", "copilot"]), level: z.enum(BOT_LEVELS) });
+export type SoloRoomRequest = z.infer<typeof SoloRoomRequest>;
 
 export const GameCommandPayload = z.object({
   /** Client-generated id so retries (e.g. after a reconnect) are idempotent. */
