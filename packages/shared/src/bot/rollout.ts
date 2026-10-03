@@ -23,6 +23,47 @@ export function determinize(view: GameState, rand: Rand): GameState {
 }
 
 type Place = Extract<GameCommand, { type: "placeDie" }>;
+
+/**
+ * A cheap pre-check for a placement: false only when it's clearly illegal (a
+ * taken space, a value that can't fit, a switch out of order, a die the
+ * Axis/Engine reservation needs). Anything it isn't sure of passes — the rules
+ * (reduce) still decide; this only saves trying obvious misses on a copy.
+ */
+export function maybeLegal(s: GameState, crew: Crew, m: Place): boolean {
+  if (s.phase !== "placement" || s.turn !== crew) return false;
+  const die = s.dice[crew].find((d) => d.id === m.dieId);
+  if (!die || die.placed || die.value === undefined) return false;
+  const delta = m.coffeeDelta ?? 0;
+  const v = die.value + delta;
+  if (Math.abs(delta) > s.coffee || v < 1 || v > 6) return false;
+  const t = m.target;
+  if (t.kind !== "axis" && t.kind !== "engine" && t.kind !== "intern") {
+    const inHand = s.dice[crew].filter((d) => !d.placed).length;
+    const open = (s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0);
+    if (inHand <= open) return false;
+  }
+  switch (t.kind) {
+    case "axis":
+      return s.axis[crew] === null;
+    case "engine":
+      return s.engines[crew] === null;
+    case "radio":
+      return crew === "pilot" ? t.slot === 0 && s.radioPilot === null : s.radioCopilot[t.slot] === null;
+    case "concentration":
+      return s.concentrationSlots[t.slot] == null;
+    case "landingGear":
+      return crew === "pilot" && s.gearSlots[t.slot] === null && LANDING_GEAR_VALUES[t.slot].includes(v as DieValue);
+    case "flaps":
+      return crew === "copilot" && s.flapSlots[t.slot] === null && FLAPS_VALUES[t.slot].includes(v as DieValue) &&
+        (s.flapsGreen[t.slot] || t.slot === s.flapsGreen.findIndex((g) => !g));
+    case "brakes":
+      return crew === "pilot" && !s.brakeSlots[t.slot] && BRAKE_VALUES[t.slot] === v && t.slot <= s.brakesDeployed &&
+        !s.scenario.modules?.includes("iceBrakes");
+    default:
+      return true; // Kerosene, Ice Brakes, the Intern: the rules decide
+  }
+}
 const other = (c: Crew): Crew => (c === "pilot" ? "copilot" : "pilot");
 const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : speed > s.aeroOrange ? 2 : 1);
 
@@ -48,11 +89,15 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const coffeeOptions = (v: number) =>
     Array.from({ length: 2 * s.coffee + 1 }, (_, i) => i - s.coffee).filter((d) => v + d >= 1 && v + d <= 6).sort((a, b) => Math.abs(a) - Math.abs(b));
 
-  // Axis: the tilt our die would leave (against the partner's die, or the middle if it's hidden).
+  // In a sampled world the partner's unplaced dice are known: assume it answers
+  // with its best one (a hidden die — outside rollouts — counts as any face).
+  const partnerDice = s.dice[partner].filter((d) => !d.placed && d.value !== undefined).map((d) => d.value!);
+  // Axis: the tilt our die would leave against the partner's.
   const tiltWith = (v: number, theirs: number) => s.axis.offset + (crew === "pilot" ? v - theirs : theirs - v);
   const axisCost = (v: number) => {
     const theirs = s.axis[partner];
     if (theirs !== null) return Math.abs(tiltWith(v, theirs)) * 10;
+    if (partnerDice.length) return Math.min(...partnerDice.map((w) => Math.abs(tiltWith(v, w)))) * 10;
     return Math.abs(tiltWith(v, 3.5));
   };
   // Engines: how far the speed lands from what the approach needs this round.
@@ -76,6 +121,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const engineCost = (v: number) => {
     const theirs = s.engines[partner];
     if (theirs !== null) return speedCost(v + theirs + wind);
+    if (partnerDice.length) return Math.min(...partnerDice.map((w) => speedCost(v + w + wind)));
     return [1, 2, 3, 4, 5, 6].reduce((a, f) => a + speedCost(v + f + wind), 0) / 6;
   };
 
@@ -98,25 +144,47 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // 1. Answer the partner's Axis / Engine die while it's known.
   if (axisPick && s.axis[partner] !== null) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
   if (enginePick && s.engines[partner] !== null) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
-  // 2. Clear the nearest airplane in the way (a die of N clears N−1 spaces ahead).
+  // 2–3. Clear airplanes in the way; deploy switches with dice that fit (Coffee
+  // may make one fit). When the crew is behind on its switches — as many left
+  // as rounds to place them in — switches come before distant airplanes.
   const radioSlots: PlacementTarget[] = crew === "pilot" ? [{ kind: "radio", slot: 0 }] : [{ kind: "radio", slot: 0 }, { kind: "radio", slot: 1 }];
   // Free placements only use spare dice — the ones kept for the Axis and Engine
   // stay put (the rules force them onto those once nothing else is left).
   // (An airplane on our space or the next blocks the approach outright: any die may clear it.)
-  for (let ahead = 0; ahead <= 2; ahead++) {
-    if ((s.airplanes[s.position + ahead] ?? 0) === 0) continue;
-    for (const d of ahead <= 1 ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
-  }
-  // 3. Switches with dice that fit (only undeployed ones; the rules keep the order).
-  for (const d of spare) {
-    if (crew === "pilot") {
-      LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(d.value!) && at(d.id, { kind: "landingGear", slot }));
-      if (s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === d.value) at(d.id, { kind: "brakes", slot: s.brakesDeployed });
-    } else {
-      const next = s.flapsGreen.findIndex((g) => !g);
-      if (next >= 0 && FLAPS_VALUES[next].includes(d.value!)) at(d.id, { kind: "flaps", slot: next });
+  const clearAirplanes = (from: number, to: number) => {
+    for (let ahead = from; ahead <= to; ahead++) {
+      if ((s.airplanes[s.position + ahead] ?? 0) === 0) continue;
+      for (const d of ahead <= 1 ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
     }
-  }
+  };
+  const switches = (withCoffee: boolean) => {
+    for (const d of spare) {
+      for (const c of withCoffee ? coffeeOptions(d.value!) : [0]) {
+        const v = d.value! + c;
+        if (crew === "pilot") {
+          // Each Landing Gear raises the speed needed to fly on: lower them once
+          // the approach is on schedule, or when they can't wait any longer.
+          if (gearNow) LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as DieValue) && at(d.id, { kind: "landingGear", slot }, c));
+          if (s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === v) at(d.id, { kind: "brakes", slot: s.brakesDeployed }, c);
+        } else {
+          const next = s.flapsGreen.findIndex((g) => !g);
+          if (next >= 0 && FLAPS_VALUES[next].includes(v as DieValue)) at(d.id, { kind: "flaps", slot: next }, c);
+        }
+      }
+    }
+  };
+  const switchesLeft =
+    crew === "pilot"
+      ? s.gearGreen.filter((g) => !g).length + Math.max(0, BRAKE_VALUES.length - s.brakesDeployed)
+      : s.flapsGreen.filter((g) => !g).length;
+  const roundsToPlace = Math.max(1, s.scenario.rounds - s.round + 1);
+  const behind = switchesLeft >= roundsToPlace;
+  const gearLeft = s.gearGreen.filter((g) => !g).length;
+  const gearNow = gearLeft >= roundsToPlace - 1 || remaining <= roundsAfter + 1;
+  clearAirplanes(0, 1);
+  if (behind) switches(true); // Coffee only when behind: it's also what levels the Axis
+  clearAirplanes(2, 2);
+  if (!behind) switches(false);
   // 4. Our own Axis and Engine with the dice kept for them.
   if (axisPick) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
   if (enginePick) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
@@ -127,6 +195,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     for (const t of radioSlots) at(d.id, t);
   }
   for (const cmd of tries) {
+    if (!maybeLegal(s, crew, cmd)) continue;
     try {
       reduce(s, cmd, playerIdOf(s, crew));
       return cmd;

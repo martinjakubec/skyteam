@@ -275,6 +275,27 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   const k = { ...fresh([3, 6, 6, 6], [1, 1, 1, 1]), airplanes: [0, 0, 0, 0, 0, 1, 0, 0] }; // a 6 could clear space 5, a 3 nothing
   const mk = fastMove(k, "pilot", mulberry32(7));
   check("fast policy: free placements use spare dice, not the one kept for the Axis", !(mk.target.kind !== "axis" && mk.target.kind !== "engine" && die(k, "pilot", mk) === 3));
+  // Behind on Flaps (round 5, all four still up): Flaps before a far airplane, and Coffee makes a die fit.
+  const behind = { ...fresh([5, 5, 5, 5], [5, 3, 5, 5]), round: 5, turn: "copilot", coffee: 1, airplanes: [0, 0, 1, 0, 0, 0, 0, 0] }; // the 3 is spare (5s level the Axis)
+  const mb = fastMove(behind, "copilot", mulberry32(8));
+  check("fast policy: behind on Flaps, deploys one (a 3 −1 Coffee → 2) before clearing a far airplane", mb.target.kind === "flaps" && die(behind, "copilot", mb) + (mb.coffeeDelta ?? 0) <= 2);
+  // Early and behind schedule: no Landing Gear yet (it raises the speed needed to fly on).
+  const early = { ...fresh([2, 3, 3, 4], [3, 3, 3, 3]), round: 2, position: 0, airplanes: Array(8).fill(0) }; // 7 spaces, 5 moving rounds after this
+  const me = fastMove(early, "pilot", mulberry32(9));
+  check("fast policy: behind schedule early on, keeps the Landing Gear up", me.target.kind !== "landingGear");
+  // The cheap pre-check never rules out a move the rules accept.
+  const { maybeLegal, legalMoves: lm } = await import("../packages/shared/src/index.ts");
+  let missed = 0, checked = 0;
+  for (let seed = 0; seed < 30; seed++) {
+    let st = newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0);
+    for (let k = 0; k < 12 && !st.outcome; k++) {
+      const crew = st.turn;
+      for (const m of lm(st, crew)) if (m.type === "placeDie") { checked++; if (!maybeLegal(st, crew, m)) missed++; }
+      const mv = fastMove(st, crew, mulberry32(seed + k));
+      st = applyIntent(st, mv, crew === "pilot" ? P : C, mulberry32(seed * 31 + k), () => 0);
+    }
+  }
+  check(`maybeLegal keeps every legal placement (${checked} checked)`, missed === 0 && checked > 500);
   // Full-game rollouts and their value.
   const g = newGame(DEFAULT_SETUP, P, C, mulberry32(12), 0);
   const end = rolloutGame(g, mulberry32(13));
