@@ -225,7 +225,7 @@ export function Cockpit({
   const clockOffset = clockOffsetOverride ?? serverOffset;
   // Who the paused clock is waiting for (the host flies as Pilot).
   const awaited = snapshot.seats.find((s) => s.connection === "disconnected");
-  const pausedNote = awaited ? `waiting for the ${awaited.role === "host" ? "Pilot" : "Co-Pilot"} to reconnect` : undefined;
+  const pausedNote = awaited ? `waiting for the ${awaited.playerId === game.pilotId ? "Pilot" : "Co-Pilot"} to reconnect` : undefined;
   // Wind sits right of the Co-Pilot's Radio. Dev `?preview=wind` shows the ring.
   const windOn = (game.scenario.modules?.includes("wind") ?? false) || previewModule("wind");
   // Intern sits under Concentration. Dev `?preview=intern` (module not in play)
@@ -265,7 +265,7 @@ export function Cockpit({
   const iceOpen = (i: number, space: "top" | "bottom") =>
     canFree(
       iceInPlay &&
-        i === game.brakesDeployed &&
+        i <= game.brakesDeployed && // the next step, or one already passed (no effect)
         game.iceBrakeSlots[i]?.[space] == null &&
         (space === "bottom" || mine("pilot")),
     ) && valOk([ICE_BRAKE_VALUES[i]]);

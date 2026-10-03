@@ -954,15 +954,18 @@ function placeConcentration(s: GameState, crew: Crew, value: DieValue, slot: num
 }
 
 /**
- * Ice Brakes module: steps 2 → 3 → 4 → 5, only the next one open. Each has a
+ * Ice Brakes module: steps 2 → 3 → 4 → 5, deployed in order. Each has a
  * Pilot-only top space and an either-crew bottom space, filled in any order;
  * once both hold the step's value (same round), the marker passes the step —
- * which opens the next one, so several can complete in one round.
+ * which opens the next one, so several can complete in one round. A step
+ * already passed still takes its value, with no effect.
  */
 function placeIceBrakes(s: GameState, crew: Crew, value: DieValue, slot: number, space: "top" | "bottom"): void {
   if (!hasModule(s, "iceBrakes")) throw new GameRuleError("The Ice Brakes module is not in play.");
   requireSlot(slot, ICE_BRAKE_VALUES.length);
-  if (slot !== s.brakesDeployed) throw new GameRuleError("Ice Brakes must be deployed in order.");
+  // The next step deploys; a step already passed takes its value again with no
+  // effect (a place for a spare die); past the next one is out of order.
+  if (slot > s.brakesDeployed) throw new GameRuleError("Ice Brakes must be deployed in order.");
   const need = ICE_BRAKE_VALUES[slot];
   if (value !== need) throw new GameRuleError(`Ice Brakes ${need} needs a ${need}.`);
   const step = s.iceBrakeSlots[slot];
@@ -974,7 +977,9 @@ function placeIceBrakes(s: GameState, crew: Crew, value: DieValue, slot: number,
     if (step.bottom !== null) throw new GameRuleError("That Ice Brakes space is taken.");
     step.bottom = { value, crew };
   }
-  if (step.top !== null && step.bottom !== null) {
+  if (slot < s.brakesDeployed) {
+    s.log.push(`Ice Brakes ${need} are already set: no effect.`);
+  } else if (step.top !== null && step.bottom !== null) {
     s.brakesDeployed += 1;
     s.log.push(`Ice Brakes set to ${need}.`);
   }

@@ -25,12 +25,16 @@ export function evaluate(s: GameState, crew: Crew): number {
   v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? 400 : 80);
   v -= axisRisk(s, crew);
   v -= landingSpeedRisk(s, crew);
-  // Turns: flying off this space with a tilt it doesn't allow loses.
+  // Turns: flying off this space with a tilt it doesn't allow loses — once
+  // this round's tilt is final, and not on the landing round (no movement).
   const allowed = s.scenario.approachTrack[s.position]?.axisAllowed;
-  if (allowed && !allowed.includes(s.axis.offset)) v -= 600;
+  const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
+  if (allowed && tiltFinal && !isLanding(s) && !allowed.includes(s.axis.offset)) v -= 600;
   // Switches to deploy before landing.
   const todo = s.gearGreen.filter((g) => !g).length + s.flapsGreen.filter((g) => !g).length;
-  v -= todo * 60 + Math.max(0, todo - 2 * roundsLeft) * 300;
+  // Capacity: the rounds still to move plus this one (switches can be set after
+  // the move, and on the landing round), two switch dice a round.
+  v -= todo * 60 + Math.max(0, todo - 2 * (roundsLeft + 1)) * 300;
   const iceOn = s.scenario.modules?.includes("iceBrakes");
   // Every step: two dice average 7, more than any Brakes but the last allow.
   const brakeGoal = iceOn ? ICE_BRAKE_VALUES.length : BRAKE_VALUES.length;
@@ -130,10 +134,16 @@ function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: numbe
   if (moved || s.phase !== "placement" || isLanding(s)) return paceCost(remaining, roundsLeft);
   const after = roundsLeft - 1;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
+  const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
   const afterMove = (speed: number) => {
     const adv = speed <= s.aeroBlue ? 0 : speed > s.aeroOrange ? 2 : 1;
     for (let step = 0; step < adv; step++) {
-      if ((s.airplanes[s.position + step] ?? 0) > 0 || step >= remaining) return 5000; // collision / overshoot
+      const from = s.position + step;
+      if ((s.airplanes[from] ?? 0) > 0 || step >= remaining) return 5000; // collision / overshoot
+      // Every space flown off (incl. the one flown through) must allow the
+      // tilt — known once this round's Axis dice are both down.
+      const turn = s.scenario.approachTrack[from]?.axisAllowed;
+      if (tiltFinal && turn && !turn.includes(s.axis.offset)) return 5000;
     }
     return paceCost(remaining - adv, after);
   };

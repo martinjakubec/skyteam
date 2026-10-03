@@ -6,3 +6,5 @@ export * from "./evaluate";
 export * from "./policy";
 export * from "./setups";
 export * from "./selfplay";
+export * from "./rollout";
+export * from "./search";

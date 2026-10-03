@@ -29,6 +29,7 @@ import * as tut from "../packages/client/src/tutorials/engine.ts";
 import { BASICS, TUTORIALS } from "../packages/client/src/tutorials/index.ts";
 import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
+import * as seating from "../packages/server/src/seating.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
 let failures = 0;
@@ -445,6 +446,80 @@ console.log("4) uuid(): native and getRandomValues fallback");
   } finally {
     Object.defineProperty(crypto, "randomUUID", { value: native, configurable: true, writable: true });
   }
+}
+
+console.log("5) Seating: who flies which seat; bot seats");
+{
+  const { seatCrews, crewOf, botSeat, unreadyOthers } = seating;
+  const base = { id: "r", inviteCode: "i", hostPlayerId: "H", status: "lobby", observers: [], setup: DEFAULT_SETUP, version: 0, game: null, updatedAt: 0 };
+  const seats = [{ playerId: "H", role: "host", ready: true, connected: true }, { playerId: "G", role: "guest", ready: true, connected: true }];
+  check("default: host flies Pilot", JSON.stringify(seatCrews({ ...base, seats })) === JSON.stringify({ pilotId: "H", copilotId: "G" }));
+  check("hostCrew copilot: host flies Co-Pilot", JSON.stringify(seatCrews({ ...base, seats, hostCrew: "copilot" })) === JSON.stringify({ pilotId: "G", copilotId: "H" }));
+  check("crewOf maps a player to the crew they fly", crewOf({ ...base, seats, hostCrew: "copilot" }, "H") === "copilot" && crewOf({ ...base, seats }, "X") === null);
+  const solo = { ...base, hostCrew: "copilot", seats: [seats[0], { ...seats[1], playerId: "bot:1", bot: "cadet" }] };
+  check("bot seat found", botSeat(solo)?.bot === "cadet" && botSeat({ ...base, seats }) === null);
+  check("a setup change keeps the bot ready", unreadyOthers(solo.seats, "H").find((s) => s.bot).ready === true);
+  check("…and un-readies the other humans", unreadyOthers(seats, "H").find((s) => s.playerId === "G").ready === false);
+  check("exit to lobby (keep nobody): humans un-ready, the bot stays ready", JSON.stringify(unreadyOthers(solo.seats, null).map((s) => s.ready)) === "[false,true]");
+
+  const { npcShouldAct } = seating;
+  const { newGame, mulberry32 } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, "bot:1", "H", mulberry32(5), 0); // bot flies Pilot; the Pilot leads round 1
+  const playing = { ...solo, hostCrew: "copilot", status: "in_progress", game: g };
+  check("bot acts when the game waits on its crew", npcShouldAct(playing)?.crew === "pilot");
+  check("…not when it waits on the human", npcShouldAct({ ...playing, game: { ...g, turn: "copilot" } }) === null);
+  check("…not outside an in-progress game", npcShouldAct({ ...playing, status: "finished" }) === null);
+  check("…not in rooms without a bot", npcShouldAct({ ...playing, seats }) === null);
+  check("…not while a Real-Time clock is paused (every action is refused then)", npcShouldAct({ ...playing, game: { ...g, timerRemainingMs: 30000 } }) === null);
+
+  // Real-Time: past the deadline the round is over — the bot doesn't try a move
+  // (it would only be refused as too late); the time-up wakes it if it leads next.
+  check("…not once a Real-Time deadline has passed", npcShouldAct({ ...playing, game: { ...g, timerEndsAt: Date.now() - 1 } }) === null);
+  const { reduce: reduceRT, settle, randDice } = await import("../packages/shared/src/index.ts");
+  const rt = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, "H", "bot:1", mulberry32(8), Date.now()); // human Pilot leads round 1
+  const mandatoryDown = { ...rt, axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: 3, copilot: 3 } };
+  const round2 = settle(reduceRT(mandatoryDown, { type: "timeUp" }, "").state, randDice(mulberry32(9)), Date.now);
+  const rtRoom = { ...solo, hostCrew: "pilot", status: "in_progress", game: round2 };
+  check("after a time-up, the bot (Co-Pilot) leads round 2 and is woken", round2.round === 2 && round2.phase === "placement" && npcShouldAct(rtRoom)?.crew === "copilot");
+  const { lobbyStatus, npcGivesUp, abandonsOnDisconnect } = seating;
+  const readySolo = solo.seats.map((s) => ({ ...s, ready: true }));
+  check("solo: after a setup change both seats are still ready, so the room stays ready", lobbyStatus(unreadyOthers(readySolo, "H")) === "ready");
+  check("multiplayer: after a setup change the guest must ready up again", lobbyStatus(unreadyOthers(seats, "H")) === "lobby");
+  check("a lone host is never ready to start", lobbyStatus([seats[0]]) === "lobby");
+  check("a rejected bot move is retried a couple of times…", !npcGivesUp(1) && !npcGivesUp(2));
+  check("…then the bot gives up instead of retrying forever", npcGivesUp(3));
+  check("a solo game waits for its human (nobody else is waiting)", !abandonsOnDisconnect(solo));
+  check("a multiplayer game is abandoned when a player doesn't return", abandonsOnDisconnect({ ...base, seats }));
+}
+
+console.log("6) think(): Aviator in a worker, with a fallback");
+{
+  const { think, warmThinking, stopThinking, thinkStats } = await import("../packages/server/src/think.ts");
+  const { newGame, mulberry32, redactGameStateFor, legalMoves } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, "P", "C", mulberry32(9), 0);
+  const view = redactGameStateFor(g, "P");
+  const legal = (m) => legalMoves(view, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m));
+  await warmThinking(); // the worker takes a few seconds to load
+  const t0 = Date.now();
+  const m = await think(view, "pilot", "aviator", 1);
+  check("Aviator answers through the worker within its budget", Date.now() - t0 < 2000 && legal(m) && thinkStats.worker === 1 && thinkStats.fallback === 0);
+  check("a worker failure falls back to Navigator", legal(await think(view, "pilot", "aviator", 1, { simulateWorkerError: true })) && thinkStats.fallback === 1);
+  check("Cadet and Navigator answer inline", legal(await think(view, "pilot", "cadet", 2)) && legal(await think(view, "pilot", "navigator", 3)));
+  // The real failure paths, through the worker:
+  const { crashWorkerForTest } = await import("../packages/server/src/think.ts");
+  const before = thinkStats.fallback;
+  crashWorkerForTest(); // the worker handles this first, then dies with the request below pending
+  const during = think(view, "pilot", "aviator", 4);
+  check("a worker crash mid-request falls back to Navigator", legal(await during) && thinkStats.fallback === before + 1);
+  await warmThinking(); // a crashed worker is replaced by a fresh one
+  const w0 = thinkStats.worker;
+  check("…and the next Aviator move comes from a fresh worker", legal(await think(view, "pilot", "aviator", 5)) && thinkStats.worker === w0 + 1);
+  const f0 = thinkStats.fallback;
+  check("a timed-out request falls back to Navigator", legal(await think(view, "pilot", "aviator", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
+  let crashed = false;
+  const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));
+  check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);
+  await stopThinking(); // let the test process exit
 }
 
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);

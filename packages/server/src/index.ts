@@ -2,6 +2,7 @@ import http from "node:http";
 import { createApp } from "./http";
 import { attachSocket } from "./socket";
 import { env } from "./env";
+import { warmThinking } from "./think";
 
 const app = createApp();
 const server = http.createServer(app);
@@ -12,6 +13,7 @@ server.listen(env.PORT, () => {
   console.log(`[server] redis:   ${env.REDIS_URL}`);
   console.log(`[server] cors:    ${env.CLIENT_ORIGIN}`);
   console.log(`[server] grace:   ${env.RECONNECT_GRACE_MS}ms`);
+  void warmThinking(); // the Aviator bot's search worker takes a few seconds to load
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

@@ -111,6 +111,19 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("landing round: both Engine dice down and too fast is fatal", evaluate(down({ engines: { pilot: 3, copilot: 1 } }), "pilot") - evaluate(down({ engines: { pilot: 3, copilot: 4 } }), "pilot") > 2000);
   check("landing round: both Axis dice down and tilted is fatal", evaluate(down({ axis: { pilot: 3, copilot: 3, offset: 0 } }), "pilot") - evaluate(down({ axis: { pilot: 4, copilot: 3, offset: 1 } }), "pilot") > 2000);
 
+  // Deferred review fixes (plan 3, Task 4):
+  const land7 = (extra) => ({ ...fresh([1, 1, 1, 1], [4, 4, 4, 4]), round: 7, gearGreen: [true, true, true], ...extra });
+  const oneFlapLeft = evaluate(land7({ flapsGreen: [true, true, true, false] }), "copilot");
+  const allFlaps = evaluate(land7({ flapsGreen: [true, true, true, true] }), "copilot");
+  check("landing round: a switch that can still be set this round isn't 'out of time'", allFlaps - oneFlapLeft < 200);
+  const turnAt = (pos, allowed) => (st) => ({ ...st, scenario: { ...st.scenario, approachTrack: st.scenario.approachTrack.map((sp, i) => (i === pos ? { ...sp, axisAllowed: allowed } : sp)) } });
+  const tilted7 = land7({ flapsGreen: [true, true, true, true], axis: { pilot: 4, copilot: 3, offset: -1 } });
+  check("landing round: no Turn penalty (the plane doesn't move)", evaluate(turnAt(0, [0])(tilted7), "copilot") === evaluate(tilted7, "copilot"));
+  const before = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 2, axis: { pilot: null, copilot: null, offset: -1 } };
+  check("no Turn penalty before this round's Axis dice are down (the tilt isn't final)", evaluate(turnAt(0, [0])(before), "pilot") === evaluate(before, "pilot"));
+  const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
+  check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
@@ -139,6 +152,61 @@ console.log("4) Self-play: every card, every module combination, every ability")
   const a = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
   const b = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
   check("same seed, same game", JSON.stringify(a) === JSON.stringify(b));
+}
+
+console.log("5) Monte Carlo search (Aviator)");
+{
+  const { searchMove, determinize, rolloutRound, rankMoves, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce, legalMoves } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc, s = DEFAULT_SETUP) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const g = fresh([1, 3, 4, 6], [2, 2, 5, 5]);
+  const view = redactGameStateFor(g, P);
+  const d = determinize(view, mulberry32(1));
+  check("determinize fills every hidden die, keeps mine", d.dice.copilot.every((x) => x.value >= 1 && x.value <= 6 && !x.hidden) && d.dice.pilot.map((x) => x.value).join() === "1,3,4,6");
+  const end = rolloutRound(d, mulberry32(2));
+  check("a rollout finishes the round (or the game)", end.round === 2 || !!end.outcome);
+  const moves = legalMoves(view, "pilot");
+  check("rankMoves orders every legal move", rankMoves(view, "pilot", moves, mulberry32(9)).length === moves.length);
+  const m = searchMove(view, "pilot", mulberry32(3), { budgetMs: 150, shortlist: 4, maxSamples: 20 });
+  check("search returns a legal move", moves.some((x) => JSON.stringify(x) === JSON.stringify(m)));
+  // One legal move → returned at once: the Pilot's last die, Axis done, Engine open.
+  const lastDie = fresh([1, 1, 1, 4], [1, 1, 1, 1]);
+  lastDie.dice.pilot.slice(0, 3).forEach((x) => (x.placed = true));
+  lastDie.axis.pilot = 1;
+  lastDie.rerollTokens = 0; // round 1's Reroll token would make a reroll legal too
+  const only = legalMoves(redactGameStateFor(lastDie, P), "pilot");
+  check("(setup: exactly one legal move — the Engine)", only.length === 1 && only[0].target?.kind === "engine");
+  const t0 = Date.now();
+  check("single legal move returned without sampling", JSON.stringify(searchMove(redactGameStateFor(lastDie, P), "pilot", mulberry32(4), { budgetMs: 5000 })) === JSON.stringify(only[0]) && Date.now() - t0 < 200);
+  const t1 = Date.now();
+  searchMove(view, "pilot", mulberry32(5), { budgetMs: 200 });
+  check("respects its time budget", Date.now() - t1 < 600);
+  // Final round: rollouts stop at the landing outcome.
+  const last = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 7 };
+  check("final-round rollout ends with an outcome", !!rolloutRound(determinize(redactGameStateFor(last, P), mulberry32(6)), mulberry32(7)).outcome);
+  // A pending prompt for the bot: a Reroll offered to the Pilot is answered.
+  const offered = { ...g, turn: "copilot", pendingReroll: "pilot" };
+  check("search answers a pending Reroll prompt", searchMove(redactGameStateFor(offered, P), "pilot", mulberry32(8), { budgetMs: 100 })?.type === "reroll");
+}
+
+console.log("6) Difficulty levels behave differently");
+{
+  const { chooseMove, redactGameStateFor, rankMoves, legalMoves } = await import("../packages/shared/src/index.ts");
+  const picks = (view, level, n = 30) => new Set(Array.from({ length: n }, (_, i) => JSON.stringify(chooseMove(view, "pilot", level, mulberry32(i)))));
+  // A position where the Navigator's best move is unique (the same across seeds).
+  let view = null;
+  for (let seed = 21; seed < 60 && !view; seed++) {
+    const v = redactGameStateFor(newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(seed), 0), P);
+    if (picks(v, "navigator").size === 1) view = v;
+  }
+  check("(setup: a position with a unique best move)", !!view);
+  const ranked = rankMoves(view, "pilot", legalMoves(view, "pilot"), mulberry32(0)).map((m) => JSON.stringify(m));
+  const cadet = picks(view, "cadet", 60);
+  check("Cadet sometimes plays other than the unique best move", cadet.size > 1);
+  check("…but only among the top few (no wild blunders)", [...cadet].every((m) => ranked.slice(0, 6).includes(m)));
+  const t0 = Date.now();
+  const a = chooseMove(view, "pilot", "aviator", mulberry32(1), { budgetMs: 150 });
+  const spent = Date.now() - t0;
+  check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && legalMoves(view, "pilot").some((m) => JSON.stringify(m) === JSON.stringify(a)));
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

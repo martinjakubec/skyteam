@@ -19,6 +19,7 @@ function snapshotFor(game: GameState): RoomSnapshot {
       { playerId: PILOT_ID, role: "host", ready: true, connection: "connected" },
       { playerId: COPILOT_ID, role: "guest", ready: true, connection: "connected" },
     ],
+    hostCrew: "pilot",
     observerCount: 0,
     setup: DEFAULT_SETUP,
     version: 0,

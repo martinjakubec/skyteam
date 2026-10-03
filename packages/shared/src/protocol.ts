@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { GameState } from "./game/state";
+import { BOT_LEVELS, type BotLevel } from "./bot/levels";
+import type { Crew } from "./game/scenario";
 import { EXCLUSIVE_MODULE_GROUPS, IMPLEMENTED_MODULES, MODULE_IDS } from "./game/scenario";
 import { SCENARIO_IDS, SCENARIOS, type GameSetup } from "./game/catalog";
 import { ABILITY_IDS, DEFAULT_MAX_ABILITIES } from "./game/abilities";
@@ -151,6 +153,10 @@ export const SetSetupPayload = z.object({
 }) satisfies z.ZodType<GameSetup, z.ZodTypeDef, unknown>;
 export type SetSetupPayload = z.infer<typeof SetSetupPayload>;
 
+/** Body of a solo-room request: the seat the player flies and the bot's level. */
+export const SoloRoomRequest = z.object({ crew: z.enum(["pilot", "copilot"]), level: z.enum(BOT_LEVELS) });
+export type SoloRoomRequest = z.infer<typeof SoloRoomRequest>;
+
 export const GameCommandPayload = z.object({
   /** Client-generated id so retries (e.g. after a reconnect) are idempotent. */
   commandId: z.string().min(1),
@@ -167,6 +173,8 @@ export interface SeatView {
   role: SeatRole;
   ready: boolean;
   connection: ConnectionState;
+  /** An NPC seat (solo play): its difficulty. */
+  bot?: BotLevel;
 }
 
 /** A full, self-contained view of a room tailored to one recipient. Sent on
@@ -177,6 +185,8 @@ export interface RoomSnapshot {
   status: RoomStatus;
   hostPlayerId: PlayerId;
   seats: SeatView[];
+  /** Which crew the host flies (the guest flies the other). */
+  hostCrew: Crew;
   observerCount: number;
   /** Airport + modules the next game will be created with (host sets it in the lobby). */
   setup: GameSetup;

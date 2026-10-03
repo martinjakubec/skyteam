@@ -310,7 +310,7 @@ async function playGame(combo, tag, airport = AIRPORT) {
   try {
     await a.page.goto(BASE);
     await a.page.getByRole("button", { name: "Create a room" }).click();
-    await b.page.goto(await a.page.locator(".panel input").first().inputValue());
+    await b.page.goto(await a.page.locator(".panel input[readonly]").first().inputValue());
     await b.page.getByRole("button", { name: "Ready up" }).waitFor();
     if (airport) await pickScenario(a, b, airport);
     await setTicks(a, b, combo);
@@ -412,7 +412,7 @@ const abilities = await probe.page.evaluate(() =>
 const cards = [];
 if (CARDS) {
   const b0 = await player(390);
-  await b0.page.goto(await probe.page.locator(".panel input").first().inputValue());
+  await b0.page.goto(await probe.page.locator(".panel input[readonly]").first().inputValue());
   await b0.page.getByRole("button", { name: "Ready up" }).waitFor();
   await probe.page.locator(".picker-trigger").click();
   const listed = await probe.page.evaluate(() =>

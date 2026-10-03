@@ -41,6 +41,7 @@ export async function getRoom(id: string): Promise<Room | null> {
   // Rooms persisted before game setup existed have none; give them the default.
   room.setup ??= structuredClone(DEFAULT_SETUP);
   room.setup.abilities ??= []; // rooms saved before Special Abilities existed
+  room.hostCrew ??= "pilot"; // rooms saved before seats chose their crew
   // An airport that's since been removed (e.g. the old Turns test board).
   if (!SCENARIOS[room.setup.scenarioId]) room.setup = structuredClone(DEFAULT_SETUP);
   // A game saved by an older build lacks newer state fields: fill them in.

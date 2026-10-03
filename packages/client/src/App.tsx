@@ -1,3 +1,4 @@
+import { BOT_LEVELS, BOT_LEVEL_LABELS, type BotLevel, type Crew } from "@skyteam/shared";
 import { useEffect, useRef, useState } from "react";
 import { createRoom, joinRoom } from "./api";
 import { useGame } from "./store";
@@ -6,6 +7,13 @@ import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
 import { TutorialModal } from "./components/TutorialModal";
+
+/** What each bot level plays like. */
+const BOT_LEVEL_BLURBS: Record<BotLevel, string> = {
+  cadet: "learning the ropes",
+  navigator: "steady and sensible",
+  aviator: "plans every die",
+};
 
 export function App() {
   const { snapshot, connected, lastError, connect, setReady, setSetup, startGame, resetGame, exitGame, sendCommand } =
@@ -36,10 +44,13 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onCreate = async () => {
+  const [soloCrew, setSoloCrew] = useState<Crew>("pilot");
+  const [soloLevel, setSoloLevel] = useState<BotLevel>("navigator");
+
+  const onCreate = async (solo?: { crew: Crew; level: BotLevel }) => {
     setBusy(true);
     try {
-      const r = await createRoom();
+      const r = await createRoom(solo);
       setRoom(r);
       connect(r.roomId);
       // Put the room in the URL so a refresh re-enters it via the auto-join path
@@ -57,10 +68,37 @@ export function App() {
       <main className="center">
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <p className="muted">Land the plane together. One Pilot, one Co-Pilot, no talking.</p>
-        <button disabled={busy} onClick={onCreate}>
+        <button disabled={busy} onClick={() => onCreate()}>
           Create a room
         </button>
         <p className="muted">Open an invite link to join an existing room.</p>
+        <section className="panel solo">
+          <h2 className="setup-label">Play solo</h2>
+          <p className="muted">A bot flies the other seat.</p>
+          <fieldset className="solo-options">
+            <legend className="setup-label">Your seat</legend>
+            {(["pilot", "copilot"] as const).map((crew) => (
+              <label key={crew}>
+                <input type="radio" name="solo-crew" checked={soloCrew === crew} onChange={() => setSoloCrew(crew)} />
+                {crew === "pilot" ? "Pilot" : "Co-Pilot"}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset className="solo-options">
+            <legend className="setup-label">The bot</legend>
+            {BOT_LEVELS.map((level) => (
+              <label key={level}>
+                <input type="radio" name="solo-level" checked={soloLevel === level} onChange={() => setSoloLevel(level)} />
+                <span>
+                  {BOT_LEVEL_LABELS[level]} <span className="muted">— {BOT_LEVEL_BLURBS[level]}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <button disabled={busy} onClick={() => onCreate({ crew: soloCrew, level: soloLevel })}>
+            Play solo
+          </button>
+        </section>
         <button className="how-to-play" onClick={() => setHowToPlay(true)}>
           How to play
         </button>
@@ -109,7 +147,8 @@ export function App() {
 
       {!inGame && (
         <>
-          <InviteBox url={inviteUrl} />
+          {/* A solo room's other seat is the bot: nobody to invite. */}
+          {!snapshot?.seats.some((s) => s.bot) && <InviteBox url={inviteUrl} />}
           {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
           <Seats snapshot={snapshot} />
           {snapshot &&

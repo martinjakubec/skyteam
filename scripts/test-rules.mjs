@@ -562,6 +562,16 @@ console.log("18) Ice Brakes: steps 2→5, a same-value pair (top Pilot, bottom e
   const noIce = roll(init(scn({ rounds: 7 })), [2, 1, 1, 1], [1, 1, 1, 1]);
   expectThrow("rejected when the module is not in play", () => place(noIce, P, 2, ice(0, "top")));
 
+  // A step the marker has passed takes a matching die again, with no effect.
+  let passed = roll(init(iscn()), [2, 2, 3, 1], [2, 1, 1, 1]);
+  passed.brakesDeployed = 1; // step 2 passed earlier
+  passed = place(passed, P, 2, ice(0, "top"));
+  check("a passed Ice Brakes step takes a matching die, with no effect", passed.iceBrakeSlots[0].top === 2 && passed.brakesDeployed === 1 && /no effect/.test(passed.log.at(-1)));
+  expectThrow("…still only its own value", () => place(passed, C, 1, ice(0, "bottom")));
+  passed = place(passed, C, 2, ice(0, "bottom"));
+  check("…and a full pair on it still has no effect", passed.brakesDeployed === 1);
+  expectThrow("steps past the next one stay shut", () => place(passed, P, 3, ice(2, "top")));
+
   // A lone die is cleared at round end without advancing.
   let half = roll(init(iscn()), [2, 1, 1, 6], [1, 1, 6, 6]);
   half = place(half, P, 2, ice(0, "top"));
