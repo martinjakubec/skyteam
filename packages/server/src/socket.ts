@@ -2,27 +2,23 @@ import type http from "node:http";
 import { randomInt } from "node:crypto";
 import { Server, type DefaultEventsMap, type Socket } from "socket.io";
 import {
-  INTERN_TOKEN_COUNT,
-  TRAFFIC_DIE_FACES,
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
   MAX_PLAYERS,
   SetReadyPayload,
   SetSetupPayload,
-  createInitialGameState,
   hasModule,
+  newGame,
+  randDice,
   redactGameStateFor,
   reduce,
-  roundRoll,
-  scenarioForSetup,
   settle,
   withEntropy,
   type ClientToServerEvents,
-  type DieValue,
   type GameCommand,
   type GameState,
-  type Dice,
+  type Rand,
   type ServerToClientEvents,
   type SocketData,
 } from "@skyteam/shared";
@@ -167,11 +163,9 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
 
   room.status = "in_progress";
   room.notice = null;
-  // Create the game, then roll round 1's dice. Randomness lives on the server,
-  // never in the pure reducer — we thread rolled values in via a `roll` command.
-  let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, roundRoll(game, serverDice, Date.now()), "").state;
-  room.game = game;
+  // Deal the game and roll round 1. Randomness lives on the server, never in
+  // the pure reducer — rolled values are threaded in via a `roll` command.
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
   room.version = 0;
   await saveRoom(room);
 
@@ -193,9 +187,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
 
   room.status = "in_progress";
-  let game = createInitialGameState(scenarioForSetup(room.setup), pilotId, copilotId, { internTokens: shuffledInternTokens() });
-  game = reduce(game, roundRoll(game, serverDice, Date.now()), "").state;
-  room.game = game;
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
   room.version = 0;
   await saveRoom(room);
 
@@ -228,21 +220,9 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
   broadcastState(io, room);
 }
 
-/** The Intern tokens 1..6 in a random face-up order (Fisher–Yates). */
-function shuffledInternTokens(): DieValue[] {
-  const t = Array.from({ length: INTERN_TOKEN_COUNT }, (_, i) => (i + 1) as DieValue);
-  for (let i = t.length - 1; i > 0; i--) {
-    const j = randomInt(0, i + 1);
-    [t[i], t[j]] = [t[j], t[i]];
-  }
-  return t;
-}
-
-/** Server-owned entropy for every roll. */
-const serverDice: Dice = {
-  d6: () => randomInt(1, 7) as DieValue,
-  traffic: () => TRAFFIC_DIE_FACES[randomInt(0, TRAFFIC_DIE_FACES.length)],
-};
+/** Server-owned entropy for every roll and shuffle. */
+const rand: Rand = (n) => randomInt(0, n);
+const serverDice = randDice(rand);
 
 async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = GameCommandPayload.safeParse(payload);

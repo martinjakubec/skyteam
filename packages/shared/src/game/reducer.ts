@@ -83,8 +83,13 @@ export function reduce(state: GameState, command: ReduceCommand, byPlayerId: Pla
     throw new GameRuleError("The clock is paused until both players are connected.");
   }
   const result = dispatch(draft, command, byPlayerId);
-  // Real-Time: the countdown only runs while a round is being played.
   const s = result.state;
+  // A die changed without the turn passing (a reroll, Adaptation, a swap) can
+  // be stranded too: check again whenever nothing is pending.
+  if (s.phase === "placement" && !s.outcome && !s.pendingReroll && !s.pendingSwap && !s.internHeld && !s.trafficHeld && !s.trafficPending) {
+    discardStuckDice(s);
+  }
+  // Real-Time: the countdown only runs while a round is being played.
   if (s.phase !== "placement" || s.outcome) {
     s.timerEndsAt = null;
     s.timerRemainingMs = null;
@@ -393,7 +398,61 @@ function afterPlacement(s: GameState, description: string): ReduceResult {
     return { state: s, description: endText(s) };
   }
   s.turn = other(s.turn);
+  discardStuckDice(s);
   return { state: s, description };
+}
+
+/** Set while trying placements on a copy, so the trial doesn't recurse into
+ *  the stuck-die check. */
+let probing = false;
+
+/**
+ * A die with nowhere to go — every space it could take is full this round,
+ * even with Coffee — is discarded, so the game can't freeze. Repeats while the
+ * crew to act is stuck, and ends the round if that was the last die.
+ */
+function discardStuckDice(s: GameState): void {
+  if (probing) return;
+  while (s.phase === "placement" && !s.outcome) {
+    const crew = s.turn;
+    const hand = s.dice[crew].filter((d) => !d.placed);
+    // A hidden die (the bot's redacted view of its partner) may well fit: never judge it.
+    if (hand.length === 0 || hand.some((d) => d.value === undefined) || anyValueFits(s, crew) || hand.some((d) => canPlace(s, crew, d.id))) return;
+    const die = hand[0];
+    die.placed = true;
+    s.placedThisRound += 1;
+    s.log.push(`${crewLabel(crew)}'s ${die.value} has nowhere to go: discarded.`);
+    if (s.placedThisRound >= DICE_PER_PLAYER * 2) return endOfRound(s);
+    s.turn = other(s.turn);
+  }
+}
+
+/** Cheap and common: a space that takes any value is free for the crew (its
+ *  Axis or Engine, a Concentration space, its own Radio), so nothing is stuck. */
+function anyValueFits(s: GameState, crew: Crew): boolean {
+  const radioFree = crew === "pilot" ? s.radioPilot === null : s.radioCopilot.some((r) => r === null);
+  return s.axis[crew] === null || s.engines[crew] === null || radioFree || s.concentrationSlots.some((c) => c == null);
+}
+
+/** Whether the crew could place this die anywhere now, with any Coffee. */
+function canPlace(s: GameState, crew: Crew, dieId: number): boolean {
+  const playerId = crew === "pilot" ? s.pilotId : s.copilotId;
+  probing = true;
+  try {
+    for (let coffeeDelta = -s.coffee; coffeeDelta <= s.coffee; coffeeDelta++) {
+      for (const target of HAND_TARGETS) {
+        try {
+          handlePlaceDie(structuredClone(s), { dieId, target, coffeeDelta }, playerId);
+          return true;
+        } catch (e) {
+          if (!(e instanceof GameRuleError)) throw e;
+        }
+      }
+    }
+    return false;
+  } finally {
+    probing = false;
+  }
 }
 
 /**
@@ -466,6 +525,13 @@ const ALL_TARGETS: PlacementTarget[] = [
   ...[0, 1, 2].map((slot) => ({ kind: "brakes" as const, slot })),
   { kind: "kerosene" },
   ...[0, 1, 2, 3].flatMap((slot) => (["top", "bottom"] as const).map((space) => ({ kind: "iceBrakes" as const, slot, space }))),
+];
+
+/** Every space a die from the hand could go, Concentration and training included. */
+const HAND_TARGETS: PlacementTarget[] = [
+  ...ALL_TARGETS,
+  ...[0, 1].map((slot) => ({ kind: "concentration" as const, slot })),
+  { kind: "intern" },
 ];
 
 /** Every space the Traffic die could fill: any colour (both crews' per-crew
@@ -815,10 +881,9 @@ function placeRadio(s: GameState, crew: Crew, value: DieValue, slot: number): vo
 function placeLandingGear(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   if (crew !== "pilot") throw new GameRuleError("Only the Pilot deploys the Landing Gear.");
   requireSlot(slot, LANDING_GEAR_VALUES.length);
-  // Once a section is deployed (green) it stays down for the rest of the game —
-  // re-placing would silently waste the die. gearSlots resets each round, so the
-  // permanent gearGreen flag is what makes a section unavailable.
-  if (s.gearSlots[slot] !== null || s.gearGreen[slot]) throw new GameRuleError("That Landing Gear is already deployed.");
+  // A section that's already down still takes a matching die (one per round) —
+  // a place for a die with no other use — but it has no effect.
+  if (s.gearSlots[slot] !== null) throw new GameRuleError("That Landing Gear space is taken.");
   if (!LANDING_GEAR_VALUES[slot].includes(value)) {
     throw new GameRuleError(`Landing Gear ${slot + 1} needs ${LANDING_GEAR_VALUES[slot].join(" or ")}.`);
   }
@@ -827,13 +892,16 @@ function placeLandingGear(s: GameState, crew: Crew, value: DieValue, slot: numbe
     s.gearGreen[slot] = true;
     s.aeroBlue += 1;
     s.log.push(`Landing Gear ${slot + 1} deployed.`);
+  } else {
+    s.log.push(`Landing Gear ${slot + 1} is already down: no effect.`);
   }
 }
 
 function placeFlaps(s: GameState, crew: Crew, value: DieValue, slot: number): void {
   if (crew !== "copilot") throw new GameRuleError("Only the Co-Pilot deploys the Flaps.");
   requireSlot(slot, FLAPS_VALUES.length);
-  if (s.flapSlots[slot] !== null || s.flapsGreen[slot]) throw new GameRuleError("Those Flaps are already deployed.");
+  // Flaps already down still take a matching die (no effect), in any order.
+  if (s.flapSlots[slot] !== null) throw new GameRuleError("That Flaps space is taken.");
   if (!FLAPS_VALUES[slot].includes(value)) {
     throw new GameRuleError(`Flaps ${slot + 1} needs ${FLAPS_VALUES[slot].join(" or ")}.`);
   }
@@ -846,6 +914,8 @@ function placeFlaps(s: GameState, crew: Crew, value: DieValue, slot: number): vo
     s.flapsGreen[slot] = true;
     s.aeroOrange += 1;
     s.log.push(`Flaps ${slot + 1} deployed.`);
+  } else {
+    s.log.push(`Flaps ${slot + 1} are already down: no effect.`);
   }
 }
 
@@ -857,13 +927,15 @@ function placeBrakes(s: GameState, crew: Crew, value: DieValue, slot: number): v
   if (value !== BRAKE_VALUES[slot]) {
     throw new GameRuleError(`Brakes ${slot + 1} needs a ${BRAKE_VALUES[slot]}.`);
   }
-  // Only the next undeployed brake (slot === brakesDeployed) is legal: a higher
-  // slot is out of order, a lower one is already deployed (and would waste the die).
-  if (slot !== s.brakesDeployed) throw new GameRuleError("Brakes must be deployed in order.");
+  // The next Brakes deploy; ones already deployed take their value again with
+  // no effect; past the next one is out of order.
+  if (slot > s.brakesDeployed) throw new GameRuleError("Brakes must be deployed in order.");
   s.brakeSlots[slot] = true;
   if (slot === s.brakesDeployed) {
     s.brakesDeployed += 1;
     s.log.push(`Brakes set to ${BRAKE_VALUES[slot]}.`);
+  } else {
+    s.log.push(`Brakes ${BRAKE_VALUES[slot]} are already set: no effect.`);
   }
 }
 

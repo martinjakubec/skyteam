@@ -257,8 +257,8 @@ console.log("10) Flaps/Brakes must deploy in order");
   expectThrow("flaps out of order rejected", () => place(s2, C, 3, { kind: "flaps", slot: 1 }));
 }
 
-// 11) A deployed gear/flap section can't be filled again in a later round ----
-console.log("11) Re-placing on an already-deployed section is rejected (no wasted die)");
+// 11) A switch that's already on takes a matching die later, with no effect ----
+console.log("11) An already-on switch takes a matching die (no effect); the numbers still apply");
 {
   let s = init(scn({ rounds: 7 }));
   // R1 (pilot leads): deploy gear0 + flaps0, fill the rest legally to end the round.
@@ -272,11 +272,24 @@ console.log("11) Re-placing on an already-deployed section is rejected (no waste
   s = place(s, P, 4, { kind: "radio", slot: 0 });
   s = place(s, C, 4, { kind: "concentration", slot: 0 }); // 8th die -> round ends
   check("gear/flaps 0 deployed; round advanced", s.gearGreen[0] && s.flapsGreen[0] && s.round === 2 && s.phase === "rolling");
-  // R2 (copilot leads): the per-round flags reset, but the sections stay down.
-  s = roll(s, [2, 1, 1, 1], [2, 1, 1, 1]);
-  expectThrow("re-deploying flaps slot 0 rejected", () => place(s, C, 2, { kind: "flaps", slot: 0 }));
-  s = place(s, C, 2, { kind: "flaps", slot: 1 }); // valid next flap -> turn passes to pilot
-  expectThrow("re-deploying gear slot 0 rejected", () => place(s, P, 2, { kind: "landingGear", slot: 0 }));
+  // R2 (copilot leads): the per-round spaces are free again; the switches stay on.
+  s = roll(s, [3, 2, 1, 1], [2, 1, 1, 1]);
+  const orange = s.aeroOrange;
+  s = place(s, C, 2, { kind: "flaps", slot: 0 }); // already on: allowed, no effect
+  check("an already-on Flaps takes a matching die, with no effect", s.flapSlots[0] === 2 && s.aeroOrange === orange && s.flapsGreen.filter(Boolean).length === 1);
+  check("…and says so in the log", /no effect/i.test(s.log.at(-1)));
+  expectThrow("an already-on Landing Gear still needs its numbers (1/2, not 3)", () => place(s, P, 3, { kind: "landingGear", slot: 0 }));
+  const blue = s.aeroBlue;
+  s = place(s, P, 2, { kind: "landingGear", slot: 0 });
+  check("an already-on Landing Gear takes a matching die, with no effect", s.gearSlots[0] === 2 && s.aeroBlue === blue);
+  expectThrow("one die per switch per round", () => place(s, C, 1, { kind: "flaps", slot: 0 }));
+  // Brakes: one that's on takes its value again; the next ones stay in order.
+  let b = roll(init(scn({ rounds: 7 })), [2, 4, 1, 1], [1, 1, 1, 1]);
+  b.brakesDeployed = 1;
+  b = place(b, P, 2, { kind: "brakes", slot: 0 });
+  check("an already-on Brakes takes its value, with no effect", b.brakeSlots[0] && b.brakesDeployed === 1);
+  b = place(b, C, 1, { kind: "axis" });
+  expectThrow("Brakes past the next one are still out of order", () => place(b, P, 4, { kind: "brakes", slot: 2 }));
 }
 
 // 12) Joint reroll: active player initiates, the other player then responds ---
@@ -839,12 +852,14 @@ console.log("26) Synchronisation");
   // No empty space: discarded rather than deadlocking.
   let z = roll(init(sync()), [1, 1, 1, 1], [1, 1, 1, 1]);
   z.gearSlots[0] = 1; z.flapSlots[0] = 1;
+  z.gearSlots[2] = 6; // an already-down switch takes a matching die, so fill the 5's one
   z.trafficPending = true; z.syncDone = true;
   z.axis = { pilot: 1, copilot: 1, offset: 0 }; z.engines = { pilot: 1, copilot: 1 };
   z.radioPilot = 1; z.radioCopilot = [1, 1]; z.concentrationSlots = [{ value: 1, crew: "pilot" }, { value: 1, crew: "copilot" }];
   z.gearGreen = [true, true, true]; z.flapsGreen = [true, true, false, false]; z.brakesDeployed = 3;
   z = rollT(z, 5);
-  check("no legal space: the Traffic die is discarded", z.trafficHeld === null && !z.trafficPending && z.log.at(-1).includes("nowhere"));
+  // (Every space is full here, so the hands' dice are then discarded too and the round ends.)
+  check("no legal space: the Traffic die is discarded", z.trafficHeld === null && !z.trafficPending && z.log.some((l) => l.includes("Traffic die (5) has nowhere to go")));
 
   const plain = roll(init(scn({ rounds: 7 })), [1, 1, 1, 1], [1, 1, 1, 1]);
   check("not without the card", !place(place(plain, P, 1, { kind: "landingGear", slot: 0 }), C, 1, { kind: "flaps", slot: 0 }).trafficPending);
@@ -1182,6 +1197,43 @@ console.log("31) Traffic dice: rolled at the start of a round on a space showing
 
   const hnd = init(scn({ rounds: 7, approachTrack: APPROACH_TRACKS["red-HND"] }));
   check("a real board: red Haneda rolls 3 dice in round 1", roll(hnd, hand, hand, [2, 3, 4]).airplanes.slice(0, 4).join() === "1,1,2,2");
+}
+
+// 32) A die with nowhere to go is discarded, so the game can't freeze ---------
+console.log("32) A die that fits no space is discarded (the game never freezes)");
+{
+  let s = roll(init(scn({ rounds: 7 })), [3, 1, 4, 5], [3, 1, 6, 6]);
+  // Set up round 1 just before the Pilot's last die: everything the Co-Pilot's
+  // last die (a 6) could use is full — Axis, Engines, both Radios and both
+  // Concentration spaces; no Flaps space takes a 6 and there's no Coffee.
+  const mark = (crew, n) => s.dice[crew].slice(0, n).forEach((d) => (d.placed = true));
+  mark("pilot", 3);
+  mark("copilot", 3);
+  s.axis = { pilot: 3, copilot: 3, offset: 0 };
+  s.engines = { pilot: 1, copilot: 1 };
+  s.radioCopilot = [1, 1];
+  s.concentrationSlots = [{ value: 4, crew: "pilot" }, { value: 6, crew: "copilot" }];
+  s.placedThisRound = 6;
+  s.turn = "pilot";
+  s = place(s, P, 5, { kind: "radio", slot: 0 });
+  check("the stuck die is discarded and the round ends", s.round === 2 && s.phase === "rolling");
+  check("…with a log line saying why", s.log.some((l) => /Co-Pilot's 6 has nowhere to go/.test(l)));
+
+  // Changing a die without passing the turn (Adaptation) can strand it too.
+  let a = roll(init(scn({ rounds: 7, abilities: ["adaptation"] })), [3, 1, 4, 4], [3, 1, 6, 5]);
+  a.dice.pilot.forEach((d) => (d.placed = true));
+  a.dice.copilot.slice(0, 3).forEach((d) => (d.placed = true));
+  a.axis = { pilot: 3, copilot: 3, offset: 0 };
+  a.engines = { pilot: 1, copilot: 1 };
+  a.radioPilot = 4;
+  a.radioCopilot = [6, 6];
+  a.concentrationSlots = [{ value: 4, crew: "pilot" }, { value: 6, crew: "copilot" }];
+  a.flapsGreen = [true, true, true, false];
+  a.flapSlots = [1, 2, 3, null]; // the 5 fits the last Flaps (4/5); a 2 fits nothing free
+  a.placedThisRound = 7;
+  a.turn = "copilot";
+  a = reduce(a, { type: "adapt", dieId: 3 }, C).state; // 5 → 2
+  check("a die stranded by Adaptation is discarded too", a.round === 2 && a.log.some((l) => /Co-Pilot's 2 has nowhere to go/.test(l)));
 }
 
 console.log(failures === 0 ? "\nALL RULE TESTS PASSED ✅" : `\n${failures} RULE TEST(S) FAILED ❌`);

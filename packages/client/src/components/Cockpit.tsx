@@ -550,7 +550,7 @@ export function Cockpit({
                 {game.brakeSlots.map((taken, i) => (
                   <Fragment key={i}>
                     {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
-                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(mine("pilot") && i === game.brakesDeployed) && valOk([BRAKE_VAL[i]])} />
+                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(mine("pilot") && i <= game.brakesDeployed && !taken) && valOk([BRAKE_VAL[i]])} />
                   </Fragment>
                 ))}
               </div>
@@ -643,7 +643,7 @@ export function Cockpit({
                   held={game.gearSlots[i]}
                   label={GEAR_LABEL[i]}
                   onClick={() => place({ kind: "landingGear", slot: i })}
-                  enabled={canFree(mine("pilot") && !game.gearGreen[i]) && valOk(GEAR_RANGES[i])}
+                  enabled={canFree(mine("pilot") && game.gearSlots[i] === null) && valOk(GEAR_RANGES[i])}
                 />
               ))}
             </div>
@@ -679,7 +679,7 @@ export function Cockpit({
                     held={game.flapSlots[i]}
                     label={FLAP_LABEL[i]}
                     onClick={() => place({ kind: "flaps", slot: i })}
-                    enabled={canFree(mine("copilot") && i === nextFlap) && valOk(FLAP_RANGES[i])}
+                    enabled={canFree(mine("copilot") && (i === nextFlap || green) && game.flapSlots[i] === null) && valOk(FLAP_RANGES[i])}
                   />
                 </Fragment>
               ))}
