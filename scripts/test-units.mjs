@@ -29,6 +29,7 @@ import * as tut from "../packages/client/src/tutorials/engine.ts";
 import { BASICS, TUTORIALS } from "../packages/client/src/tutorials/index.ts";
 import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
+import * as seating from "../packages/server/src/seating.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
 let failures = 0;
@@ -445,6 +446,21 @@ console.log("4) uuid(): native and getRandomValues fallback");
   } finally {
     Object.defineProperty(crypto, "randomUUID", { value: native, configurable: true, writable: true });
   }
+}
+
+console.log("5) Seating: who flies which seat; bot seats");
+{
+  const { seatCrews, crewOf, botSeat, unreadyOthers } = seating;
+  const base = { id: "r", inviteCode: "i", hostPlayerId: "H", status: "lobby", observers: [], setup: DEFAULT_SETUP, version: 0, game: null, updatedAt: 0 };
+  const seats = [{ playerId: "H", role: "host", ready: true, connected: true }, { playerId: "G", role: "guest", ready: true, connected: true }];
+  check("default: host flies Pilot", JSON.stringify(seatCrews({ ...base, seats })) === JSON.stringify({ pilotId: "H", copilotId: "G" }));
+  check("hostCrew copilot: host flies Co-Pilot", JSON.stringify(seatCrews({ ...base, seats, hostCrew: "copilot" })) === JSON.stringify({ pilotId: "G", copilotId: "H" }));
+  check("crewOf maps a player to the crew they fly", crewOf({ ...base, seats, hostCrew: "copilot" }, "H") === "copilot" && crewOf({ ...base, seats }, "X") === null);
+  const solo = { ...base, hostCrew: "copilot", seats: [seats[0], { ...seats[1], playerId: "bot:1", bot: "cadet" }] };
+  check("bot seat found", botSeat(solo)?.bot === "cadet" && botSeat({ ...base, seats }) === null);
+  check("a setup change keeps the bot ready", unreadyOthers(solo.seats, "H").find((s) => s.bot).ready === true);
+  check("…and un-readies the other humans", unreadyOthers(seats, "H").find((s) => s.playerId === "G").ready === false);
+  check("exit to lobby (keep nobody): humans un-ready, the bot stays ready", JSON.stringify(unreadyOthers(solo.seats, null).map((s) => s.ready)) === "[false,true]");
 }
 
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);

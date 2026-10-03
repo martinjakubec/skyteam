@@ -27,6 +27,7 @@ import { corsOptions } from "./cors";
 import { getRoom, saveRoom } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
+import { crewOf, seatCrews, unreadyOthers } from "./seating";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
@@ -142,7 +143,7 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
 
   if (JSON.stringify(parsed.data) !== JSON.stringify(room.setup)) {
     room.setup = parsed.data;
-    for (const seat of room.seats) if (seat.playerId !== playerId) seat.ready = false;
+    room.seats = unreadyOthers(room.seats, playerId);
     room.status = "lobby";
     await saveRoom(room);
   }
@@ -157,9 +158,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   if (room.hostPlayerId !== playerId) return ack({ ok: false, error: "Only the host can start." });
   if (room.status !== "ready") return ack({ ok: false, error: "Both players must be ready." });
 
-  // The Pilot (blue) is the host; the Co-Pilot (orange) is the guest.
-  const pilotId = room.seats.find((s) => s.role === "host")!.playerId;
-  const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
+  const { pilotId, copilotId } = seatCrews(room);
 
   room.status = "in_progress";
   room.notice = null;
@@ -183,8 +182,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   if (room.status !== "in_progress" && room.status !== "finished")
     return ack({ ok: false, error: "There is no game to reset." });
 
-  const pilotId = room.seats.find((s) => s.role === "host")!.playerId;
-  const copilotId = room.seats.find((s) => s.role === "guest")!.playerId;
+  const { pilotId, copilotId } = seatCrews(room);
 
   room.status = "in_progress";
   room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
@@ -212,8 +210,8 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
   room.status = "lobby";
   room.game = null;
   room.version = 0;
-  for (const s of room.seats) s.ready = false;
-  room.notice = `The ${seat.role === "host" ? "Pilot" : "Co-Pilot"} ended the game.`;
+  room.seats = unreadyOthers(room.seats, null); // a bot seat stays ready
+  room.notice = `The ${crewOf(room, playerId) === "pilot" ? "Pilot" : "Co-Pilot"} ended the game.`;
   await saveRoom(room);
 
   ack({ ok: true });
