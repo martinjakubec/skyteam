@@ -461,6 +461,16 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("a setup change keeps the bot ready", unreadyOthers(solo.seats, "H").find((s) => s.bot).ready === true);
   check("…and un-readies the other humans", unreadyOthers(seats, "H").find((s) => s.playerId === "G").ready === false);
   check("exit to lobby (keep nobody): humans un-ready, the bot stays ready", JSON.stringify(unreadyOthers(solo.seats, null).map((s) => s.ready)) === "[false,true]");
+
+  const { npcShouldAct } = seating;
+  const { newGame, mulberry32 } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, "bot:1", "H", mulberry32(5), 0); // bot flies Pilot; the Pilot leads round 1
+  const playing = { ...solo, hostCrew: "copilot", status: "in_progress", game: g };
+  check("bot acts when the game waits on its crew", npcShouldAct(playing)?.crew === "pilot");
+  check("…not when it waits on the human", npcShouldAct({ ...playing, game: { ...g, turn: "copilot" } }) === null);
+  check("…not outside an in-progress game", npcShouldAct({ ...playing, status: "finished" }) === null);
+  check("…not in rooms without a bot", npcShouldAct({ ...playing, seats }) === null);
+  check("…not while a Real-Time clock is paused (every action is refused then)", npcShouldAct({ ...playing, game: { ...g, timerRemainingMs: 30000 } }) === null);
 }
 
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);

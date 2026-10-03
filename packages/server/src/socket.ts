@@ -27,11 +27,12 @@ import { corsOptions } from "./cors";
 import { getRoom, saveRoom } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
+import { cancelNpc, scheduleNpc } from "./npc";
 import { crewOf, seatCrews, unreadyOthers } from "./seating";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
-type IOServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
+export type IOServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
 type IOSocket = Socket<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
 
 /**
@@ -106,6 +107,7 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   socket.emit("room:state", toSnapshot(room, playerId));
   broadcastState(io, room, socket.id);
   await syncClock(io, room); // Real-Time: resume once both seats are back
+  scheduleNpc(io, room.id); // after a server restart, the bot picks up where it was
 }
 
 async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
@@ -171,6 +173,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   ack({ ok: true });
   broadcastState(io, room);
   await syncClock(io, room);
+  scheduleNpc(io, room.id); // the bot may lead round 1
 }
 
 /** Restart an in-progress or finished game from a fresh round 1 (same crew). */
@@ -184,6 +187,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   const { pilotId, copilotId } = seatCrews(room);
 
+  cancelNpc(room.id); // a bot action for the old game must not land on the new one
   room.status = "in_progress";
   room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
   room.version = 0;
@@ -192,6 +196,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   ack({ ok: true });
   broadcastState(io, room);
   await syncClock(io, room);
+  scheduleNpc(io, room.id);
 }
 
 /**
@@ -207,6 +212,7 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
     return ack({ ok: false, error: "There is no game to leave." });
 
   clearClock(room.id);
+  cancelNpc(room.id);
   room.status = "lobby";
   room.game = null;
   room.version = 0;
@@ -232,7 +238,25 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   if (!room.seats.some((s) => s.playerId === playerId))
     return ack({ ok: false, error: "Observers cannot act." });
 
-  const command = parsed.data.command;
+  const error = await applyCommand(io, room, playerId, parsed.data.command, () => ack({ ok: true }));
+  if (error) ack({ ok: false, error });
+}
+
+/**
+ * Apply one player's command — a human's, or the bot's — the way every
+ * command is applied: server values, the Real-Time deadline, the rules,
+ * persistence, per-recipient broadcast, the clock, and the bot's next turn.
+ * Resolves to the refusal message, or null once applied (`onApplied` runs
+ * just before the broadcast, so a human's ack arrives first).
+ */
+export async function applyCommand(
+  io: IOServer,
+  room: Room,
+  playerId: string,
+  command: GameCommand,
+  onApplied?: () => void,
+): Promise<string | null> {
+  if (!room.game) return "No active game.";
   // A reroll is an intent: the server supplies the new (secret) dice values.
   // Same for Anticipation's single-die reroll.
   const rcmd = withEntropy(command, serverDice);
@@ -242,26 +266,29 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   const endsAt = room.game.timerEndsAt;
   if (endsAt !== null && Date.now() >= endsAt) {
     await onTimeUp(io, room.id, endsAt);
-    return ack({ ok: false, error: "Time's up." });
+    return "Time's up.";
   }
 
+  let game: GameState;
   try {
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
-    const game = settleNow(reduce(room.game, rcmd, playerId).state);
-    room.game = game;
-    room.version += 1;
-    if (game.outcome) room.status = "finished";
-    await saveRoom(room);
-
-    ack({ ok: true });
-    emitGameEvent(io, room, command, playerId);
-    // On game end, also push a fresh room:state so the lobby/status UI updates.
-    if (room.status === "finished") broadcastState(io, room);
-    await syncClock(io, room);
+    game = settleNow(reduce(room.game, rcmd, playerId).state);
   } catch (e) {
-    ack({ ok: false, error: e instanceof GameRuleError ? e.message : "Command rejected." });
+    return e instanceof GameRuleError ? e.message : "Command rejected.";
   }
+  room.game = game;
+  room.version += 1;
+  if (game.outcome) room.status = "finished";
+  await saveRoom(room);
+
+  onApplied?.();
+  emitGameEvent(io, room, command, playerId);
+  // On game end, also push a fresh room:state so the lobby/status UI updates.
+  if (room.status === "finished") broadcastState(io, room);
+  await syncClock(io, room);
+  scheduleNpc(io, room.id);
+  return null;
 }
 
 /** Supply what the reducer asked the server for (see shared `settle`): Traffic
@@ -320,6 +347,7 @@ async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<v
   await saveRoom(room);
   broadcastState(io, room);
   await syncClock(io, room);
+  scheduleNpc(io, room.id); // the next round may open with the bot's turn
 }
 
 /** Emit a game event to each participant with the game state redacted for them
@@ -389,7 +417,7 @@ async function context(socket: IOSocket): Promise<{ room: Room | null; playerId:
 }
 
 /** Send each participant a snapshot tailored with their own "you" identity. */
-function broadcastState(io: IOServer, room: Room, exceptSocketId?: string) {
+export function broadcastState(io: IOServer, room: Room, exceptSocketId?: string) {
   for (const sock of io.sockets.sockets.values()) {
     if (sock.data.roomId !== room.id || !sock.data.playerId) continue;
     if (exceptSocketId && sock.id === exceptSocketId) continue;
