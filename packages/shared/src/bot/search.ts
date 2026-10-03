@@ -1,3 +1,4 @@
+import { GameRuleError } from "../game/reducer";
 import type { GameCommand } from "../protocol";
 import { applyIntentInPlace, type Rand } from "../game/entropy";
 import type { Crew } from "../game/scenario";
@@ -12,11 +13,13 @@ import { mulberry32 } from "./rng";
  *  policy's own choice — the Navigator scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
 export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew), dedupe = true): GameCommand[] {
-  // Moves that lead to the same game — the same value on the same space (by
-  // another die of that value, or Coffee) — are one candidate, not several.
+  // Moves that lead to the same game — a die of the same value, the same
+  // Coffee spent, on the same space (however the space is spelled: a target
+  // with or without the crew's own side) — are one move, not several.
   const valueOf = (id: number) => view.dice[crew].find((d) => d.id === id)?.value ?? 0;
+  const space = (t: Record<string, unknown>) => `${t.kind}:${t.slot ?? ""}:${t.space ?? ""}:${t.side ?? crew}`;
   const key = (m: GameCommand) =>
-    m.type === "placeDie" ? `${JSON.stringify(m.target)}=${valueOf(m.dieId) + (m.coffeeDelta ?? 0)}`
+    m.type === "placeDie" ? `${space(m.target)}=${valueOf(m.dieId)}${m.coffeeDelta ? `${m.coffeeDelta > 0 ? "+" : ""}${m.coffeeDelta}` : ""}`
     : m.type === "reroll" ? `reroll:${m.dieIds.map(valueOf).sort().join()}`
     : JSON.stringify(m);
   const seen = new Set<string>();
@@ -41,6 +44,8 @@ export interface SearchStats {
   candidates: GameCommand[];
   totals: number[];
   counts: number[];
+  /** Samples skipped because the rules refused a move in them (should stay 0). */
+  errors?: number;
 }
 
 export interface SearchOptions {
@@ -56,6 +61,8 @@ export interface SearchOptions {
   halving?: boolean;
   /** Count moves that lead to the same game (same value, same space) once. */
   dedupe?: boolean;
+  /** Search these candidates instead of picking them (tests). */
+  candidates?: GameCommand[];
 }
 
 /**
@@ -79,11 +86,11 @@ export function searchStats(
   view: GameState,
   crew: Crew,
   rand: Rand,
-  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe }: SearchOptions,
+  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given }: SearchOptions,
 ): SearchStats {
-  const moves = legalMoves(view, crew);
+  const moves = given ?? legalMoves(view, crew);
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
-  const candidates = searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
+  const candidates = given ?? searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);
   const counts = candidates.map(() => 0);
   const deadline = Date.now() + budgetMs;
@@ -91,25 +98,36 @@ export function searchStats(
   const mean = (i: number) => totals[i] / Math.max(1, counts[i]);
   let alive = candidates.map((_, i) => i);
   let budget = maxSamples * candidates.length;
+  let errors = 0;
   let rung = 2;
   while (budget > 0 && Date.now() < deadline) {
     for (const i of alive) {
       if (budget <= 0 || Date.now() >= deadline) break;
-      // A fresh sampled world, owned here: the candidate and the rollout play on it in place.
-      const world = applyIntentInPlace(determinize(view, rand), candidates[i], playerIdOf(view, crew), rand, now);
-      const round = world.round;
-      totals[i] += horizon === "game"
-        ? rolloutValue(rolloutInPlace(world, rand), crew)
-        : evaluate(rolloutInPlace(world, rand, 40, (st) => st.round !== round), crew);
-      counts[i] += 1;
       budget -= 1;
+      // A fresh sampled world, owned here: the candidate and the rollout play on
+      // it in place. A move the rules refuse in it (a gap in placementCheck, or a
+      // bug) skips this one sample and is counted — the search goes on.
+      let value: number;
+      try {
+        const world = applyIntentInPlace(determinize(view, rand), candidates[i], playerIdOf(view, crew), rand, now);
+        const round = world.round;
+        value = horizon === "game"
+          ? rolloutValue(rolloutInPlace(world, rand), crew)
+          : evaluate(rolloutInPlace(world, rand, 40, (st) => st.round !== round), crew);
+      } catch (e) {
+        if (!(e instanceof GameRuleError)) throw e;
+        errors += 1;
+        continue;
+      }
+      totals[i] += value;
+      counts[i] += 1;
     }
     if (halving && alive.length > 2 && alive.every((i) => counts[i] >= rung)) {
       alive = [...alive].sort((a, b) => mean(b) - mean(a)).slice(0, Math.max(2, Math.ceil(alive.length / 2)));
       rung *= 2;
     }
   }
-  return { candidates, totals, counts };
+  return { candidates, totals, counts, errors };
 }
 
 /**
@@ -125,6 +143,8 @@ export function pickBest(stats: SearchStats[]): GameCommand | null {
   const same = stats.filter((st) => JSON.stringify(st.candidates) === key);
   const totals = first.candidates.map((_, i) => same.reduce((a, st) => a + st.totals[i], 0));
   const counts = first.candidates.map((_, i) => same.reduce((a, st) => a + st.counts[i], 0));
+  // Nothing sampled (no time at all): the best-ranked candidate.
+  if (counts.every((n) => n === 0)) return first.candidates[0];
   const enough = Math.max(1, Math.max(...counts) / 4);
   let best = -1;
   for (let i = 0; i < counts.length; i++) {

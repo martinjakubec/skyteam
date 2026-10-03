@@ -2,6 +2,15 @@
 import { newGame, applyIntent, randDice, shuffledInternTokens, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
 
 let failures = 0;
+/** Two moves lead to the same game: the same space (spelled with or without the
+ *  crew's own side), a die of the same value, the same Coffee spent. */
+const sameGame = (view, crew, a, b) => {
+  if (!a || !b || a.type !== b.type) return false;
+  if (a.type !== "placeDie") return JSON.stringify(a) === JSON.stringify(b);
+  const val = (m) => view.dice[crew].find((d) => d.id === m.dieId)?.value;
+  const sp = (t) => `${t.kind}:${t.slot ?? ""}:${t.space ?? ""}:${t.side ?? crew}`;
+  return sp(a.target) === sp(b.target) && val(a) === val(b) && (a.coffeeDelta ?? 0) === (b.coffeeDelta ?? 0);
+};
 /** The rules accept this move from `who` on `state` (the same move can be spelled differently). */
 const accepts = (state, who, m) => { try { return !!m && !!applyIntent(state, m, who, mulberry32(1), () => 0); } catch { return false; } };
 const check = (label, cond) => { console.log(`${cond ? "  ✅" : "  ❌"} ${label}`); if (!cond) failures++; };
@@ -350,11 +359,11 @@ console.log("9) Aviator's candidates include the rollout policy's own choice");
   for (let seed = 0; seed < 10; seed++) {
     const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), P);
     const own = JSON.stringify(fastMove(v, "pilot", mulberry32(seed)));
-    if (searchCandidates(v, "pilot", mulberry32(seed), 6).some((m) => JSON.stringify(m) === own)) included++;
+    if (searchCandidates(v, "pilot", mulberry32(seed), 6).some((m) => sameGame(v, "pilot", m, JSON.parse(own)))) included++;
   }
   check("the policy's move is always among the candidates", included === 10);
   // Step 5: no two candidates lead to the same game (same value on the same space).
-  const key = (v, m) => m.type === "placeDie" ? `${JSON.stringify(m.target)}=${v.dice.pilot.find((d) => d.id === m.dieId).value + (m.coffeeDelta ?? 0)}` : JSON.stringify(m);
+  const key = (v, m) => m.type === "placeDie" ? `${m.target.kind}:${m.target.slot ?? ""}:${m.target.side ?? "pilot"}=${v.dice.pilot.find((d) => d.id === m.dieId).value}/${m.coffeeDelta ?? 0}` : JSON.stringify(m);
   let dupes = 0;
   for (let seed = 0; seed < 10; seed++) {
     const v = redactGameStateFor({ ...newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), coffee: 2 }, P);
@@ -393,6 +402,39 @@ console.log("10) Fast rollouts: moves applied in place; surely-legal placements"
     }
   }
   check(`placementCheck: never rules out a legal move, never calls an illegal one sure (${sure} sure)`, wrong === 0 && sure > 500);
+  // …and across every representative setup (all cards, module combinations,
+  // abilities), every target, both sides, every slot, every Coffee adjustment.
+  const { representativeSetups } = await import("../packages/shared/src/index.ts");
+  const sides = ["pilot", "copilot", undefined];
+  const ALL = [
+    ...sides.flatMap((side) => [{ kind: "axis", side }, { kind: "engine", side }, { kind: "radio", slot: 0, side }, { kind: "radio", slot: 1, side }]),
+    ...[0, 1, 2].map((slot) => ({ kind: "landingGear", slot })), ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps", slot })),
+    ...[0, 1, 2].map((slot) => ({ kind: "brakes", slot })), ...[0, 1].map((slot) => ({ kind: "concentration", slot })),
+  ].map((t) => (t.side === undefined ? Object.fromEntries(Object.entries(t).filter(([k]) => k !== "side")) : t));
+  let wide = 0, wideWrong = 0, wideSure = 0;
+  for (const [n, setup] of representativeSetups().entries()) {
+    let st = newGame(setup, P, C, mulberry32(500 + n), 0);
+    for (let k = 0; k < 6 && !st.outcome; k++) {
+      const crew = actorFor(st);
+      if (!crew) break;
+      const id = crew === "pilot" ? P : C;
+      for (const d of st.dice[crew].filter((x) => !x.placed)) {
+        for (let c = -st.coffee; c <= st.coffee; c++) {
+          for (const target of ALL) {
+            const m = { type: "placeDie", dieId: d.id, target, ...(c ? { coffeeDelta: c } : {}) };
+            const verdict = placementCheck(st, crew, m);
+            let ok = true;
+            try { reduce(st, m, id); } catch { ok = false; }
+            wide++;
+            if (verdict === true) wideSure++;
+            if ((verdict === true && !ok) || (verdict === false && ok)) wideWrong++;
+          }
+        }
+      }
+      st = applyIntent(st, fastMove(st, crew, mulberry32(n * 13 + k)), id, mulberry32(n * 31 + k), () => 0);
+    }
+  }
+  check(`placementCheck agrees with the rules on every setup, target, side, slot and Coffee (${wide} checked, ${wideSure} sure)`, wideWrong === 0 && wideSure > 1000);
   const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(5), 0), P);
   const world = determinize(v, mulberry32(6));
   check("a sampled world carries no log (nothing to copy or write)", world.log.length === 0 && (world.log.push("x"), world.log.length === 0));
@@ -425,6 +467,31 @@ console.log("11) Parallel search: per-worker stats, merged");
   check("pickBest merges their samples and returns a legal move", accepts(g, P, merged));
   const lopsided = { candidates: a.candidates, totals: a.candidates.map((_, i) => (i === 0 ? 9000 : 50 * 8)), counts: a.candidates.map((_, i) => (i === 0 ? 1 : 8)) };
   check("…ignoring a candidate with too few samples to trust", JSON.stringify(pickBest([lopsided])) !== JSON.stringify(a.candidates[0]));
+}
+
+console.log("12) Search robustness (review fixes)");
+{
+  const { searchStats, searchCandidates, pickBest, fastMove, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(41), 0);
+  const v = redactGameStateFor(g, P);
+  // A sample that throws a rule error is skipped and counted, not fatal to the search.
+  const good = searchStats(v, "pilot", mulberry32(1), { budgetMs: Infinity, maxSamples: 2 }).candidates;
+  const bad = { type: "placeDie", dieId: 0, target: { kind: "brakes", slot: 2 } }; // out of order: the rules refuse it
+  let threw = false, st = null;
+  try { st = searchStats(v, "pilot", mulberry32(2), { budgetMs: Infinity, maxSamples: 2, candidates: [...good, bad] }); } catch { threw = true; }
+  check("a sample the rules refuse is skipped and counted (the search goes on)", !threw && st.errors > 0 && st.counts.slice(0, good.length).every((n) => n > 0));
+  // No samples at all: still a move (the best-ranked candidate), never undefined.
+  const none = pickBest([{ candidates: good, totals: good.map(() => 0), counts: good.map(() => 0) }]);
+  check("with no samples, pickBest returns the best-ranked candidate", JSON.stringify(none) === JSON.stringify(good[0]));
+  // The policy's own move survives even when a Navigator move puts the same value
+  // on the same space without Coffee (different games: one spends a Coffee).
+  let lost = 0;
+  for (let seed = 0; seed < 20; seed++) {
+    const vv = redactGameStateFor({ ...newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), coffee: 2 }, P);
+    const own = JSON.stringify(fastMove(vv, "pilot", mulberry32(seed)));
+    if (!searchCandidates(vv, "pilot", mulberry32(seed), 6, undefined, false).some((m) => sameGame(vv, "pilot", m, JSON.parse(own)))) lost++;
+  }
+  check("the policy's own move is always kept (Coffee moves aren't 'duplicates')", lost === 0);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

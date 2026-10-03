@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { DEFAULT_RECONNECT_GRACE_MS } from "@skyteam/shared";
 
 export const env = {
@@ -10,6 +11,10 @@ export const env = {
   NPC_DELAY_MS: Number(process.env.NPC_DELAY_MS ?? 900),
   /** How long the Aviator bot may search for a move. */
   NPC_THINK_MS: Number(process.env.NPC_THINK_MS ?? 600),
+  /** Search worker threads (each bot decision fans out to the idle ones). Set it
+   *  to the CPUs the container may really use: the default (a spare core each,
+   *  at most 4) counts the host's cores, which may exceed a container's quota. */
+  NPC_WORKERS: Math.max(1, Number(process.env.NPC_WORKERS) || Math.min(4, availableParallelism() - 1)),
   /** Testing only: shortens every Real-Time round (unset = the game's 60 s). */
   REAL_TIME_SECONDS: process.env.REAL_TIME_SECONDS ? Number(process.env.REAL_TIME_SECONDS) : undefined,
 };

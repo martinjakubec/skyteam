@@ -1,4 +1,3 @@
-import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import { chooseMove, mulberry32, pickBest, type BotLevel, type Crew, type GameCommand, type GameState, type SearchStats } from "@skyteam/shared";
 import { env } from "./env";
@@ -13,8 +12,11 @@ interface Slot {
   inFlight: Set<number>;
 }
 
-/** Search workers: one per spare core, at most 4 (NPC_WORKERS overrides). */
-const POOL_SIZE = Math.max(1, Number(process.env.NPC_WORKERS) || Math.min(4, availableParallelism() - 1));
+/** How many search workers to run (env NPC_WORKERS; tests may set it). */
+let poolSize = env.NPC_WORKERS;
+export function setPoolSizeForTests(n: number): void {
+  poolSize = n;
+}
 let pool: Slot[] = [];
 let nextId = 0;
 const pending = new Map<number, (m: SearchStats | Error) => void>();
@@ -24,7 +26,7 @@ export const thinkStats = { worker: 0, fallback: 0, lastWorkers: 0 };
 
 /** Worker failures in a row (each worker of the pool counts); past this many,
  *  stop restarting them (Aviator plays as Navigator). */
-const MAX_RESTARTS = 3 * POOL_SIZE;
+const maxRestarts = () => 3 * poolSize;
 let failures = 0;
 
 function startSlot(): Slot {
@@ -58,7 +60,7 @@ function lost(slot: Slot, why: string): void {
   slot.markReady(); // nobody waits forever on a worker that's gone
   for (const id of slot.inFlight) pending.get(id)?.(new Error(`worker ${why}`));
   failures += 1;
-  if (failures <= MAX_RESTARTS) setTimeout(() => void warmThinking(), 500).unref();
+  if (failures <= maxRestarts()) setTimeout(() => void warmThinking(), 500).unref();
   else console.error("[npc] search workers keep failing — Aviator plays as Navigator");
 }
 
@@ -72,8 +74,8 @@ function idleCheck(slot: Slot): void {
 /** Fill the pool ahead of the first Aviator move (workers take a few seconds to
  *  load); resolves once they're all ready (or gone). */
 export function warmThinking(): Promise<void> {
-  if (failures > MAX_RESTARTS) return Promise.resolve();
-  while (pool.length < POOL_SIZE) startSlot();
+  if (failures > maxRestarts()) return Promise.resolve();
+  while (pool.length < poolSize) startSlot();
   return Promise.all(pool.map((s) => s.ready)).then(() => {});
 }
 
@@ -113,7 +115,7 @@ export function think(
     return navigator();
   };
   if (level !== "aviator") return Promise.resolve(navigator(level));
-  if (test?.simulateWorkerError || failures > MAX_RESTARTS) return Promise.resolve(fallback("no search worker"));
+  if (test?.simulateWorkerError || failures > maxRestarts()) return Promise.resolve(fallback("no search worker"));
   if (pool.length === 0) void warmThinking();
   // Search on the idle workers that have loaded — each samples its own share of
   // the same candidates — and merge. One idle worker stays in reserve, so
@@ -129,6 +131,8 @@ export function think(
   return Promise.all(slots.map((slot, k) => ask(slot, { view, crew, level, seed: seed + 1 + k, candidateSeed: seed, budgetMs: env.NPC_THINK_MS, deadline }, timeoutMs))).then(
     (results) => {
       const stats = results.filter((r): r is SearchStats => r !== null);
+      const skipped = stats.reduce((a, st) => a + (st.errors ?? 0), 0);
+      if (skipped) console.warn(`[npc] Aviator skipped ${skipped} sample(s) the rules refused — a gap in placementCheck?`);
       const move = stats.length ? pickBest(stats) : null;
       if (!move) return fallback(stats.length ? "no move in the merged search" : lastError ?? "timed out");
       thinkStats.worker += 1;

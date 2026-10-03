@@ -494,7 +494,8 @@ console.log("5) Seating: who flies which seat; bot seats");
 
 console.log("6) think(): Aviator in a worker, with a fallback");
 {
-  const { think, warmThinking, stopThinking, thinkStats } = await import("../packages/server/src/think.ts");
+  const { think, warmThinking, stopThinking, thinkStats, setPoolSizeForTests } = await import("../packages/server/src/think.ts");
+  setPoolSizeForTests(4); // the pool tests need several workers, whatever this machine's cores
   const { newGame, mulberry32, redactGameStateFor, legalMoves } = await import("../packages/shared/src/index.ts");
   const g = newGame(DEFAULT_SETUP, "P", "C", mulberry32(9), 0);
   const view = redactGameStateFor(g, "P");
@@ -526,7 +527,8 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   const par = await think(view, "pilot", "aviator", 31);
   check("with idle workers, one Aviator decision searches on several at once", legal(par) && thinkStats.lastWorkers >= 2 && thinkStats.worker === wP + 1);
   const w3 = thinkStats.worker, fb3 = thinkStats.fallback;
-  const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", "aviator", seed)));
+  // Generous time limits: the queued third room waits for a whole search first.
+  const three = await Promise.all([21, 22, 23].map((seed) => think(view, "pilot", "aviator", seed, { timeoutMs: 3000 })));
   check("three rooms thinking at once are all answered by search workers (one worker would time out the third)", three.every(legal) && thinkStats.worker === w3 + 3 && thinkStats.fallback === fb3);
   let crashed = false;
   const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));

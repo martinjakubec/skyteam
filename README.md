@@ -131,6 +131,7 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | `RECONNECT_GRACE_MS` | How long a dropped player's seat is held before the game is abandoned | `60000` |
 | `NPC_DELAY_MS` | Pause before each move of a solo game's bot, so a human can follow | `900` |
 | `NPC_THINK_MS` | How long the Aviator bot may search for a move | `600` |
+| `NPC_WORKERS` | Search worker threads for the bot (a decision fans out to the idle ones). Set it to the CPUs the container may really use | a spare core each, at most 4 |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |
