@@ -26,21 +26,22 @@ type Place = Extract<GameCommand, { type: "placeDie" }>;
 
 /**
  * The rollout policy's knobs — tuned by scripts/tune.mjs against the policy's
- * own landing rate (see step 6 of the Aviator plan). Defaults are the tuned values.
+ * own landing rate. Defaults are the tuned values (2026-10-03: held-out YUL
+ * landings alone 72 → 84 of 200; spareSlack, gearSlack, brakeGoal, coffeeCost changed).
  */
 export const POLICY_PARAMS = {
   /** A die is spare if the Axis and Engine lose at most this much without it. */
-  spareSlack: 1,
+  spareSlack: 0.5,
   /** Lower the Gear once gear left ≥ rounds to place − gearSlack… */
-  gearSlack: 1,
+  gearSlack: 0,
   /** …or once the spaces left ≤ moving rounds after this one + paceSlack. */
   paceSlack: 1,
   /** Behind on switches when switches left ≥ rounds to place − behindSlack. */
   behindSlack: 0,
   /** Brakes the Pilot plans for (2, 4, 6: how many to deploy). */
-  brakeGoal: 3,
+  brakeGoal: 2,
   /** Cost of one Coffee token spent, against a pip of tilt (Axis) or pace. */
-  coffeeCost: 0.5,
+  coffeeCost: 1,
   /** Cost per space the move is off the pace it needs. */
   paceWeight: 10,
   /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */

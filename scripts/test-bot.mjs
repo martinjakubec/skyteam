@@ -144,6 +144,16 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("landing round: 2 Gear + 2 Flaps left is tight but each crew can still do it", evaluate(sw(0, 0, 7), "pilot") - evaluate(sw(2, 2, 7), "pilot") < 600);
   check("round 6: 4 Flaps left is much worse than 2 (about one Flaps a round)", evaluate(sw(0, 2, 6), "pilot") - evaluate(sw(0, 4, 6), "pilot") > 300);
 
+  // Step 6: the evaluator's weights are tunable.
+  const { EVAL_WEIGHTS } = await import("../packages/shared/src/index.ts");
+  const probe = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
+  const base = evaluate(probe, "pilot");
+  const savedW = { ...EVAL_WEIGHTS };
+  EVAL_WEIGHTS.switchTodo *= 2;
+  const changed = evaluate(probe, "pilot");
+  Object.assign(EVAL_WEIGHTS, savedW);
+  check("tunable evaluator: a weight changes the score", changed < base && evaluate(probe, "pilot") === base);
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
