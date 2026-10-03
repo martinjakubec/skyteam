@@ -175,5 +175,26 @@ console.log("5) Monte Carlo search (Aviator)");
   check("search answers a pending Reroll prompt", searchMove(redactGameStateFor(offered, P), "pilot", mulberry32(8), { budgetMs: 100 })?.type === "reroll");
 }
 
+console.log("6) Difficulty levels behave differently");
+{
+  const { chooseMove, redactGameStateFor, rankMoves, legalMoves } = await import("../packages/shared/src/index.ts");
+  const picks = (view, level, n = 30) => new Set(Array.from({ length: n }, (_, i) => JSON.stringify(chooseMove(view, "pilot", level, mulberry32(i)))));
+  // A position where the Navigator's best move is unique (the same across seeds).
+  let view = null;
+  for (let seed = 21; seed < 60 && !view; seed++) {
+    const v = redactGameStateFor(newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(seed), 0), P);
+    if (picks(v, "navigator").size === 1) view = v;
+  }
+  check("(setup: a position with a unique best move)", !!view);
+  const ranked = rankMoves(view, "pilot", legalMoves(view, "pilot"), mulberry32(0)).map((m) => JSON.stringify(m));
+  const cadet = picks(view, "cadet", 60);
+  check("Cadet sometimes plays other than the unique best move", cadet.size > 1);
+  check("…but only among the top few (no wild blunders)", [...cadet].every((m) => ranked.slice(0, 6).includes(m)));
+  const t0 = Date.now();
+  const a = chooseMove(view, "pilot", "aviator", mulberry32(1), { budgetMs: 150 });
+  const spent = Date.now() - t0;
+  check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && legalMoves(view, "pilot").some((m) => JSON.stringify(m) === JSON.stringify(a)));
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
