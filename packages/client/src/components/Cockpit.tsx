@@ -265,7 +265,7 @@ export function Cockpit({
   const iceOpen = (i: number, space: "top" | "bottom") =>
     canFree(
       iceInPlay &&
-        i === game.brakesDeployed &&
+        i <= game.brakesDeployed && // the next step, or one already passed (no effect)
         game.iceBrakeSlots[i]?.[space] == null &&
         (space === "bottom" || mine("pilot")),
     ) && valOk([ICE_BRAKE_VALUES[i]]);
