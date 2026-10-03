@@ -171,11 +171,24 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const axisOpen = s.axis[crew] === null;
   const engineOpen = s.engines[crew] === null;
   /** The best dice for our open Axis and Engine from `dice`, and how good they are. */
+  // Within one choice the costs depend only on the value: work them out once for 1–6.
+  const axisByValue = [0, 1, 2, 3, 4, 5, 6].map((v) => (v ? axisCost(v) : Infinity));
+  const engineByValue = [0, 1, 2, 3, 4, 5, 6].map((v) => (v ? engineCost(v) : Infinity));
+  const coffeeByValue = [0, 1, 2, 3, 4, 5, 6].map((v) => (v ? coffeeOptions(v) : []));
   const picks = (dice: typeof hand) => {
-    const best = (cost: (v: number) => number, skip?: number) =>
-      dice.filter((d) => d.id !== skip).flatMap((d) => coffeeOptions(d.value!).map((c) => ({ d, c, k: cost(d.value! + c) + Math.abs(c) * P.coffeeCost }))).sort((a, b) => a.k - b.k)[0] ?? null;
-    const axis = axisOpen ? best(axisCost) : null;
-    const engine = engineOpen ? best(engineCost, axis?.d.id) ?? best(engineCost) : null;
+    const best = (byValue: number[], skip?: number) => {
+      let pick: { d: (typeof hand)[number]; c: number; k: number } | null = null;
+      for (const d of dice) {
+        if (d.id === skip) continue;
+        for (const c of coffeeByValue[d.value!]) {
+          const k = byValue[d.value! + c] + Math.abs(c) * P.coffeeCost;
+          if (!pick || k < pick.k) pick = { d, c, k };
+        }
+      }
+      return pick;
+    };
+    const axis = axisOpen ? best(axisByValue) : null;
+    const engine = engineOpen ? best(engineByValue, axis?.d.id) ?? best(engineByValue) : null;
     return { axis, engine, k: (axis?.k ?? 0) + (engine?.k ?? 0) };
   };
   const kept = picks(hand);
@@ -237,17 +250,39 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     at(d.id, { kind: "concentration", slot: 1 });
     for (const t of radioSlots) at(d.id, t);
   }
-  for (const cmd of tries) {
-    const sure = placementCheck(s, crew, cmd);
-    if (sure === false) continue;
-    if (sure) return cmd;
-    try {
-      reduce(s, cmd, playerIdOf(s, crew));
-      return cmd;
-    } catch (e) {
-      if (!(e instanceof GameRuleError)) throw e;
+  const firstLegal = (list: Place[]): Place | null => {
+    for (const cmd of list) {
+      const sure = placementCheck(s, crew, cmd);
+      if (sure === false) continue;
+      if (sure) return cmd;
+      try {
+        reduce(s, cmd, playerIdOf(s, crew));
+        return cmd;
+      } catch (e) {
+        if (!(e instanceof GameRuleError)) throw e;
+      }
     }
-  }
+    return null;
+  };
+  const planned = firstLegal(tries);
+  if (planned) return planned;
+  // 6. Catch-all, only when nothing planned fits: any die on any of the crew's
+  // spaces, with Coffee if needed — so an odd die (one that fits only a set
+  // switch, say) needs no Navigator.
+  tries.length = 0;
+  const anySpace: PlacementTarget[] = [
+    { kind: "axis" },
+    { kind: "engine" },
+    ...radioSlots,
+    { kind: "concentration", slot: 0 },
+    { kind: "concentration", slot: 1 },
+    ...[0, 1, 2].map((slot) => ({ kind: "landingGear" as const, slot })),
+    ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps" as const, slot })),
+    ...[0, 1, 2].map((slot) => ({ kind: "brakes" as const, slot })),
+  ];
+  for (const d of [...spare, ...hand]) for (const c of coffeeOptions(d.value!)) for (const t of anySpace) at(d.id, t, c);
+  const any = firstLegal(tries);
+  if (any) return any;
   return chooseMove(s, crew, "navigator", rand); // nothing cheap fits: Navigator over all moves
 }
 

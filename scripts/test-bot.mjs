@@ -389,6 +389,19 @@ console.log("10) Fast rollouts: moves applied in place; surely-legal placements"
   const world = determinize(v, mulberry32(6));
   check("a sampled world carries no log (nothing to copy or write)", world.log.length === 0 && (world.log.push("x"), world.log.length === 0));
   check("rollouts on sampled worlds still end in an outcome", !!rolloutGame(world, mulberry32(7)).outcome);
+  // No Navigator fallback for an ordinary placement: a die that fits only an
+  // already-set switch is placed by the policy's own catch-all.
+  const { legalMoves: lmFast } = await import("../packages/shared/src/index.ts");
+  let st = { ...newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), brakesDeployed: 1, gearGreen: [true, true, true], radioPilot: 6, concentrationSlots: [{ value: 1, crew: "copilot" }, { value: 1, crew: "copilot" }] };
+  st.dice.pilot = [{ id: 0, value: 2, placed: false }, { id: 1, value: 5, placed: true }, { id: 2, value: 5, placed: true }, { id: 3, value: 5, placed: true }];
+  st.axis = { pilot: 5, copilot: null, offset: 0 };
+  st.engines = { pilot: 5, copilot: null };
+  st.placedThisRound = 3;
+  const tFast = performance.now();
+  const mStuck = fastMove(st, "pilot", mulberry32(9));
+  const spentFast = performance.now() - tFast;
+  // (The 2 fits only switches that are already set — Brakes 2, or the down 1/2 Landing Gear.)
+  check("an odd last die (a 2 that fits only set switches) is placed without the Navigator fallback", ["brakes", "landingGear"].includes(mStuck?.target?.kind) && accepts(st, P, mStuck) && spentFast < 5);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
