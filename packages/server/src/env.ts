@@ -8,6 +8,8 @@ export const env = {
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   /** Pause before each bot action, so a human can follow the NPC's play. */
   NPC_DELAY_MS: Number(process.env.NPC_DELAY_MS ?? 900),
+  /** How long the Aviator bot may search for a move. */
+  NPC_THINK_MS: Number(process.env.NPC_THINK_MS ?? 600),
 };
 
 if (env.JWT_SECRET === "dev-insecure-secret-change-me") {

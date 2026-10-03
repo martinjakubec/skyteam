@@ -1,21 +1,21 @@
 import { randomInt } from "node:crypto";
-import { chooseMove, redactGameStateFor, type Rand } from "@skyteam/shared";
+import { redactGameStateFor } from "@skyteam/shared";
 import { env } from "./env";
 import { npcGivesUp, npcShouldAct } from "./seating";
 import { applyCommand, broadcastState, type IOServer } from "./socket";
 import { getRoom, saveRoom } from "./store";
+import { think } from "./think";
 
 const timers = new Map<string, NodeJS.Timeout>();
 /** Rejected bot moves in a row, per room. */
 const rejections = new Map<string, number>();
-const rand: Rand = (n) => randomInt(0, n);
 
 /**
  * Let the room's bot act if the game is waiting on it. Idempotent: at most one
  * pending timer per room, and the condition is re-checked when it fires (the
  * state may have moved on). Call after every state change and on (re)join.
  */
-export function scheduleNpc(io: IOServer, roomId: string): void {
+export function scheduleNpc(io: IOServer, roomId: string, delayMs = env.NPC_DELAY_MS): void {
   if (timers.has(roomId)) return;
   timers.set(
     roomId,
@@ -24,7 +24,14 @@ export function scheduleNpc(io: IOServer, roomId: string): void {
       const room = await getRoom(roomId);
       const turn = room && npcShouldAct(room);
       if (!room || !turn) return;
-      const move = chooseMove(redactGameStateFor(room.game!, turn.botId), turn.crew, turn.level, rand);
+      const started = Date.now();
+      const game = room.game!;
+      const move = await think(redactGameStateFor(game, turn.botId), turn.crew, turn.level, randomInt(0, 2 ** 31));
+      // Thinking took time already: count it toward the pause before the bot's next move.
+      const thought = Date.now() - started;
+      // The game moved on while the bot was thinking (every change replaces
+      // room.game): that move was for an old position — think again.
+      if (room.game !== game || room.status !== "in_progress") return scheduleNpc(io, roomId, 0);
       // Should never happen: a die that fits nowhere is discarded by the rules.
       if (!move) return giveUp(io, roomId, `no legal move for the ${turn.crew} bot`);
       const error = await applyCommand(io, room, turn.botId, move);
@@ -36,8 +43,11 @@ export function scheduleNpc(io: IOServer, roomId: string): void {
       } else {
         rejections.delete(roomId);
       }
-      scheduleNpc(io, roomId); // it may still be the bot's action (e.g. after training the Intern)
-    }, env.NPC_DELAY_MS),
+      // applyCommand already scheduled the next move at the usual pace; shorten
+      // that pause by the time spent thinking. (It may still be the bot's action.)
+      cancelNpc(roomId);
+      scheduleNpc(io, roomId, Math.max(0, env.NPC_DELAY_MS - thought));
+    }, delayMs),
   );
 }
 

@@ -483,5 +483,21 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("a multiplayer game is abandoned when a player doesn't return", abandonsOnDisconnect({ ...base, seats }));
 }
 
+console.log("6) think(): Aviator in a worker, with a fallback");
+{
+  const { think, warmThinking, stopThinking, thinkStats } = await import("../packages/server/src/think.ts");
+  const { newGame, mulberry32, redactGameStateFor, legalMoves } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, "P", "C", mulberry32(9), 0);
+  const view = redactGameStateFor(g, "P");
+  const legal = (m) => legalMoves(view, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m));
+  await warmThinking(); // the worker takes a few seconds to load
+  const t0 = Date.now();
+  const m = await think(view, "pilot", "aviator", 1);
+  check("Aviator answers through the worker within its budget", Date.now() - t0 < 2000 && legal(m) && thinkStats.worker === 1 && thinkStats.fallback === 0);
+  check("a worker failure falls back to Navigator", legal(await think(view, "pilot", "aviator", 1, { simulateWorkerError: true })) && thinkStats.fallback === 1);
+  check("Cadet and Navigator answer inline", legal(await think(view, "pilot", "cadet", 2)) && legal(await think(view, "pilot", "navigator", 3)));
+  await stopThinking(); // let the test process exit
+}
+
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
