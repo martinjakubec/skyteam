@@ -111,6 +111,19 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("landing round: both Engine dice down and too fast is fatal", evaluate(down({ engines: { pilot: 3, copilot: 1 } }), "pilot") - evaluate(down({ engines: { pilot: 3, copilot: 4 } }), "pilot") > 2000);
   check("landing round: both Axis dice down and tilted is fatal", evaluate(down({ axis: { pilot: 3, copilot: 3, offset: 0 } }), "pilot") - evaluate(down({ axis: { pilot: 4, copilot: 3, offset: 1 } }), "pilot") > 2000);
 
+  // Deferred review fixes (plan 3, Task 4):
+  const land7 = (extra) => ({ ...fresh([1, 1, 1, 1], [4, 4, 4, 4]), round: 7, gearGreen: [true, true, true], ...extra });
+  const oneFlapLeft = evaluate(land7({ flapsGreen: [true, true, true, false] }), "copilot");
+  const allFlaps = evaluate(land7({ flapsGreen: [true, true, true, true] }), "copilot");
+  check("landing round: a switch that can still be set this round isn't 'out of time'", allFlaps - oneFlapLeft < 200);
+  const turnAt = (pos, allowed) => (st) => ({ ...st, scenario: { ...st.scenario, approachTrack: st.scenario.approachTrack.map((sp, i) => (i === pos ? { ...sp, axisAllowed: allowed } : sp)) } });
+  const tilted7 = land7({ flapsGreen: [true, true, true, true], axis: { pilot: 4, copilot: 3, offset: -1 } });
+  check("landing round: no Turn penalty (the plane doesn't move)", evaluate(turnAt(0, [0])(tilted7), "copilot") === evaluate(tilted7, "copilot"));
+  const before = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 2, axis: { pilot: null, copilot: null, offset: -1 } };
+  check("no Turn penalty before this round's Axis dice are down (the tilt isn't final)", evaluate(turnAt(0, [0])(before), "pilot") === evaluate(before, "pilot"));
+  const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
+  check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
