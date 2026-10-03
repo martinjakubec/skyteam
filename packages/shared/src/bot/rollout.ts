@@ -25,23 +25,26 @@ export function determinize(view: GameState, rand: Rand): GameState {
 type Place = Extract<GameCommand, { type: "placeDie" }>;
 
 /**
- * The rollout policy's knobs — tuned by scripts/tune.mjs against the policy's
- * own landing rate. Defaults are the tuned values (2026-10-03: held-out YUL
- * landings alone 72 → 84 of 200; spareSlack, gearSlack, brakeGoal, coffeeCost changed).
+ * The rollout policy's knobs, tunable by scripts/tune.mjs against the policy's
+ * own landing rate. Note the trade-off: a policy that crashes less makes longer
+ * rollouts, so fewer fit in Aviator's time budget. The tuner's values
+ * (2026-10-03: spareSlack 0.5, gearSlack 0, brakeGoal 2, coffeeCost 1 — held-out
+ * landings alone 72 → 84/200) cost ~100 ms more per decision and lowered
+ * Aviator's landings at the real budget (21/80 → 10/80), so the defaults stay.
  */
 export const POLICY_PARAMS = {
   /** A die is spare if the Axis and Engine lose at most this much without it. */
-  spareSlack: 0.5,
+  spareSlack: 1,
   /** Lower the Gear once gear left ≥ rounds to place − gearSlack… */
-  gearSlack: 0,
+  gearSlack: 1,
   /** …or once the spaces left ≤ moving rounds after this one + paceSlack. */
   paceSlack: 1,
   /** Behind on switches when switches left ≥ rounds to place − behindSlack. */
   behindSlack: 0,
   /** Brakes the Pilot plans for (2, 4, 6: how many to deploy). */
-  brakeGoal: 2,
+  brakeGoal: 3,
   /** Cost of one Coffee token spent, against a pip of tilt (Axis) or pace. */
-  coffeeCost: 1,
+  coffeeCost: 0.5,
   /** Cost per space the move is off the pace it needs. */
   paceWeight: 10,
   /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */
