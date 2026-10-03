@@ -54,10 +54,13 @@ const CADET_SLIP_DEPTH = 3; // 2nd–4th best
  * - Cadet: the same, but now and then one of the next few moves instead.
  * - Aviator: Monte Carlo search over the dice it can't see, within `budgetMs`.
  */
-export function chooseMove(view: GameState, crew: Crew, level: BotLevel, rand: Rand, opts?: { budgetMs?: number }): GameCommand | null {
+export function chooseMove(view: GameState, crew: Crew, level: BotLevel, rand: Rand, opts?: { budgetMs?: number; samples?: number }): GameCommand | null {
   const moves = legalMoves(view, crew);
   if (moves.length === 0) return null;
-  if (level === "aviator") return searchMove(view, crew, rand, { budgetMs: opts?.budgetMs ?? 600 });
+  // Aviator: within a time budget, or (benchmarks) a fixed number of samples per candidate.
+  if (level === "aviator") {
+    return searchMove(view, crew, rand, opts?.samples ? { budgetMs: Infinity, maxSamples: opts.samples } : { budgetMs: opts?.budgetMs ?? 600 });
+  }
   const ranked = rankMoves(view, crew, moves, rand);
   if (level === "cadet" && rand(100) < CADET_SLIP_PERCENT) return ranked[Math.min(ranked.length - 1, 1 + rand(CADET_SLIP_DEPTH))];
   return ranked[0];

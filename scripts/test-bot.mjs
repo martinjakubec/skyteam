@@ -220,5 +220,20 @@ console.log("6) Difficulty levels behave differently");
   check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && legalMoves(view, "pilot").some((m) => JSON.stringify(m) === JSON.stringify(a)));
 }
 
+console.log("7) Measurement: landing checklist; dice independent of the bots");
+{
+  const { landingChecks, selfPlay } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(3), 0);
+  const ready = { ...g, round: 7, position: 7, airplanes: Array(8).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
+  check("landingChecks: a ready plane passes every condition", Object.values(landingChecks(ready)).every(Boolean));
+  const late = landingChecks({ ...ready, position: 6, flapsGreen: [true, true, true, false], lastSpeed: 9 });
+  check("…and names each one that fails", !late.airport && !late.flaps && !late.brakes && late.gear && late.level && late.clear);
+  const setup = { scenarioId: "YUL", modules: [], abilities: [] };
+  const a = selfPlay(setup, { pilot: "navigator", copilot: "navigator" }, 77);
+  const b = selfPlay(setup, { pilot: "cadet", copilot: "cadet" }, 77);
+  const shared = Math.min(a.rolls.length, b.rolls.length);
+  check("self-play: every round's roll depends on the seed only, not on the bots' play", shared >= 2 && a.rolls.slice(0, shared).join() === b.rolls.slice(0, shared).join());
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
