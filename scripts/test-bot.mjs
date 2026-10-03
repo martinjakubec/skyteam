@@ -294,6 +294,13 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   const early = { ...fresh([2, 3, 3, 4], [3, 3, 3, 3]), round: 2, position: 0, airplanes: Array(8).fill(0) }; // 7 spaces, 5 moving rounds after this
   const me = fastMove(early, "pilot", mulberry32(9));
   check("fast policy: behind schedule early on, keeps the Landing Gear up", me.target.kind !== "landingGear");
+  // Step 6: the policy's choices come from tunable parameters.
+  const { POLICY_PARAMS } = await import("../packages/shared/src/index.ts");
+  const saved = { ...POLICY_PARAMS };
+  POLICY_PARAMS.gearSlack = 10; // lower the Gear whenever a die fits
+  const eager = fastMove(early, "pilot", mulberry32(9));
+  Object.assign(POLICY_PARAMS, saved);
+  check("tunable policy: a parameter changes the choice (eager Gear)", eager.target.kind === "landingGear" && fastMove(early, "pilot", mulberry32(9)).target.kind !== "landingGear");
   // The cheap pre-check never rules out a move the rules accept.
   const { maybeLegal, legalMoves: lm } = await import("../packages/shared/src/index.ts");
   let missed = 0, checked = 0;

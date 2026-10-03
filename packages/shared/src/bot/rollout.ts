@@ -25,6 +25,29 @@ export function determinize(view: GameState, rand: Rand): GameState {
 type Place = Extract<GameCommand, { type: "placeDie" }>;
 
 /**
+ * The rollout policy's knobs — tuned by scripts/tune.mjs against the policy's
+ * own landing rate (see step 6 of the Aviator plan). Defaults are the tuned values.
+ */
+export const POLICY_PARAMS = {
+  /** A die is spare if the Axis and Engine lose at most this much without it. */
+  spareSlack: 1,
+  /** Lower the Gear once gear left ≥ rounds to place − gearSlack… */
+  gearSlack: 1,
+  /** …or once the spaces left ≤ moving rounds after this one + paceSlack. */
+  paceSlack: 1,
+  /** Behind on switches when switches left ≥ rounds to place − behindSlack. */
+  behindSlack: 0,
+  /** Brakes the Pilot plans for (2, 4, 6: how many to deploy). */
+  brakeGoal: 3,
+  /** Cost of one Coffee token spent, against a pip of tilt (Axis) or pace. */
+  coffeeCost: 0.5,
+  /** Cost per space the move is off the pace it needs. */
+  paceWeight: 10,
+  /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */
+  clearAnyDieAhead: 1,
+};
+
+/**
  * A cheap pre-check for a placement: false only when it's clearly illegal (a
  * taken space, a value that can't fit, a switch out of order, a die the
  * Axis/Engine reservation needs). Anything it isn't sure of passes — the rules
@@ -77,6 +100,7 @@ const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : s
  * anything legal. Prompts (held extras, reroll/swap answers) go to Navigator.
  */
 export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | null {
+  const P = POLICY_PARAMS;
   if (s.internHeld || s.trafficHeld || s.pendingSwap) return chooseMove(s, crew, "navigator", rand);
   if (s.pendingReroll) return { type: "reroll", dieIds: [] }; // keep our dice
   const hand = s.dice[crew].filter((d) => !d.placed && d.value !== undefined);
@@ -116,7 +140,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const speedCost = (speed: number) => {
     if (landing) return speed > brakeLimit ? 10 + speed : speed / 10;
     const adv = advanceFor(s, speed);
-    return (crashes(adv) ? 1000 : 0) + Math.abs(adv - want) * 10;
+    return (crashes(adv) ? 1000 : 0) + Math.abs(adv - want) * P.paceWeight;
   };
   const engineCost = (v: number) => {
     const theirs = s.engines[partner];
@@ -130,7 +154,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   /** The best dice for our open Axis and Engine from `dice`, and how good they are. */
   const picks = (dice: typeof hand) => {
     const best = (cost: (v: number) => number, skip?: number) =>
-      dice.filter((d) => d.id !== skip).flatMap((d) => coffeeOptions(d.value!).map((c) => ({ d, c, k: cost(d.value! + c) + Math.abs(c) * 0.5 }))).sort((a, b) => a.k - b.k)[0] ?? null;
+      dice.filter((d) => d.id !== skip).flatMap((d) => coffeeOptions(d.value!).map((c) => ({ d, c, k: cost(d.value! + c) + Math.abs(c) * P.coffeeCost }))).sort((a, b) => a.k - b.k)[0] ?? null;
     const axis = axisOpen ? best(axisCost) : null;
     const engine = engineOpen ? best(engineCost, axis?.d.id) ?? best(engineCost) : null;
     return { axis, engine, k: (axis?.k ?? 0) + (engine?.k ?? 0) };
@@ -139,7 +163,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const axisPick = kept.axis;
   const enginePick = kept.engine;
   // A die is spare if the Axis and Engine are served nearly as well without it.
-  const spare = hand.filter((d) => picks(hand.filter((x) => x.id !== d.id)).k <= kept.k + 1);
+  const spare = hand.filter((d) => picks(hand.filter((x) => x.id !== d.id)).k <= kept.k + P.spareSlack);
 
   // 1. Answer the partner's Axis / Engine die while it's known.
   if (axisPick && s.axis[partner] !== null) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
@@ -154,7 +178,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const clearAirplanes = (from: number, to: number) => {
     for (let ahead = from; ahead <= to; ahead++) {
       if ((s.airplanes[s.position + ahead] ?? 0) === 0) continue;
-      for (const d of ahead <= 1 ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
+      for (const d of ahead <= P.clearAnyDieAhead ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
     }
   };
   const switches = (withCoffee: boolean) => {
@@ -175,12 +199,12 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   };
   const switchesLeft =
     crew === "pilot"
-      ? s.gearGreen.filter((g) => !g).length + Math.max(0, BRAKE_VALUES.length - s.brakesDeployed)
+      ? s.gearGreen.filter((g) => !g).length + Math.max(0, P.brakeGoal - s.brakesDeployed)
       : s.flapsGreen.filter((g) => !g).length;
   const roundsToPlace = Math.max(1, s.scenario.rounds - s.round + 1);
-  const behind = switchesLeft >= roundsToPlace;
+  const behind = switchesLeft >= roundsToPlace - P.behindSlack;
   const gearLeft = s.gearGreen.filter((g) => !g).length;
-  const gearNow = gearLeft >= roundsToPlace - 1 || remaining <= roundsAfter + 1;
+  const gearNow = gearLeft >= roundsToPlace - P.gearSlack || remaining <= roundsAfter + P.paceSlack;
   clearAirplanes(0, 1);
   if (behind) switches(true); // Coffee only when behind: it's also what levels the Axis
   clearAirplanes(2, 2);
