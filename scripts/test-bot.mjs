@@ -235,5 +235,56 @@ console.log("7) Measurement: landing checklist; dice independent of the bots");
   check("self-play: every round's roll depends on the seed only, not on the bots' play", shared >= 2 && a.rolls.slice(0, shared).join() === b.rolls.slice(0, shared).join());
 }
 
+console.log("8) Rollouts: a plan-aware fast policy, played to the end of the game");
+{
+  const { fastMove, rolloutGame, rolloutValue, searchMove, legalMoves, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce, WIN } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc) => reduce(createInitialGameState(scenarioForSetup(DEFAULT_SETUP), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const die = (st, crew, m) => st.dice[crew].find((d) => d.id === m.dieId)?.value;
+  // Answer the partner's Axis die: the Pilot levels the plane.
+  let a = fresh([1, 4, 6, 2], [4, 1, 1, 1]);
+  a = reduce({ ...a, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const ma = fastMove(a, "pilot", mulberry32(1));
+  check("fast policy: answers the partner's Axis die with the levelling die", ma.target.kind === "axis" && die(a, "pilot", ma) === 4);
+  // Clear the airplane right ahead (YUL space 1 holds one): a 2 on the Radio.
+  const r = fresh([2, 3, 3, 5], [1, 1, 1, 1]);
+  const mr = fastMove(r, "pilot", mulberry32(2));
+  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 2);
+  // Deploy the next Flaps when the value is in hand.
+  const f = { ...fresh([3, 3, 3, 3], [1, 5, 5, 5]), turn: "copilot", airplanes: Array(8).fill(0) };
+  const mf = fastMove(f, "copilot", mulberry32(3));
+  check("fast policy: deploys the next Flaps with a fitting die", mf.target.kind === "flaps" && die(f, "copilot", mf) === 1);
+  // Landing round: the Engine die must keep the speed within the Brakes.
+  let l = { ...fresh([1, 6, 5, 5], [3, 1, 1, 1]), round: 7, brakesDeployed: 2, airplanes: Array(8).fill(0), axis: { pilot: 5, copilot: 5, offset: 0 } };
+  l.dice.pilot[2].placed = true;
+  l.dice.copilot[1].placed = true;
+  l = reduce({ ...l, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  const ml = fastMove(l, "pilot", mulberry32(4));
+  check("fast policy: landing round — an Engine die within the Brakes (1, not 6)", ml.target.kind === "engine" && die(l, "pilot", ml) === 1);
+  // On schedule (round 2, 6 spaces, 5 moving rounds left): fly one space, don't stall.
+  let p = { ...fresh([3, 3, 1, 1], [3, 5, 1, 1]), round: 2, position: 1, airplanes: Array(8).fill(0), turn: "copilot" };
+  p = reduce(p, { type: "placeDie", dieId: 1, target: { kind: "engine" } }, C).state; // Co-Pilot's Engine: 5
+  p.turn = "pilot";
+  const mp = fastMove(p, "pilot", mulberry32(5));
+  check("fast policy: on schedule, sets a speed that flies on (not 0)", mp.target.kind !== "engine" || die(p, "pilot", mp) + 5 > p.aeroBlue);
+  // Never fly into traffic when a slower Engine die exists.
+  let c = { ...fresh([6, 1, 2, 2], [4, 1, 1, 1]), airplanes: [0, 1, 0, 0, 0, 0, 0, 0], position: 0 }; // flying through space 1 collides
+  c = reduce({ ...c, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // Co-Pilot's Engine: 4
+  const mc = fastMove(c, "pilot", mulberry32(6));
+  check("fast policy: no double move through a space with an airplane", !(mc.target.kind === "engine" && die(c, "pilot", mc) + 4 > c.aeroOrange));
+  // Spare dice go on free spaces; the dice kept for the Axis and Engine stay put.
+  const k = { ...fresh([3, 6, 6, 6], [1, 1, 1, 1]), airplanes: [0, 0, 0, 0, 0, 1, 0, 0] }; // a 6 could clear space 5, a 3 nothing
+  const mk = fastMove(k, "pilot", mulberry32(7));
+  check("fast policy: free placements use spare dice, not the one kept for the Axis", !(mk.target.kind !== "axis" && mk.target.kind !== "engine" && die(k, "pilot", mk) === 3));
+  // Full-game rollouts and their value.
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(12), 0);
+  const end = rolloutGame(g, mulberry32(13));
+  check("a full-game rollout ends with an outcome", !!end.outcome);
+  check("rollout value: a landing beats a failed landing beats a crash", rolloutValue({ ...end, outcome: { result: "won" } }, "pilot") === WIN &&
+    rolloutValue({ ...end, round: 7, outcome: { result: "lost", reason: "Landing failed: plane not level." } }, "pilot") > rolloutValue({ ...end, round: 3, outcome: { result: "lost", reason: "The plane went into a spin!" } }, "pilot"));
+  const v = redactGameStateFor(g, P);
+  const m = searchMove(v, "pilot", mulberry32(14), { budgetMs: Infinity, maxSamples: 3 });
+  check("search over full-game rollouts returns a legal move", legalMoves(v, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m)));
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
