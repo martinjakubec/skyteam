@@ -11,7 +11,7 @@ import { mulberry32 } from "./rng";
 /** The moves the search compares: the Navigator's best few, plus the rollout
  *  policy's own choice — the Navigator scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
-export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew)): GameCommand[] {
+export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew), dedupe = true): GameCommand[] {
   // Moves that lead to the same game — the same value on the same space (by
   // another die of that value, or Coffee) — are one candidate, not several.
   const valueOf = (id: number) => view.dice[crew].find((d) => d.id === id)?.value ?? 0;
@@ -23,8 +23,9 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
   const ranked: GameCommand[] = [];
   for (const m of rankMoves(view, crew, moves, rand)) {
     if (ranked.length >= shortlist) break;
-    if (seen.has(key(m))) continue;
-    seen.add(key(m));
+    const k = dedupe ? key(m) : JSON.stringify(m);
+    if (seen.has(k)) continue;
+    seen.add(k);
     ranked.push(m);
   }
   const own = fastMove(view, crew, rand);
@@ -51,7 +52,14 @@ export interface SearchOptions {
   /** Seed for picking the candidates: workers searching in parallel pass the
    *  same one, so their results line up and can be merged. */
   candidateSeed?: number;
+  /** Drop the weaker half of the candidates as samples come in. */
+  halving?: boolean;
+  /** Count moves that lead to the same game (same value, same space) once. */
+  dedupe?: boolean;
 }
+
+/** Search settings for experiments (bench: SEARCH='{…}'); options passed to a search win. */
+export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean } = { halving: true, dedupe: true };
 
 /**
  * Aviator's search, without the final pick: determinized Monte Carlo over the
@@ -66,11 +74,11 @@ export function searchStats(
   view: GameState,
   crew: Crew,
   rand: Rand,
-  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed }: SearchOptions,
+  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe }: SearchOptions,
 ): SearchStats {
   const moves = legalMoves(view, crew);
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
-  const candidates = searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves);
+  const candidates = searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);
   const counts = candidates.map(() => 0);
   const deadline = Date.now() + budgetMs;
@@ -91,7 +99,7 @@ export function searchStats(
       counts[i] += 1;
       budget -= 1;
     }
-    if (alive.length > 2 && alive.every((i) => counts[i] >= rung)) {
+    if (halving && alive.length > 2 && alive.every((i) => counts[i] >= rung)) {
       alive = [...alive].sort((a, b) => mean(b) - mean(a)).slice(0, Math.max(2, Math.ceil(alive.length / 2)));
       rung *= 2;
     }
