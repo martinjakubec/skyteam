@@ -135,6 +135,13 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   });
   check("Real-Time: the bot fills its Axis and Engine before anything else", rtFirst.every(Boolean));
 
+  // Step 4: switch capacity per crew (each has its own two free dice a round), and
+  // Flaps — in order, with set numbers — realistically about one a round.
+  const sw = (gear, flaps, round) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round, airplanes: Array(8).fill(0), position: 7 - Math.max(0, 7 - round),
+    gearGreen: [0, 1, 2].map((i) => i >= gear), flapsGreen: [0, 1, 2, 3].map((i) => i >= flaps) });
+  check("landing round: 2 Gear + 2 Flaps left is tight but each crew can still do it", evaluate(sw(0, 0, 7), "pilot") - evaluate(sw(2, 2, 7), "pilot") < 600);
+  check("round 6: 4 Flaps left is much worse than 2 (about one Flaps a round)", evaluate(sw(0, 2, 6), "pilot") - evaluate(sw(0, 4, 6), "pilot") > 300);
+
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 

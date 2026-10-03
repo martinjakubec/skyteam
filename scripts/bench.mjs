@@ -2,6 +2,7 @@
 // Usage: npm run bench -- [games=30] [level=navigator] [ALL]
 //        npm run bench -- [games=20] compare   — Cadet vs Navigator vs Aviator
 //        npm run bench -- [games=40] landing [samples=20]   — YUL landings, with the checklist
+//          (LEVELS=navigator,cadet to pick the levels; default navigator,aviator)
 //   default: every card, every module combination, each ability (representativeSetups)
 //   ALL:     every module combination × every ability set, plus every card (slow)
 //   ONLY="intern,kerosene" (env) keeps setups containing all those ids
@@ -16,7 +17,7 @@ const N = Number(process.argv[2] ?? 30);
 if (process.argv.includes("landing")) {
   const samples = Number(process.argv[process.argv.indexOf("landing") + 1] ?? 20) || 20;
   const setup = { scenarioId: "YUL", modules: [], abilities: [] };
-  for (const lv of ["navigator", "aviator"]) {
+  for (const lv of process.env.LEVELS?.split(",") ?? ["navigator", "aviator"]) {
     let won = 0, rounds = 0, moves = 0, midFlight = 0;
     const fails = {};
     const t0 = Date.now();

@@ -35,11 +35,16 @@ export function evaluate(s: GameState, crew: Crew): number {
   const allowed = s.scenario.approachTrack[s.position]?.axisAllowed;
   const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
   if (allowed && tiltFinal && !isLanding(s) && !allowed.includes(s.axis.offset)) v -= 600;
-  // Switches to deploy before landing.
-  const todo = s.gearGreen.filter((g) => !g).length + s.flapsGreen.filter((g) => !g).length;
-  // Capacity: the rounds still to move plus this one (switches can be set after
-  // the move, and on the landing round), two switch dice a round.
-  v -= todo * 60 + Math.max(0, todo - 2 * (roundsLeft + 1)) * 300;
+  // Switches to deploy before landing. Each crew has its own two free dice a
+  // round, over the rounds still to move plus this one (switches can be set
+  // after the move, and on the landing round). The Co-Pilot's Flaps go in
+  // order with set numbers: about one a round is a realistic pace.
+  const gearTodo = s.gearGreen.filter((g) => !g).length;
+  const flapsTodo = s.flapsGreen.filter((g) => !g).length;
+  const placeRounds = roundsLeft + 1;
+  v -= (gearTodo + flapsTodo) * 60;
+  v -= Math.max(0, gearTodo - 2 * placeRounds) * 300 + Math.max(0, flapsTodo - 2 * placeRounds) * 300;
+  v -= Math.max(0, flapsTodo - placeRounds) * 150;
   const iceOn = s.scenario.modules?.includes("iceBrakes");
   // Every step: two dice average 7, more than any Brakes but the last allow.
   const brakeGoal = iceOn ? ICE_BRAKE_VALUES.length : BRAKE_VALUES.length;
