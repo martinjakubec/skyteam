@@ -5,7 +5,20 @@ import type { GameState } from "../game/state";
 import { evaluate } from "./evaluate";
 import { legalMoves, playerIdOf } from "./moves";
 import { rankMoves } from "./policy";
-import { determinize, rolloutGame, rolloutRound, rolloutValue } from "./rollout";
+import { determinize, fastMove, rolloutGame, rolloutRound, rolloutValue } from "./rollout";
+
+/** The moves the search compares: the Navigator's best few, plus the rollout
+ *  policy's own choice — the Navigator scores one step ahead and can miss what
+ *  the plan needs (e.g. Flaps falling behind). */
+export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew)): GameCommand[] {
+  const ranked = rankMoves(view, crew, moves, rand).slice(0, shortlist);
+  const own = fastMove(view, crew, rand);
+  if (own && !ranked.some((m) => JSON.stringify(m) === JSON.stringify(own))) {
+    if (ranked.length < shortlist) ranked.push(own);
+    else ranked[shortlist - 1] = own;
+  }
+  return ranked;
+}
 
 /**
  * Aviator: determinized Monte Carlo over the Navigator's shortlist. Each sample
@@ -23,7 +36,7 @@ export function searchMove(
 ): GameCommand | null {
   const moves = legalMoves(view, crew);
   if (moves.length <= 1) return moves[0] ?? null;
-  const candidates = rankMoves(view, crew, moves, rand).slice(0, shortlist);
+  const candidates = searchCandidates(view, crew, rand, shortlist, moves);
   const totals = candidates.map(() => 0);
   const counts = candidates.map(() => 0);
   const deadline = Date.now() + budgetMs;

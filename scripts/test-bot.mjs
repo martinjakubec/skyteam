@@ -307,5 +307,17 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   check("search over full-game rollouts returns a legal move", legalMoves(v, "pilot").some((x) => JSON.stringify(x) === JSON.stringify(m)));
 }
 
+console.log("9) Aviator's candidates include the rollout policy's own choice");
+{
+  const { searchCandidates, fastMove, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  let included = 0;
+  for (let seed = 0; seed < 10; seed++) {
+    const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), P);
+    const own = JSON.stringify(fastMove(v, "pilot", mulberry32(seed)));
+    if (searchCandidates(v, "pilot", mulberry32(seed), 6).some((m) => JSON.stringify(m) === own)) included++;
+  }
+  check("the policy's move is always among the candidates", included === 10);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
