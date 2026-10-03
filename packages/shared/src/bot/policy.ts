@@ -32,6 +32,17 @@ function reserveBonus(view: GameState, crew: Crew, move: GameCommand): number {
   return -penalty;
 }
 
+/** The moves, best first by their one-step score; equal scores in random order. */
+export function rankMoves(view: GameState, crew: Crew, moves: GameCommand[], rand: Rand): GameCommand[] {
+  const shuffled = [...moves];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const scored = shuffled.map((m) => ({ m, s: scoreMove(view, crew, m) }));
+  return scored.sort((a, b) => b.s - a.s).map(({ m }) => m); // stable: ties keep the shuffle
+}
+
 /**
  * Pick the bot's next command from its own view. Navigator: best one-step
  * score (ties broken at random). Cadet/Aviator alias Navigator until Phase 3.
@@ -40,12 +51,5 @@ function reserveBonus(view: GameState, crew: Crew, move: GameCommand): number {
 export function chooseMove(view: GameState, crew: Crew, _level: BotLevel, rand: Rand): GameCommand | null {
   const moves = legalMoves(view, crew);
   if (moves.length === 0) return null;
-  let best: GameCommand[] = [];
-  let bestScore = -Infinity;
-  for (const m of moves) {
-    const s = scoreMove(view, crew, m);
-    if (s > bestScore + 1e-9) { best = [m]; bestScore = s; }
-    else if (Math.abs(s - bestScore) <= 1e-9) best.push(m);
-  }
-  return best[rand(best.length)];
+  return rankMoves(view, crew, moves, rand)[0];
 }

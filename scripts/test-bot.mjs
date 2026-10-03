@@ -141,5 +141,39 @@ console.log("4) Self-play: every card, every module combination, every ability")
   check("same seed, same game", JSON.stringify(a) === JSON.stringify(b));
 }
 
+console.log("5) Monte Carlo search (Aviator)");
+{
+  const { searchMove, determinize, rolloutRound, rankMoves, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce, legalMoves } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc, s = DEFAULT_SETUP) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const g = fresh([1, 3, 4, 6], [2, 2, 5, 5]);
+  const view = redactGameStateFor(g, P);
+  const d = determinize(view, mulberry32(1));
+  check("determinize fills every hidden die, keeps mine", d.dice.copilot.every((x) => x.value >= 1 && x.value <= 6 && !x.hidden) && d.dice.pilot.map((x) => x.value).join() === "1,3,4,6");
+  const end = rolloutRound(d, mulberry32(2));
+  check("a rollout finishes the round (or the game)", end.round === 2 || !!end.outcome);
+  const moves = legalMoves(view, "pilot");
+  check("rankMoves orders every legal move", rankMoves(view, "pilot", moves, mulberry32(9)).length === moves.length);
+  const m = searchMove(view, "pilot", mulberry32(3), { budgetMs: 150, shortlist: 4, maxSamples: 20 });
+  check("search returns a legal move", moves.some((x) => JSON.stringify(x) === JSON.stringify(m)));
+  // One legal move → returned at once: the Pilot's last die, Axis done, Engine open.
+  const lastDie = fresh([1, 1, 1, 4], [1, 1, 1, 1]);
+  lastDie.dice.pilot.slice(0, 3).forEach((x) => (x.placed = true));
+  lastDie.axis.pilot = 1;
+  lastDie.rerollTokens = 0; // round 1's Reroll token would make a reroll legal too
+  const only = legalMoves(redactGameStateFor(lastDie, P), "pilot");
+  check("(setup: exactly one legal move — the Engine)", only.length === 1 && only[0].target?.kind === "engine");
+  const t0 = Date.now();
+  check("single legal move returned without sampling", JSON.stringify(searchMove(redactGameStateFor(lastDie, P), "pilot", mulberry32(4), { budgetMs: 5000 })) === JSON.stringify(only[0]) && Date.now() - t0 < 200);
+  const t1 = Date.now();
+  searchMove(view, "pilot", mulberry32(5), { budgetMs: 200 });
+  check("respects its time budget", Date.now() - t1 < 600);
+  // Final round: rollouts stop at the landing outcome.
+  const last = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 7 };
+  check("final-round rollout ends with an outcome", !!rolloutRound(determinize(redactGameStateFor(last, P), mulberry32(6)), mulberry32(7)).outcome);
+  // A pending prompt for the bot: a Reroll offered to the Pilot is answered.
+  const offered = { ...g, turn: "copilot", pendingReroll: "pilot" };
+  check("search answers a pending Reroll prompt", searchMove(redactGameStateFor(offered, P), "pilot", mulberry32(8), { budgetMs: 100 })?.type === "reroll");
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
