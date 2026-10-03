@@ -18,14 +18,17 @@ const N = Number(process.argv[2] ?? 30);
 // runs are reproducible); its average time per decision says whether that
 // fits the live 600 ms budget.
 if (process.argv.includes("landing")) {
-  const samples = Number(process.argv[process.argv.indexOf("landing") + 1] ?? 20) || 20;
+  // A number = samples per candidate (reproducible); "600ms" = a time budget per decision (as live).
+  const arg = process.argv[process.argv.indexOf("landing") + 1] ?? "20";
+  const budgetMs = arg.endsWith("ms") ? Number(arg.slice(0, -2)) : undefined;
+  const samples = budgetMs ? undefined : Number(arg) || 20;
   const setup = { scenarioId: "YUL", modules: [], abilities: [] };
   for (const lv of process.env.LEVELS?.split(",") ?? ["navigator", "aviator"]) {
     let won = 0, rounds = 0, moves = 0, midFlight = 0;
     const fails = {};
     const t0 = Date.now();
     for (let i = 0; i < N; i++) {
-      const r = selfPlay(setup, { pilot: lv, copilot: lv }, i, 400, lv === "aviator" ? { samples } : undefined);
+      const r = selfPlay(setup, { pilot: lv, copilot: lv }, i, 400, lv === "aviator" ? (budgetMs ? { budgetMs } : { samples }) : undefined);
       rounds += r.rounds;
       moves += r.moves;
       if (r.outcome === "won") won++;
@@ -35,7 +38,7 @@ if (process.argv.includes("landing")) {
     }
     const ms = (Date.now() - t0) / Math.max(1, moves);
     const checklist = Object.entries(fails).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ");
-    console.log(`${lv.padEnd(10)} ${((100 * won) / N).toFixed(1).padStart(5)}% landed (${won}/${N}) · avg round ${(rounds / N).toFixed(2)} · lost mid-flight ${midFlight} · ${ms.toFixed(0)} ms/decision${lv === "aviator" ? ` (${samples} samples)` : ""}`);
+    console.log(`${lv.padEnd(10)} ${((100 * won) / N).toFixed(1).padStart(5)}% landed (${won}/${N}) · avg round ${(rounds / N).toFixed(2)} · lost mid-flight ${midFlight} · ${ms.toFixed(0)} ms/decision${lv === "aviator" ? (budgetMs ? ` (${budgetMs} ms budget)` : ` (${samples} samples)`) : ""}`);
     console.log(`           failed landing conditions: ${checklist || "—"}`);
   }
   process.exit(0);
