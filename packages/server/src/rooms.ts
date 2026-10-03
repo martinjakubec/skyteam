@@ -10,31 +10,26 @@ export class RoomError extends Error {
   }
 }
 
-/** Create a fresh room with the creator seated as host. */
-export async function createRoom(hostPlayerId: string): Promise<Room> {
+/** Create a fresh room with the creator seated as host. With `solo`, the host
+ *  flies `crew` and a bot at `level` flies the other seat (always connected
+ *  and ready). */
+export async function createRoom(hostPlayerId: string, solo?: { crew: Crew; level: BotLevel }): Promise<Room> {
   const room: Room = {
     id: nanoid(),
     inviteCode: nanoid(8),
     hostPlayerId,
     status: "lobby",
-    seats: [{ playerId: hostPlayerId, role: "host", ready: false, connected: false }],
-    hostCrew: "pilot",
+    seats: [
+      { playerId: hostPlayerId, role: "host", ready: false, connected: false },
+      ...(solo ? [{ playerId: `bot:${nanoid()}`, role: "guest" as const, ready: true, connected: true, bot: solo.level }] : []),
+    ],
+    hostCrew: solo?.crew ?? "pilot",
     observers: [],
     setup: structuredClone(DEFAULT_SETUP),
     version: 0,
     game: null,
     updatedAt: Date.now(),
   };
-  await saveRoom(room);
-  return room;
-}
-
-/** A solo room: the caller (host) flies `crew`; a bot at `level` flies the
- *  other seat and is always connected and ready. */
-export async function createSoloRoom(hostPlayerId: string, crew: Crew, level: BotLevel): Promise<Room> {
-  const room = await createRoom(hostPlayerId);
-  room.hostCrew = crew;
-  room.seats.push({ playerId: `bot:${nanoid()}`, role: "guest", ready: true, connected: true, bot: level });
   await saveRoom(room);
   return room;
 }

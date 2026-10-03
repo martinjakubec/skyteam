@@ -3,7 +3,7 @@ import cors from "cors";
 import { corsOptions } from "./cors";
 import { issueToken, verifyToken } from "./identity";
 import { SoloRoomRequest } from "@skyteam/shared";
-import { createRoom, createSoloRoom, joinByInvite, RoomError } from "./rooms";
+import { createRoom, joinByInvite, RoomError } from "./rooms";
 
 export function createApp() {
   const app = express();
@@ -22,8 +22,17 @@ export function createApp() {
   // Create a room; the caller becomes the host. With `solo`, a bot takes the other seat.
   app.post("/rooms", async (req, res) => {
     const me = resolveIdentity(req.body?.token);
-    const solo = SoloRoomRequest.safeParse(req.body?.solo);
-    const room = solo.success ? await createSoloRoom(me.playerId, solo.data.crew, solo.data.level) : await createRoom(me.playerId);
+    let solo: SoloRoomRequest | undefined;
+    if (req.body?.solo !== undefined) {
+      // A solo request that doesn't parse is refused, not quietly turned into a multiplayer room.
+      const parsed = SoloRoomRequest.safeParse(req.body.solo);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid solo game: pick a seat (pilot or copilot) and a bot level." });
+        return;
+      }
+      solo = parsed.data;
+    }
+    const room = await createRoom(me.playerId, solo);
     res.json({ roomId: room.id, inviteCode: room.inviteCode, token: me.token });
   });
 

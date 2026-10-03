@@ -472,6 +472,15 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("…not in rooms without a bot", npcShouldAct({ ...playing, seats }) === null);
   check("…not while a Real-Time clock is paused (every action is refused then)", npcShouldAct({ ...playing, game: { ...g, timerRemainingMs: 30000 } }) === null);
 
+  // Real-Time: past the deadline the round is over — the bot doesn't try a move
+  // (it would only be refused as too late); the time-up wakes it if it leads next.
+  check("…not once a Real-Time deadline has passed", npcShouldAct({ ...playing, game: { ...g, timerEndsAt: Date.now() - 1 } }) === null);
+  const { reduce: reduceRT, settle, randDice } = await import("../packages/shared/src/index.ts");
+  const rt = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, "H", "bot:1", mulberry32(8), Date.now()); // human Pilot leads round 1
+  const mandatoryDown = { ...rt, axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: 3, copilot: 3 } };
+  const round2 = settle(reduceRT(mandatoryDown, { type: "timeUp" }, "").state, randDice(mulberry32(9)), Date.now);
+  const rtRoom = { ...solo, hostCrew: "pilot", status: "in_progress", game: round2 };
+  check("after a time-up, the bot (Co-Pilot) leads round 2 and is woken", round2.round === 2 && round2.phase === "placement" && npcShouldAct(rtRoom)?.crew === "copilot");
   const { lobbyStatus, npcGivesUp, abandonsOnDisconnect } = seating;
   const readySolo = solo.seats.map((s) => ({ ...s, ready: true }));
   check("solo: after a setup change both seats are still ready, so the room stays ready", lobbyStatus(unreadyOthers(readySolo, "H")) === "ready");

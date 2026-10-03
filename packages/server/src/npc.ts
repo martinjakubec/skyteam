@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { redactGameStateFor } from "@skyteam/shared";
 import { env } from "./env";
 import { npcGivesUp, npcShouldAct } from "./seating";
-import { applyCommand, broadcastState, type IOServer } from "./socket";
+import { applyCommand, broadcastState, TOO_LATE, type IOServer } from "./socket";
 import { getRoom, saveRoom } from "./store";
 import { think } from "./think";
 
@@ -35,6 +35,9 @@ export function scheduleNpc(io: IOServer, roomId: string, delayMs = env.NPC_DELA
       // Should never happen: a die that fits nowhere is discarded by the rules.
       if (!move) return giveUp(io, roomId, `no legal move for the ${turn.crew} bot`);
       const error = await applyCommand(io, room, turn.botId, move);
+      // Too late: the deadline passed while the bot thought. Not a rejection —
+      // the time-up ended the round and woke the bot if it leads the next one.
+      if (error === TOO_LATE) return;
       if (error) {
         console.error(`[npc] ${roomId}: move rejected (${error}) — ${JSON.stringify(move)}`);
         const n = (rejections.get(roomId) ?? 0) + 1;

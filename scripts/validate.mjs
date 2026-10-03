@@ -158,6 +158,13 @@ async function main() {
   for (const s of [a, b2, o]) s.close();
 
   console.log("9) Solo game vs the bot");
+  let badSolo = "accepted";
+  try {
+    await post("/rooms", { solo: { crew: "pilot", level: "ace" } });
+  } catch (e) {
+    badSolo = e.message;
+  }
+  check("a malformed solo request is refused (not turned into a multiplayer room)", badSolo.endsWith("-> 400"));
   const soloRoom = await post("/rooms", { solo: { crew: "copilot", level: "navigator" } });
   const h = connect();
   await waitFor(h, "connect");

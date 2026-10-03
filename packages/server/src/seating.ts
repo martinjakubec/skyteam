@@ -26,10 +26,13 @@ export function unreadyOthers(seats: Seat[], keepId: PlayerId | null): Seat[] {
 }
 
 /** Whether the game is waiting on the room's bot right now, and as which crew.
- *  Never while a Real-Time clock is paused: every player action is refused then. */
+ *  Never while a Real-Time clock is paused (every player action is refused
+ *  then), nor once its deadline has passed (the round is over; the time-up
+ *  wakes the bot if it leads the next one). */
 export function npcShouldAct(room: Room): { botId: PlayerId; crew: Crew; level: BotLevel } | null {
   const bot = botSeat(room);
   if (!bot || room.status !== "in_progress" || !room.game || room.game.timerRemainingMs !== null) return null;
+  if (room.game.timerEndsAt !== null && Date.now() >= room.game.timerEndsAt) return null;
   const crew = crewOf(room, bot.playerId);
   return crew && actorFor(room.game) === crew ? { botId: bot.playerId, crew, level: bot.bot } : null;
 }

@@ -240,6 +240,9 @@ async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: 
   if (error) ack({ ok: false, error });
 }
 
+/** A Real-Time command that arrived after the deadline. */
+export const TOO_LATE = "Time's up.";
+
 /**
  * Apply one player's command — a human's, or the bot's — the way every
  * command is applied: server values, the Real-Time deadline, the rules,
@@ -264,7 +267,7 @@ export async function applyCommand(
   const endsAt = room.game.timerEndsAt;
   if (endsAt !== null && Date.now() >= endsAt) {
     await onTimeUp(io, room.id, endsAt);
-    return "Time's up.";
+    return TOO_LATE;
   }
 
   let game: GameState;
