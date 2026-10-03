@@ -356,5 +356,40 @@ console.log("9) Aviator's candidates include the rollout policy's own choice");
   check("candidates are all different moves (no same-value, same-space duplicates)", dupes === 0);
 }
 
+console.log("10) Fast rollouts: moves applied in place; surely-legal placements");
+{
+  const { reduceInPlace, placementCheck, fastMove, reduce, legalMoves, actorFor, determinize, redactGameStateFor, rolloutGame } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(4), 0);
+  const copy = structuredClone(g);
+  const viaCopy = reduce(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P).state;
+  const inPlace = reduceInPlace(copy, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P).state;
+  check("reduceInPlace changes the state it's given, exactly as reduce would", inPlace === copy && JSON.stringify(inPlace) === JSON.stringify(viaCopy));
+  // "Surely legal" must never be wrong: check it against the rules on many real positions.
+  let wrong = 0, sure = 0;
+  for (let seed = 0; seed < 40; seed++) {
+    let st = newGame({ ...DEFAULT_SETUP, modules: seed % 2 ? ["kerosene", "intern"] : ["iceBrakes"] }, P, C, mulberry32(seed), 0);
+    for (let k = 0; k < 30 && !st.outcome; k++) {
+      const crew = actorFor(st);
+      if (!crew) break;
+      const id = crew === "pilot" ? P : C;
+      for (const m of legalMoves(st, crew)) if (m.type === "placeDie" && placementCheck(st, crew, m) === false) wrong++;
+      for (const d of st.dice[crew].filter((x) => !x.placed)) {
+        for (const target of [{ kind: "axis" }, { kind: "engine" }, { kind: "radio", slot: 0 }, { kind: "radio", slot: 1 }, { kind: "concentration", slot: 0 }, { kind: "landingGear", slot: 1 }, { kind: "flaps", slot: 0 }, { kind: "brakes", slot: 0 }]) {
+          const m = { type: "placeDie", dieId: d.id, target };
+          if (placementCheck(st, crew, m) !== true) continue;
+          sure++;
+          try { reduce(st, m, id); } catch { wrong++; }
+        }
+      }
+      st = applyIntent(st, fastMove(st, crew, mulberry32(seed + k)), id, mulberry32(seed * 7 + k), () => 0);
+    }
+  }
+  check(`placementCheck: never rules out a legal move, never calls an illegal one sure (${sure} sure)`, wrong === 0 && sure > 500);
+  const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(5), 0), P);
+  const world = determinize(v, mulberry32(6));
+  check("a sampled world carries no log (nothing to copy or write)", world.log.length === 0 && (world.log.push("x"), world.log.length === 0));
+  check("rollouts on sampled worlds still end in an outcome", !!rolloutGame(world, mulberry32(7)).outcome);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

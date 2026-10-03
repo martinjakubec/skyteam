@@ -1,11 +1,11 @@
 import type { GameCommand } from "../protocol";
-import { applyIntent, type Rand } from "../game/entropy";
+import { applyIntentInPlace, type Rand } from "../game/entropy";
 import type { Crew } from "../game/scenario";
 import type { GameState } from "../game/state";
 import { evaluate } from "./evaluate";
 import { legalMoves, playerIdOf } from "./moves";
 import { rankMoves } from "./policy";
-import { determinize, fastMove, rolloutGame, rolloutRound, rolloutValue } from "./rollout";
+import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
 
 /** The moves the search compares: the Navigator's best few, plus the rollout
  *  policy's own choice — the Navigator scores one step ahead and can miss what
@@ -65,9 +65,12 @@ export function searchMove(
   while (budget > 0 && Date.now() < deadline) {
     for (const i of alive) {
       if (budget <= 0 || Date.now() >= deadline) break;
-      const world = determinize(view, rand);
-      const played = applyIntent(world, candidates[i], playerIdOf(view, crew), rand, now);
-      totals[i] += horizon === "game" ? rolloutValue(rolloutGame(played, rand), crew) : evaluate(rolloutRound(played, rand), crew);
+      // A fresh sampled world, owned here: the candidate and the rollout play on it in place.
+      const world = applyIntentInPlace(determinize(view, rand), candidates[i], playerIdOf(view, crew), rand, now);
+      const round = world.round;
+      totals[i] += horizon === "game"
+        ? rolloutValue(rolloutInPlace(world, rand), crew)
+        : evaluate(rolloutInPlace(world, rand, 40, (st) => st.round !== round), crew);
       counts[i] += 1;
       budget -= 1;
     }

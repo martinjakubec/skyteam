@@ -1,5 +1,5 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
-import { applyIntent, type Rand } from "../game/entropy";
+import { applyIntentInPlace, type Rand } from "../game/entropy";
 import { GameRuleError, landingChecks, reduce } from "../game/reducer";
 import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, LANDING_GEAR_VALUES, WIND_RING, type Crew, type DieValue } from "../game/scenario";
 import { airportIndex, type GameState } from "../game/state";
@@ -10,7 +10,12 @@ import { chooseMove } from "./policy";
 
 /** Give every hidden die a random value — one plausible world consistent with the view. */
 export function determinize(view: GameState, rand: Rand): GameState {
-  const s = structuredClone(view);
+  // Copy everything but the log (it only grows), and give the sampled world a
+  // log that drops what's written to it — nobody reads a rollout's log.
+  const { log: _log, ...rest } = view;
+  const s = structuredClone(rest) as GameState;
+  s.log = [];
+  Object.defineProperty(s.log, "push", { value: () => 0, enumerable: false });
   for (const crew of ["pilot", "copilot"] as const) {
     for (const d of s.dice[crew]) {
       if (d.hidden) {
@@ -52,12 +57,12 @@ export const POLICY_PARAMS = {
 };
 
 /**
- * A cheap pre-check for a placement: false only when it's clearly illegal (a
- * taken space, a value that can't fit, a switch out of order, a die the
- * Axis/Engine reservation needs). Anything it isn't sure of passes — the rules
- * (reduce) still decide; this only saves trying obvious misses on a copy.
+ * A cheap check of a placement against the rules: false when it's clearly
+ * illegal, true when it's surely legal (the common spaces, nothing pending),
+ * undefined when unsure — then the rules (reduce) decide. "Surely" is tested
+ * against the rules on thousands of positions; rollouts trust it without a copy.
  */
-export function maybeLegal(s: GameState, crew: Crew, m: Place): boolean {
+export function placementCheck(s: GameState, crew: Crew, m: Place): boolean | undefined {
   if (s.phase !== "placement" || s.turn !== crew) return false;
   const die = s.dice[crew].find((d) => d.id === m.dieId);
   if (!die || die.placed || die.value === undefined) return false;
@@ -70,27 +75,37 @@ export function maybeLegal(s: GameState, crew: Crew, m: Place): boolean {
     const open = (s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0);
     if (inHand <= open) return false;
   }
-  switch (t.kind) {
-    case "axis":
-      return s.axis[crew] === null;
-    case "engine":
-      return s.engines[crew] === null;
-    case "radio":
-      return crew === "pilot" ? t.slot === 0 && s.radioPilot === null : s.radioCopilot[t.slot] === null;
-    case "concentration":
-      return s.concentrationSlots[t.slot] == null;
-    case "landingGear":
-      return crew === "pilot" && s.gearSlots[t.slot] === null && LANDING_GEAR_VALUES[t.slot].includes(v as DieValue);
-    case "flaps":
-      return crew === "copilot" && s.flapSlots[t.slot] === null && FLAPS_VALUES[t.slot].includes(v as DieValue) &&
-        (s.flapsGreen[t.slot] || t.slot === s.flapsGreen.findIndex((g) => !g));
-    case "brakes":
-      return crew === "pilot" && !s.brakeSlots[t.slot] && BRAKE_VALUES[t.slot] === v && t.slot <= s.brakesDeployed &&
-        !s.scenario.modules?.includes("iceBrakes");
-    default:
-      return true; // Kerosene, Ice Brakes, the Intern: the rules decide
-  }
+  if ("side" in t && t.side !== undefined && t.side !== crew) return undefined;
+  const fits = (() => {
+    switch (t.kind) {
+      case "axis":
+        return s.axis[crew] === null;
+      case "engine":
+        return s.engines[crew] === null;
+      case "radio":
+        return crew === "pilot" ? t.slot === 0 && s.radioPilot === null : (t.slot === 0 || t.slot === 1) && s.radioCopilot[t.slot] === null;
+      case "concentration":
+        return (t.slot === 0 || t.slot === 1) && s.concentrationSlots[t.slot] == null;
+      case "landingGear":
+        return crew === "pilot" && s.gearSlots[t.slot] === null && (LANDING_GEAR_VALUES[t.slot] ?? []).includes(v as DieValue);
+      case "flaps":
+        return crew === "copilot" && s.flapSlots[t.slot] === null && (FLAPS_VALUES[t.slot] ?? []).includes(v as DieValue) &&
+          (s.flapsGreen[t.slot] || t.slot === s.flapsGreen.findIndex((g) => !g));
+      case "brakes":
+        return crew === "pilot" && !s.brakeSlots[t.slot] && BRAKE_VALUES[t.slot] === v && t.slot <= s.brakesDeployed &&
+          !s.scenario.modules?.includes("iceBrakes");
+      default:
+        return undefined; // Kerosene, Ice Brakes, the Intern: the rules decide
+    }
+  })();
+  if (fits === false) return false;
+  // Anything pending (a reroll, a swap, a held extra) or a paused clock: let the rules decide.
+  if (fits === undefined || s.pendingReroll || s.pendingSwap || s.internHeld || s.trafficHeld || s.trafficPending || s.timerRemainingMs !== null) return undefined;
+  return true;
 }
+
+/** placementCheck that only rules out clear misses. */
+export const maybeLegal = (s: GameState, crew: Crew, m: Place): boolean => placementCheck(s, crew, m) !== false;
 const other = (c: Crew): Crew => (c === "pilot" ? "copilot" : "pilot");
 const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : speed > s.aeroOrange ? 2 : 1);
 
@@ -223,7 +238,9 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     for (const t of radioSlots) at(d.id, t);
   }
   for (const cmd of tries) {
-    if (!maybeLegal(s, crew, cmd)) continue;
+    const sure = placementCheck(s, crew, cmd);
+    if (sure === false) continue;
+    if (sure) return cmd;
     try {
       reduce(s, cmd, playerIdOf(s, crew));
       return cmd;
@@ -236,15 +253,18 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
 
 /** Play on until the round changes or the game ends (full information, both crews). */
 export function rolloutRound(state: GameState, rand: Rand, maxSteps = 40): GameState {
-  return rollout(state, rand, maxSteps, (s) => s.round !== state.round);
+  const round = state.round;
+  return rolloutInPlace(structuredClone(state), rand, maxSteps, (s) => s.round !== round);
 }
 
 /** Play on to the end of the game (full information, both crews). */
 export function rolloutGame(state: GameState, rand: Rand, maxSteps = 400): GameState {
-  return rollout(state, rand, maxSteps, () => false);
+  return rolloutInPlace(structuredClone(state), rand, maxSteps, () => false);
 }
 
-function rollout(state: GameState, rand: Rand, maxSteps: number, stop: (s: GameState) => boolean): GameState {
+/** A rollout on a world the caller owns (e.g. a fresh sample): moves are
+ *  applied to it directly — no copy per move. */
+export function rolloutInPlace(state: GameState, rand: Rand, maxSteps = 400, stop: (s: GameState) => boolean = () => false): GameState {
   let s = state;
   const now = () => 0;
   for (let i = 0; i < maxSteps && !s.outcome && !stop(s); i++) {
@@ -252,7 +272,7 @@ function rollout(state: GameState, rand: Rand, maxSteps: number, stop: (s: GameS
     if (!crew) break;
     const move = fastMove(s, crew, rand);
     if (!move) break;
-    s = applyIntent(s, move, playerIdOf(s, crew), rand, now);
+    s = applyIntentInPlace(s, move, playerIdOf(s, crew), rand, now);
   }
   return s;
 }

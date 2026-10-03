@@ -78,7 +78,15 @@ const PLAYER_ACTIONS: ReadonlySet<ReduceCommand["type"]> = new Set([
  * resolve* / endOfRound steps below.
  */
 export function reduce(state: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
-  const draft: GameState = structuredClone(state);
+  return reduceInPlace(structuredClone(state), command, byPlayerId);
+}
+
+/**
+ * reduce, applied to the state it's given instead of a copy — for bot
+ * rollouts, which own their sampled world and play thousands of moves on it.
+ * If the command is illegal it throws part-way, leaving `draft` unusable.
+ */
+export function reduceInPlace(draft: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
   if (draft.timerRemainingMs !== null && PLAYER_ACTIONS.has(command.type)) {
     throw new GameRuleError("The clock is paused until both players are connected.");
   }
