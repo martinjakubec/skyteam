@@ -471,6 +471,16 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("…not outside an in-progress game", npcShouldAct({ ...playing, status: "finished" }) === null);
   check("…not in rooms without a bot", npcShouldAct({ ...playing, seats }) === null);
   check("…not while a Real-Time clock is paused (every action is refused then)", npcShouldAct({ ...playing, game: { ...g, timerRemainingMs: 30000 } }) === null);
+
+  const { lobbyStatus, npcGivesUp, abandonsOnDisconnect } = seating;
+  const readySolo = solo.seats.map((s) => ({ ...s, ready: true }));
+  check("solo: after a setup change both seats are still ready, so the room stays ready", lobbyStatus(unreadyOthers(readySolo, "H")) === "ready");
+  check("multiplayer: after a setup change the guest must ready up again", lobbyStatus(unreadyOthers(seats, "H")) === "lobby");
+  check("a lone host is never ready to start", lobbyStatus([seats[0]]) === "lobby");
+  check("a rejected bot move is retried a couple of times…", !npcGivesUp(1) && !npcGivesUp(2));
+  check("…then the bot gives up instead of retrying forever", npcGivesUp(3));
+  check("a solo game waits for its human (nobody else is waiting)", !abandonsOnDisconnect(solo));
+  check("a multiplayer game is abandoned when a player doesn't return", abandonsOnDisconnect({ ...base, seats }));
 }
 
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);

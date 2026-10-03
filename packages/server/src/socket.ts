@@ -5,7 +5,6 @@ import {
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
-  MAX_PLAYERS,
   SetReadyPayload,
   SetSetupPayload,
   hasModule,
@@ -28,7 +27,7 @@ import { getRoom, saveRoom } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
-import { crewOf, seatCrews, unreadyOthers } from "./seating";
+import { abandonsOnDisconnect, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
@@ -123,8 +122,7 @@ async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   if (!seat) return ack({ ok: false, error: "Observers cannot ready up." });
 
   seat.ready = parsed.data.ready;
-  const allReady = room.seats.length === MAX_PLAYERS && room.seats.every((s) => s.ready);
-  room.status = allReady ? "ready" : "lobby";
+  room.status = lobbyStatus(room.seats);
   await saveRoom(room);
 
   ack({ ok: true });
@@ -146,7 +144,7 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   if (JSON.stringify(parsed.data) !== JSON.stringify(room.setup)) {
     room.setup = parsed.data;
     room.seats = unreadyOthers(room.seats, playerId);
-    room.status = "lobby";
+    room.status = lobbyStatus(room.seats); // a solo room (host + bot) stays ready
     await saveRoom(room);
   }
 
@@ -391,7 +389,7 @@ async function abandonIfStillGone(io: IOServer, roomId: string, playerId: string
   if (!room || room.status === "finished" || room.status === "abandoned") return;
 
   const seat = room.seats.find((s) => s.playerId === playerId);
-  if (seat && !seat.connected) {
+  if (seat && !seat.connected && abandonsOnDisconnect(room)) {
     room.status = "abandoned";
     clearClock(roomId);
     await saveRoom(room);

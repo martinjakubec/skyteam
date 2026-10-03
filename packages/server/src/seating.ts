@@ -1,4 +1,4 @@
-import { actorFor, type BotLevel, type Crew, type PlayerId } from "@skyteam/shared";
+import { actorFor, MAX_PLAYERS, type BotLevel, type Crew, type PlayerId, type RoomStatus } from "@skyteam/shared";
 import type { Room, Seat } from "./types";
 
 /** Which player flies which seat. The host flies `hostCrew` (default Pilot). */
@@ -32,4 +32,19 @@ export function npcShouldAct(room: Room): { botId: PlayerId; crew: Crew; level: 
   if (!bot || room.status !== "in_progress" || !room.game || room.game.timerRemainingMs !== null) return null;
   const crew = crewOf(room, bot.playerId);
   return crew && actorFor(room.game) === crew ? { botId: bot.playerId, crew, level: bot.bot } : null;
+}
+
+/** A lobby is ready to start once both seats are filled and ready (a bot seat always is). */
+export function lobbyStatus(seats: Seat[]): RoomStatus {
+  return seats.length === MAX_PLAYERS && seats.every((s) => s.ready) ? "ready" : "lobby";
+}
+
+/** Rejected bot moves in a row before the bot gives up (a legality bug, never a rule). */
+export const NPC_MAX_REJECTIONS = 3;
+export const npcGivesUp = (rejections: number) => rejections >= NPC_MAX_REJECTIONS;
+
+/** Whether a player who doesn't come back within the grace period ends the
+ *  game. Not in a solo room: nobody else is waiting, so the game just waits. */
+export function abandonsOnDisconnect(room: Room): boolean {
+  return botSeat(room) === null;
 }
