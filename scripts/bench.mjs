@@ -8,7 +8,8 @@
 import { selfPlay, representativeSetups, allSetups, SetSetupPayload } from "../packages/shared/src/index.ts";
 const N = Number(process.argv[2] ?? 30);
 
-// compare: the three levels on the same small set and the same seeds. Win
+// compare: the three levels on the same small set, from the same seeds (the
+// levels use the random stream differently, so games soon diverge). Win
 // rates are low, so the tier verdict uses the average progress score: rounds
 // survived, +1 for a landing. Aviator searches 50 ms a move here (600 ms live).
 if (process.argv.includes("compare")) {

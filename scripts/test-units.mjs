@@ -496,6 +496,20 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   check("Aviator answers through the worker within its budget", Date.now() - t0 < 2000 && legal(m) && thinkStats.worker === 1 && thinkStats.fallback === 0);
   check("a worker failure falls back to Navigator", legal(await think(view, "pilot", "aviator", 1, { simulateWorkerError: true })) && thinkStats.fallback === 1);
   check("Cadet and Navigator answer inline", legal(await think(view, "pilot", "cadet", 2)) && legal(await think(view, "pilot", "navigator", 3)));
+  // The real failure paths, through the worker:
+  const { crashWorkerForTest } = await import("../packages/server/src/think.ts");
+  const before = thinkStats.fallback;
+  crashWorkerForTest(); // the worker handles this first, then dies with the request below pending
+  const during = think(view, "pilot", "aviator", 4);
+  check("a worker crash mid-request falls back to Navigator", legal(await during) && thinkStats.fallback === before + 1);
+  await warmThinking(); // a crashed worker is replaced by a fresh one
+  const w0 = thinkStats.worker;
+  check("…and the next Aviator move comes from a fresh worker", legal(await think(view, "pilot", "aviator", 5)) && thinkStats.worker === w0 + 1);
+  const f0 = thinkStats.fallback;
+  check("a timed-out request falls back to Navigator", legal(await think(view, "pilot", "aviator", 6, { timeoutMs: 1 })) && thinkStats.fallback === f0 + 1);
+  let crashed = false;
+  const none = await think(null, "pilot", "navigator", 7).catch(() => (crashed = true));
+  check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);
   await stopThinking(); // let the test process exit
 }
 

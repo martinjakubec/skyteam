@@ -4,7 +4,8 @@ import { chooseMove, mulberry32 } from "@skyteam/shared";
 // The Aviator's search, off the server's main thread (see think.ts). A request
 // past its deadline is skipped and the budget trimmed to the time left, so
 // requests that timed out (e.g. while this worker was starting) can't pile up.
-parentPort!.on("message", ({ id, view, crew, level, seed, budgetMs, deadline }) => {
+parentPort!.on("message", ({ id, view, crew, level, seed, budgetMs, deadline, crash }) => {
+  if (crash) throw new Error("crash requested (test)"); // uncaught, like a real bug
   const left = deadline - Date.now() - 100;
   if (left <= 0) return parentPort!.postMessage({ id, error: "stale request" });
   try {

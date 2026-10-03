@@ -37,7 +37,7 @@ npm run bench -- [games=30] [level=navigator] [ALL]   # bot win rate
 ```
 
 `npm run bench -- 20 compare` plays Cadet, Navigator and Aviator on the same
-setups and seeds and checks they rank in that order (see "Running it").
+setups and checks they rank in that order (see "Running it").
 `npm run bench` plays the bot against itself and prints, per setup, the win
 rate, the average round reached and the top loss reasons, then the overall win
 rate. By default it covers every scenario card, every module combination and
@@ -96,8 +96,11 @@ The bot has three levels:
   average, within `NPC_THINK_MS`. It thinks in a worker thread, so it never
   blocks other rooms, and falls back to Navigator if that fails.
 
-`npm run bench -- 20 compare` plays all three on the same 6 setups and seeds
-(Aviator at 50 ms a move). Measured: Cadet 0.8% won, progress 3.86 · Navigator
+`npm run bench -- 20 compare` plays all three on the same 6 setups, starting
+from the same seeds (Aviator at 50 ms a move). The levels draw on the random
+stream differently, so their games soon diverge, and Aviator's results depend
+on machine speed (its search is time-budgeted): treat the numbers as
+indicative, not as a paired comparison. Measured: Cadet 0.8% won, progress 3.86 · Navigator
 0.8% won, progress 5.12 · Aviator 0.0% won, progress 5.87 (progress = rounds
 survived, +1 for a landing). The levels are in order, but all three still land
 rarely — the evaluator is the place to improve them.
