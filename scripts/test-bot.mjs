@@ -20,6 +20,8 @@ console.log("1) Dealing and driving games from a random source");
   check("a round on a Traffic-dice space rolls them (red-HND starts with 3)", traffic.phase === "placement" && traffic.airplanes.reduce((a, b) => a + b, 0) === printed + 3);
   const rt = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(5), 1000);
   check("a Real-Time game's clock starts at the given time", rt.timerEndsAt !== null && rt.timerEndsAt > 1000);
+  const quick = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(5), 1000, { realTimeSeconds: 3 });
+  check("newGame can shorten the Real-Time round (for test servers)", quick.timerEndsAt === 4000);
   const placed = applyIntent(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P, mulberry32(6), clock);
   check("applyIntent applies and settles", placed.axis.pilot !== null && placed.turn === "copilot");
   check("settle leaves a placement-ready game", settle(g, randDice(mulberry32(8)), clock).phase === "placement");
@@ -123,6 +125,15 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("no Turn penalty before this round's Axis dice are down (the tilt isn't final)", evaluate(turnAt(0, [0])(before), "pilot") === evaluate(before, "pilot"));
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
+
+  // Real-Time: the round can end any second, and an open Axis or Engine then
+  // loses — so the bot fills its own first.
+  const rtFirst = [0, 1, 2, 3, 4, 5].map((seed) => {
+    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(seed), Date.now());
+    const m = chooseMove(redactGameStateFor(g, P), "pilot", "navigator", mulberry32(seed));
+    return m.type === "placeDie" && (m.target.kind === "axis" || m.target.kind === "engine");
+  });
+  check("Real-Time: the bot fills its Axis and Engine before anything else", rtFirst.every(Boolean));
 
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));

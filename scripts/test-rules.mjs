@@ -1033,6 +1033,8 @@ console.log("29) Real-Time: a 60-second round, time's up, pause and resume");
 
   let s = roll(rt(), [3, 1, 6, 6], [3, 1, 6, 6]);
   check("the roll starts a 60s countdown from the server's clock", s.timerEndsAt === ROLL_AT + RT && s.timerRemainingMs === null);
+  const short = roll(rt({ realTimeSeconds: 3 }), [3, 1, 6, 6], [3, 1, 6, 6]);
+  check("a scenario may shorten the round (test servers do)", short.timerEndsAt === ROLL_AT + 3000);
   check("without the module there's no countdown", roll(init(scn({ rounds: 7 })), [3, 1, 6, 6], [3, 1, 6, 6]).timerEndsAt === null);
   check("a Real-Time roll without the clock is refused", throws(() => reduce(rt(), { type: "roll", pilot: [1, 1, 1, 1], copilot: [1, 1, 1, 1] }, ""), /clock/i));
 

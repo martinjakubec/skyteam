@@ -49,6 +49,11 @@ a run is reproducible.
 `scripts/validate.mjs` is an end-to-end check against a running server
 (`BASE=http://server:3001` on the compose network).
 
+`npm run validate:realtime-bot` (in the dev stack's client container) starts its
+own server with Real-Time rounds shortened to 3 s (`REAL_TIME_SECONDS`, a
+testing-only setting) and checks that a time-up wakes the solo bot when it
+leads the next round.
+
 `scripts/simulate.sh` plays real games in two browsers (Pilot on desktop,
 Co-Pilot on a phone-sized window) against the running dev stack — one per
 combination of the modules the lobby offers, skipping exclusive pairs — and

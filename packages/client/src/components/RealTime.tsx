@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { REAL_TIME_SECONDS } from "@skyteam/shared";
 
-const TOTAL_MS = REAL_TIME_SECONDS * 1000;
-
 /**
  * Real-Time module (advanced): the round's countdown, as a track under the
  * Altitude. The server owns the clock; `endsAt` is in server time, so
@@ -17,12 +15,16 @@ export function RealTime({
   remainingMs,
   clockOffset = 0,
   pausedNote,
+  seconds = REAL_TIME_SECONDS,
 }: {
   endsAt: number | null;
   remainingMs: number | null;
   clockOffset?: number;
   pausedNote?: string;
+  /** The round's length (the game's scenario may shorten it). */
+  seconds?: number;
 }) {
+  const TOTAL_MS = seconds * 1000;
   const running = endsAt !== null;
   const [now, setNow] = useState(() => Date.now());
   // Redraw every frame while running so the bar drains smoothly.
