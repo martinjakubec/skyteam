@@ -187,7 +187,7 @@ function handleRoll(
     s.rerollTokens += 1;
   }
   // Real-Time: the countdown starts the moment the dice are rolled.
-  s.timerEndsAt = realTime ? cmd.at! + REAL_TIME_SECONDS * 1000 : null;
+  s.timerEndsAt = realTime ? cmd.at! + (s.scenario.realTimeSeconds ?? REAL_TIME_SECONDS) * 1000 : null;
   s.timerRemainingMs = null;
 
   s.log.push(`Round ${s.round}: dice rolled (${altitudeLabel(s)}). ${crewLabel(s.turn)} leads.`);

@@ -10,6 +10,8 @@ export const env = {
   NPC_DELAY_MS: Number(process.env.NPC_DELAY_MS ?? 900),
   /** How long the Aviator bot may search for a move. */
   NPC_THINK_MS: Number(process.env.NPC_THINK_MS ?? 600),
+  /** Testing only: shortens every Real-Time round (unset = the game's 60 s). */
+  REAL_TIME_SECONDS: process.env.REAL_TIME_SECONDS ? Number(process.env.REAL_TIME_SECONDS) : undefined,
 };
 
 if (env.JWT_SECRET === "dev-insecure-secret-change-me") {

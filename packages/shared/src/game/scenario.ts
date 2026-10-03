@@ -157,6 +157,9 @@ export interface Scenario {
   maxAbilities?: number;
   /** The Special Abilities in play (copied from the lobby setup). */
   abilities?: AbilityId[];
+  /** Real-Time round length in seconds; unset = REAL_TIME_SECONDS. Only test
+   *  servers shorten it (the server's REAL_TIME_SECONDS setting). */
+  realTimeSeconds?: number;
 }
 
 /**

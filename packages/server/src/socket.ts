@@ -164,7 +164,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   room.notice = null;
   // Deal the game and roll round 1. Randomness lives on the server, never in
   // the pure reducer — rolled values are threaded in via a `roll` command.
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
   room.version = 0;
   await saveRoom(room);
 
@@ -187,7 +187,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   cancelNpc(room.id); // a bot action for the old game must not land on the new one
   room.status = "in_progress";
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now());
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
   room.version = 0;
   await saveRoom(room);
 

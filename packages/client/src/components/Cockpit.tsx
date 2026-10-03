@@ -492,6 +492,7 @@ export function Cockpit({
               remainingMs={realTimeInPlay ? game.timerRemainingMs : null}
               clockOffset={realTimeInPlay ? clockOffset : 0}
               pausedNote={pausedNote}
+              seconds={game.scenario.realTimeSeconds ?? REAL_TIME_SECONDS}
             />
           )}
         </section>

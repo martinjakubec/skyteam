@@ -24,6 +24,11 @@ export function evaluate(s: GameState, crew: Crew): number {
   // Tilt: 0 is level; ±spinAt is fatal (already an outcome); landing needs 0.
   v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? 400 : 80);
   v -= axisRisk(s, crew);
+  // Real-Time: the round can end any second, and an open Axis or Engine then
+  // loses the game — fill the crew's own before anything else.
+  if (s.scenario.modules?.includes("realTime") && s.phase === "placement") {
+    v -= ((s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0)) * 1000;
+  }
   v -= landingSpeedRisk(s, crew);
   // Turns: flying off this space with a tilt it doesn't allow loses — once
   // this round's tilt is final, and not on the landing round (no movement).

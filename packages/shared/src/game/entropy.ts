@@ -65,9 +65,18 @@ export function shuffledInternTokens(rand: Rand): DieValue[] {
   return t;
 }
 
-/** Deal a game for a lobby setup and roll round 1 (`at` stamps a Real-Time clock). */
-export function newGame(setup: GameSetup, pilotId: PlayerId, copilotId: PlayerId, rand: Rand, at: number): GameState {
-  const game = createInitialGameState(scenarioForSetup(setup), pilotId, copilotId, { internTokens: shuffledInternTokens(rand) });
+/** Deal a game for a lobby setup and roll round 1 (`at` stamps a Real-Time
+ *  clock; `realTimeSeconds` shortens its rounds — test servers only). */
+export function newGame(
+  setup: GameSetup,
+  pilotId: PlayerId,
+  copilotId: PlayerId,
+  rand: Rand,
+  at: number,
+  opts: { realTimeSeconds?: number } = {},
+): GameState {
+  const scenario = { ...scenarioForSetup(setup), ...(opts.realTimeSeconds ? { realTimeSeconds: opts.realTimeSeconds } : {}) };
+  const game = createInitialGameState(scenario, pilotId, copilotId, { internTokens: shuffledInternTokens(rand) });
   return reduce(game, roundRoll(game, randDice(rand), at), "").state;
 }
 
