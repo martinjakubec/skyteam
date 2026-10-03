@@ -78,8 +78,6 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     if (theirs !== null) return speedCost(v + theirs + wind);
     return [1, 2, 3, 4, 5, 6].reduce((a, f) => a + speedCost(v + f + wind), 0) / 6;
   };
-  const bestFor = (cost: (v: number) => number) =>
-    hand.flatMap((d) => coffeeOptions(d.value!).map((c) => ({ d, c, k: cost(d.value! + c) + Math.abs(c) * 0.5 }))).sort((a, b) => a.k - b.k);
 
   const axisOpen = s.axis[crew] === null;
   const engineOpen = s.engines[crew] === null;
