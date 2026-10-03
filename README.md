@@ -36,6 +36,8 @@ npm test    # rules + unit + bot suites (run inside a node:22 container; see bel
 npm run bench -- [games=30] [level=navigator] [ALL]   # bot win rate
 ```
 
+`npm run bench -- 20 compare` plays Cadet, Navigator and Aviator on the same
+setups and seeds and checks they rank in that order (see "Running it").
 `npm run bench` plays the bot against itself and prints, per setup, the win
 rate, the average round reached and the top loss reasons, then the overall win
 rate. By default it covers every scenario card, every module combination and
@@ -83,6 +85,23 @@ human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
 seat would see, and answers Reroll and Working Together offers on its own.
 Opening a solo room's invite link makes you an observer.
 
+The bot has three levels:
+
+- **Cadet** plays the Navigator's choice, but about a third of the time picks
+  one of the next few moves instead.
+- **Navigator** scores every legal move one step ahead (approach pace, traffic,
+  tilt, switches, the landing) and plays the best.
+- **Aviator** searches: for its best few moves it repeatedly fills in the dice
+  it can't see, plays the round out, and keeps the move that does best on
+  average, within `NPC_THINK_MS`. It thinks in a worker thread, so it never
+  blocks other rooms, and falls back to Navigator if that fails.
+
+`npm run bench -- 20 compare` plays all three on the same 6 setups and seeds
+(Aviator at 50 ms a move). Measured: Cadet 0.8% won, progress 3.86 · Navigator
+0.8% won, progress 5.12 · Aviator 0.0% won, progress 5.87 (progress = rounds
+survived, +1 for a landing). The levels are in order, but all three still land
+rarely — the evaluator is the place to improve them.
+
 ### Development (hot reload)
 
 ```bash
@@ -103,6 +122,7 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 |---|---|---|
 | `RECONNECT_GRACE_MS` | How long a dropped player's seat is held before the game is abandoned | `60000` |
 | `NPC_DELAY_MS` | Pause before each move of a solo game's bot, so a human can follow | `900` |
+| `NPC_THINK_MS` | How long the Aviator bot may search for a move | `600` |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |

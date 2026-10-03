@@ -1,11 +1,42 @@
 // Bot win-rate benchmark: bot-vs-bot self-play over every setup.
 // Usage: npm run bench -- [games=30] [level=navigator] [ALL]
+//        npm run bench -- [games=20] compare   — Cadet vs Navigator vs Aviator
 //   default: every card, every module combination, each ability (representativeSetups)
 //   ALL:     every module combination × every ability set, plus every card (slow)
 //   ONLY="intern,kerosene" (env) keeps setups containing all those ids
 //   (scenario id, module or ability).
-import { selfPlay, representativeSetups, allSetups } from "../packages/shared/src/index.ts";
+import { selfPlay, representativeSetups, allSetups, SetSetupPayload } from "../packages/shared/src/index.ts";
 const N = Number(process.argv[2] ?? 30);
+
+// compare: the three levels on the same small set and the same seeds. Win
+// rates are low, so the tier verdict uses the average progress score: rounds
+// survived, +1 for a landing. Aviator searches 50 ms a move here (600 ms live).
+if (process.argv.includes("compare")) {
+  const SET = [
+    { scenarioId: "YUL", modules: [], abilities: [] },
+    { scenarioId: "green-HND", modules: [], abilities: [] },
+    { scenarioId: "green-OSL", modules: ["kerosene"], abilities: [] },
+    { scenarioId: "yellow-KEF", modules: ["iceBrakes"], abilities: ["adaptation"] },
+    { scenarioId: "yellow-GIG", modules: ["wind"], abilities: ["anticipation"] },
+    { scenarioId: "green-ATL", modules: ["intern"], abilities: [] },
+  ];
+  for (const s of SET) if (!SetSetupPayload.safeParse(s).success) throw new Error(`not a lobby setup: ${JSON.stringify(s)}`);
+  const rows = ["cadet", "navigator", "aviator"].map((lv) => {
+    let w = 0, score = 0, n = 0;
+    const t0 = Date.now();
+    for (const s of SET) for (let i = 0; i < N; i++) {
+      const r = selfPlay(s, { pilot: lv, copilot: lv }, i, 400, { budgetMs: 50 });
+      if (r.outcome === "won") w++;
+      score += r.rounds + (r.outcome === "won" ? 1 : 0);
+      n++;
+    }
+    return { lv, win: (100 * w) / n, score: score / n, secs: (Date.now() - t0) / 1000 };
+  });
+  rows.forEach(({ lv, win, score, secs }) => console.log(`${lv.padEnd(10)} ${win.toFixed(1).padStart(5)}% won · progress ${score.toFixed(2)} · ${secs.toFixed(0)} s`));
+  const ok = rows[2].score >= rows[1].score && rows[1].score >= rows[0].score;
+  console.log(ok ? "tiers OK: Aviator ≥ Navigator ≥ Cadet" : "TIERS OUT OF ORDER");
+  process.exit(ok ? 0 : 1);
+}
 const level = process.argv[3] ?? "navigator";
 const ONLY = process.env.ONLY?.split(",");
 const ids = (s) => [s.scenarioId, ...s.modules, ...s.abilities];

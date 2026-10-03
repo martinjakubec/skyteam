@@ -8,11 +8,11 @@ import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
 import { TutorialModal } from "./components/TutorialModal";
 
-/** What each bot level plays like (Cadet and Aviator play like Navigator until they're tuned). */
+/** What each bot level plays like. */
 const BOT_LEVEL_BLURBS: Record<BotLevel, string> = {
-  cadet: "learning the ropes (soon)",
+  cadet: "learning the ropes",
   navigator: "steady and sensible",
-  aviator: "plans every die (soon)",
+  aviator: "plans every die",
 };
 
 export function App() {
