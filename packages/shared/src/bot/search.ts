@@ -58,8 +58,13 @@ export interface SearchOptions {
   dedupe?: boolean;
 }
 
-/** Search settings for experiments (bench: SEARCH='{…}'); options passed to a search win. */
-export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean } = { halving: true, dedupe: true };
+/**
+ * Search settings for experiments (bench: SEARCH='{…}'); options passed to a
+ * search win. Both off: measured on 160 YUL games at 120 samples, halving and
+ * de-duplication cut landings from 54% to 19% — dropping candidates after a
+ * few noisy samples (or merging away the policy's own move) loses good moves.
+ */
+export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean } = { halving: false, dedupe: false };
 
 /**
  * Aviator's search, without the final pick: determinized Monte Carlo over the

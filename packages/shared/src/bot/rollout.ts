@@ -55,9 +55,10 @@ export const POLICY_PARAMS = {
   /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */
   clearAnyDieAhead: 1,
   /** In a sampled world, plan the Axis/Engine against the partner's (sampled)
-   *  hand. Off: only against what a player could know — the partner's dice
-   *  already down, else any face — as real partners can't see each other's dice. */
-  peek: true,
+   *  hand. Off (default): only against what a player could know — the partner's
+   *  dice already down, else any face — as real partners can't see each other's
+   *  dice. Measured: off lands more (59% vs 54% of 160 YUL games, far fewer crashes). */
+  peek: false,
 };
 
 /**

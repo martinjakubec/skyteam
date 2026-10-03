@@ -314,10 +314,10 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   // Limit 1: with peek off, a crew plans only with what it could know — its own
   // dice and the partner's dice already down — not the partner's hidden hand.
   const pk = { ...fresh([1, 4, 6, 6], [1, 1, 1, 1]), airplanes: Array(8).fill(0) }; // partner holds only 1s
+  POLICY_PARAMS.peek = true;
   const peeking = fastMove(pk, "pilot", mulberry32(10));
   POLICY_PARAMS.peek = false;
   const blind = fastMove(pk, "pilot", mulberry32(10));
-  POLICY_PARAMS.peek = true;
   check("peek off: the Pilot doesn't plan around the partner's hidden 1s", JSON.stringify(peeking) !== JSON.stringify(blind));
   // The cheap pre-check never rules out a move the rules accept.
   const { maybeLegal, legalMoves: lm } = await import("../packages/shared/src/index.ts");
