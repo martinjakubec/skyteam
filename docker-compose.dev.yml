@@ -11,8 +11,10 @@
 services:
   redis:
     image: redis:7-alpine
+    # Only this machine may reach Redis: it has no password, and anyone who can
+    # connect can read, change or wipe every game.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   server:
     image: node:22-alpine

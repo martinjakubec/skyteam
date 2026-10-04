@@ -1,19 +1,36 @@
 import { type Crew } from "@skyteam/shared";
 import { useEffect, useRef, useState } from "react";
-import { createRoom, joinRoom } from "./api";
+import { createRoom, joinRoom, ServerUnavailableError } from "./api";
 import { useGame } from "./store";
 import { Cockpit } from "./components/Cockpit";
 import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
+import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
 
 export function App() {
-  const { snapshot, connected, lastError, connect, setReady, setName, setSetup, startGame, resetGame, exitGame, sendCommand } =
-    useGame();
+  const {
+    snapshot,
+    connected,
+    lastError,
+    serverDown,
+    serverIsDown,
+    connect,
+    setReady,
+    setName,
+    setSetup,
+    startGame,
+    resetGame,
+    exitGame,
+    sendCommand,
+  } = useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [howToPlay, setHowToPlay] = useState(false);
+
+  /** A request the server refused: the 500 page if its storage is down, else an alert. */
+  const failed = (e: unknown) => (e instanceof ServerUnavailableError ? serverIsDown() : alert((e as Error).message));
 
   // Auto-join when opened via an invite link: /?join=<inviteCode>
   // The ref guard makes this run exactly once: React StrictMode double-invokes
@@ -32,7 +49,7 @@ export function App() {
         setRoom(r);
         connect(r.roomId);
       })
-      .catch((e: Error) => alert(e.message))
+      .catch(failed)
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -49,11 +66,13 @@ export function App() {
       // below (the per-tab token reconnects the host to their existing seat).
       window.history.replaceState(null, "", `?join=${r.inviteCode}`);
     } catch (e) {
-      alert((e as Error).message);
+      failed(e);
     } finally {
       setBusy(false);
     }
   };
+
+  if (serverDown) return <ServerDown />;
 
   if (!room) {
     return (

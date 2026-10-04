@@ -2568,3 +2568,25 @@ ul {
     padding: 0.6rem 0.4rem;
   }
 }
+
+/* The 500 page (the server can't reach its storage). */
+.server-down {
+  align-items: center;
+  text-align: center;
+}
+.server-down h2,
+.server-down p {
+  margin: 0;
+}
+.server-down-code {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  color: var(--warn);
+}
+.center .server-down .muted {
+  color: var(--ink);
+  opacity: 0.7;
+}

@@ -25,11 +25,12 @@ import {
 } from "@skyteam/shared";
 import { env } from "./env";
 import { corsOptions } from "./cors";
-import { getRoom, saveRoom } from "./store";
+import { getRoom, saveRoom, storageUp, UNAVAILABLE_ERROR } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
 import { abandonsOnDisconnect, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
+import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
@@ -56,29 +57,52 @@ const timerKey = (roomId: string, playerId: string) => `${roomId}:${playerId}`;
  */
 const clockTimers = new Map<string, NodeJS.Timeout>();
 
+/** Events one socket may send per second. A player sends a few at most; past
+ *  this, events are refused (each costs a Redis write and a broadcast). */
+const SOCKET_EVENTS_PER_SECOND = 20;
+/** Largest message a client may send. Real ones are well under 1 KB. */
+const MAX_MESSAGE_BYTES = 16_000;
+
+/** Log a failure in work nobody awaits (a timer, a disconnect) instead of
+ *  letting the rejection end the process. */
+export const logFailure = (what: string) => (e: unknown) => console.error(`[server] ${what} failed:`, e);
+
 export function attachSocket(server: http.Server): IOServer {
   const io: IOServer = new Server(server, {
     cors: corsOptions,
+    maxHttpBufferSize: MAX_MESSAGE_BYTES,
   });
 
   io.on("connection", (socket) => {
-    socket.on("room:join", (payload, ack) => void onJoin(io, socket, payload, ack));
-    socket.on("seat:ready", (payload, ack) => void onReady(io, socket, payload, ack));
-    socket.on("seat:name", (payload, ack) => void onName(io, socket, payload, ack));
-    socket.on("room:setup", (payload, ack) => void onSetup(io, socket, payload, ack));
-    socket.on("game:start", (ack) => void onStart(io, socket, ack));
-    socket.on("game:reset", (ack) => void onReset(io, socket, ack));
-    socket.on("game:exit", (ack) => void onExit(io, socket, ack));
-    socket.on("game:command", (payload, ack) => void onCommand(io, socket, payload, ack));
-    socket.on("disconnect", () => void onDisconnect(io, socket));
+    // Every handler is guarded: a missing ack, a throw or a flood can't crash the
+    // server. While Redis is down nothing could be saved: refuse up front, and
+    // answer a failure as "unavailable" so the client shows its 500 page.
+    const allow = rateLimiter(SOCKET_EVENTS_PER_SECOND, 1000);
+    const on = (event: keyof ClientToServerEvents, handle: (payload: unknown, ack: Ack) => Promise<void>) =>
+      socket.on(
+        event,
+        guard(
+          (payload, ack) => (storageUp() ? handle(payload, ack) : Promise.resolve(ack(UNAVAILABLE_ERROR))),
+          () => allow(socket.id),
+          event,
+          () => (storageUp() ? SERVER_ERROR : UNAVAILABLE_ERROR),
+        ),
+      );
+    on("room:join", (payload, ack) => onJoin(io, socket, payload, ack));
+    on("seat:ready", (payload, ack) => onReady(io, socket, payload, ack));
+    on("seat:name", (payload, ack) => onName(io, socket, payload, ack));
+    on("room:setup", (payload, ack) => onSetup(io, socket, payload, ack));
+    on("game:start", (_payload, ack) => onStart(io, socket, ack));
+    on("game:reset", (_payload, ack) => onReset(io, socket, ack));
+    on("game:exit", (_payload, ack) => onExit(io, socket, ack));
+    on("game:command", (payload, ack) => onCommand(io, socket, payload, ack));
+    socket.on("disconnect", () => void onDisconnect(io, socket).catch(logFailure("disconnect")));
   });
 
   return io;
 }
 
 // --- handlers ---------------------------------------------------------------
-
-type Ack = (res: { ok: true } | { ok: false; error: string }) => void;
 
 async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = JoinRoomPayload.safeParse(payload);
@@ -349,7 +373,7 @@ async function syncClock(io: IOServer, room: Room): Promise<void> {
 
   const endsAt = room.game!.timerEndsAt;
   if (endsAt !== null) {
-    clockTimers.set(room.id, setTimeout(() => void onTimeUp(io, room.id, endsAt), Math.max(0, endsAt - now)));
+    clockTimers.set(room.id, setTimeout(() => void onTimeUp(io, room.id, endsAt).catch(logFailure("time-up")), Math.max(0, endsAt - now)));
   }
 }
 
@@ -408,7 +432,7 @@ async function onDisconnect(io: IOServer, socket: IOSocket) {
 
   // Hold the seat for a grace period, then abandon if still gone.
   clearGrace(roomId, playerId);
-  const timer = setTimeout(() => void abandonIfStillGone(io, roomId, playerId), env.RECONNECT_GRACE_MS);
+  const timer = setTimeout(() => void abandonIfStillGone(io, roomId, playerId).catch(logFailure("grace timeout")), env.RECONNECT_GRACE_MS);
   graceTimers.set(timerKey(roomId, playerId), timer);
 }
 

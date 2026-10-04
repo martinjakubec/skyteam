@@ -1,6 +1,7 @@
 # Production-style stack: builds images for the client + server and runs them
 # alongside Redis. Use this to run the whole app:
 #
+#   cp .env.example .env    # then set JWT_SECRET (openssl rand -hex 32)
 #   docker compose up --build
 #
 # Then open http://localhost:8080
@@ -9,8 +10,10 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
+    # Only this machine may reach Redis: it has no password, and anyone who can
+    # connect can read, change or wipe every game.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -29,9 +32,12 @@ services:
     environment:
       PORT: 3001
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
+      # Required: the server runs with NODE_ENV=production and refuses a missing,
+      # placeholder or short secret. Put one in .env (see .env.example).
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env, e.g. openssl rand -hex 32}
       RECONNECT_GRACE_MS: ${RECONNECT_GRACE_MS:-60000}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8080}
+      NPC_WORKERS: ${NPC_WORKERS:-}
     depends_on:
       redis:
         condition: service_healthy

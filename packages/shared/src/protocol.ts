@@ -239,7 +239,10 @@ export interface GameEventMsg {
 // Socket.IO ack envelope + typed event maps
 // ---------------------------------------------------------------------------
 
-export type Ack = { ok: true } | { ok: false; error: string };
+/** The server can't reach its storage (Redis), so it can't save anything: it
+ *  refuses every request until storage is back, and the client shows a 500 page. */
+export const UNAVAILABLE = "unavailable" as const;
+export type Ack = { ok: true } | { ok: false; error: string; code?: typeof UNAVAILABLE };
 
 export interface ServerToClientEvents {
   "room:state": (snapshot: RoomSnapshot) => void;

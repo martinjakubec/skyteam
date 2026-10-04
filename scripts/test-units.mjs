@@ -31,6 +31,10 @@ import * as tut from "../packages/client/src/tutorials/engine.ts";
 import { BASICS, TUTORIALS } from "../packages/client/src/tutorials/index.ts";
 import * as ses from "../packages/client/src/tutorials/session.ts";
 import { originChecker } from "../packages/server/src/cors.ts";
+import { productionProblems } from "../packages/server/src/env.ts";
+import { issueToken, verifyToken } from "../packages/server/src/identity.ts";
+import { evictExpired, guard, rateLimiter } from "../packages/server/src/guard.ts";
+import { singleFlight } from "../packages/server/src/singleFlight.ts";
 import * as seating from "../packages/server/src/seating.ts";
 import { uuid } from "../packages/client/src/uuid.ts";
 
@@ -430,6 +434,98 @@ console.log("3) originChecker: wildcard, allowlist, missing origin");
   check("port matters", !list("http://localhost"));
   check("no Origin header (curl) allowed", list(undefined));
   check("empty spec allows nothing with an Origin", !originChecker("")("http://localhost:5173"));
+}
+
+// 3b) Production configuration ------------------------------------------------
+console.log("3b) productionProblems: a production server refuses unsafe settings");
+{
+  const good = { NODE_ENV: "production", JWT_SECRET: "a".repeat(64), CLIENT_ORIGIN: "https://skyteam.example" };
+  check("a sound production config passes", productionProblems(good).length === 0);
+  check("outside production nothing is enforced", productionProblems({}).length === 0);
+  check("a missing secret is refused", productionProblems({ ...good, JWT_SECRET: undefined }).length === 1);
+  check("the dev default secret is refused", productionProblems({ ...good, JWT_SECRET: "dev-insecure-secret-change-me" }).length === 1);
+  check(".env.example's placeholder is refused", productionProblems({ ...good, JWT_SECRET: "change-me-to-a-long-random-string" }).length === 1);
+  check("a short secret is refused", productionProblems({ ...good, JWT_SECRET: "x".repeat(31) }).length === 1);
+  check("a missing CLIENT_ORIGIN is refused", productionProblems({ ...good, CLIENT_ORIGIN: undefined }).length === 1);
+  check("a wildcard CLIENT_ORIGIN is refused", productionProblems({ ...good, CLIENT_ORIGIN: "https://a.example,*" }).length === 1);
+}
+
+// 3c) Identity tokens -----------------------------------------------------------
+console.log("3c) verifyToken: only our own HS256 tokens");
+{
+  const { token, playerId } = issueToken();
+  check("a token we issued verifies", verifyToken(token) === playerId);
+  const [, payload] = token.split(".");
+  const unsigned = `${Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")}.${payload}.`;
+  check("an unsigned (alg: none) token is refused", verifyToken(unsigned) === null);
+  check("a tampered token is refused", verifyToken(token.slice(0, -2) + (token.endsWith("AA") ? "BB" : "AA")) === null);
+}
+
+// 3d) Abuse: rate limits, guarded socket handlers, cache expiry ------------------
+console.log("3d) rateLimiter, guard, evictExpired: abuse can't crash or bloat the server");
+{
+  let t = 0;
+  const allow = rateLimiter(3, 1000, () => t);
+  check("hits within the limit are allowed", allow("a") && allow("a") && allow("a"));
+  check("the next hit in the window is refused", !allow("a"));
+  check("keys are counted separately", allow("b"));
+  t = 1000;
+  check("a new window allows again", allow("a"));
+
+  const acks = [];
+  const quiet = console.error;
+  console.error = () => {};
+  const ok = guard(async (payload, ack) => ack({ ok: true, payload }), () => true, "test");
+  await ok({ x: 1 }, (r) => acks.push(r));
+  check("a payload and its ack reach the handler", acks.at(-1)?.payload?.x === 1);
+  await ok((r) => acks.push(r));
+  check("an ack-only event (game:start) gets no payload", acks.at(-1)?.ok === true && acks.at(-1)?.payload === undefined);
+  let crashed = false;
+  await ok().catch(() => (crashed = true));
+  await ok({ x: 1 }).catch(() => (crashed = true));
+  await ok({ x: 1 }, "not a function").catch(() => (crashed = true));
+  check("an event without an ack callback doesn't throw", !crashed);
+  const boom = guard(async () => { throw new Error("redis down"); }, () => true, "test");
+  await boom({}, (r) => acks.push(r)).catch(() => (crashed = true));
+  check("a handler that throws is caught and answered", !crashed && acks.at(-1)?.ok === false);
+  const down = { ok: false, error: "storage down", code: "unavailable" };
+  const boomDown = guard(async () => { throw new Error("redis down"); }, () => true, "test", () => down);
+  await boomDown({}, (r) => acks.push(r));
+  check("a failure is answered with what `failure` says (storage down)", acks.at(-1)?.code === "unavailable");
+  let ran = false;
+  const limited = guard(async () => { ran = true; }, () => false, "test");
+  await limited({}, (r) => acks.push(r));
+  check("an event over the rate limit is refused without running", !ran && acks.at(-1)?.ok === false);
+  console.error = quiet;
+
+  const cache = new Map([["old", { updatedAt: 0 }], ["new", { updatedAt: 50_000 }]]);
+  evictExpired(cache, 70_000, 60_000);
+  check("a room past its TTL leaves the cache; a live one stays", !cache.has("old") && cache.has("new"));
+}
+
+// 3e) Loading a room once ---------------------------------------------------------
+console.log("3e) singleFlight: requests loading the same room at once share one copy");
+{
+  let loads = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const load = singleFlight(async (id) => {
+    loads += 1;
+    await gate;
+    return { id };
+  });
+  const both = Promise.all([load("r1"), load("r1")]);
+  const other = load("r2");
+  release();
+  const [a, b] = await both;
+  check("two loads of one room at once read it once", loads === 2 && a === b);
+  check("another room loads on its own", (await other).id === "r2");
+  await load("r1");
+  check("once a load has finished, the next one reads again", loads === 3);
+  const failing = singleFlight(async () => { throw new Error("redis down"); });
+  const errors = await Promise.allSettled([failing("x"), failing("x")]);
+  check("a failed load fails every caller sharing it", errors.every((e) => e.status === "rejected"));
+  check("…and isn't remembered", (await failing("x").catch(() => "retried")) === "retried");
 }
 
 // 4) uuid --------------------------------------------------------------------

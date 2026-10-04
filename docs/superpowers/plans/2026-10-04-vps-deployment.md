@@ -52,7 +52,7 @@ Internet ─► Caddy (80/443, Docker network "edge")
 
 **Files:** `packages/client/nginx.conf`
 
-- [ ] Replace with:
+- [ ] Replace with the following, keeping the security headers (`server_tokens off`, the CSP and the other `add_header` lines) that the current `nginx.conf` sets at server level:
   ```nginx
   server {
     listen 80;
@@ -65,6 +65,10 @@ Internet ─► Caddy (80/443, Docker network "edge")
     # server container isn't up yet, e.g. after a reboot, when depends_on is ignored.
     resolver 127.0.0.11 valid=10s ipv6=off;
     set $api http://server:3001;
+
+    # Pass on the client's address (Caddy's X-Forwarded-For plus Caddy itself):
+    # the server's rate limits key on it (TRUST_PROXY=2).
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
     location ~ ^/(rooms|identity|health)(/|$) {
       proxy_pass $api;
@@ -82,6 +86,8 @@ Internet ─► Caddy (80/443, Docker network "edge")
     location /assets/ {
       expires 1y;
       add_header Cache-Control "public, immutable";
+      # add_header here drops the server-level security headers: repeat them
+      # (move them into a snippet and `include` it in both places).
     }
 
     # SPA fallback so deep links / invite links (/?join=...) always load index.html.
@@ -120,6 +126,11 @@ Internet ─► Caddy (80/443, Docker network "edge")
       environment:
         REDIS_URL: redis://redis:6379
         CLIENT_ORIGIN: https://skyteam.mjakubec.eu
+        # Search threads for the bot: the VPS's vCPUs minus one (at least 1).
+        NPC_WORKERS: ${NPC_WORKERS:-1}
+        # Caddy, then the client's nginx: the rate limits read the client's
+        # address two hops back in X-Forwarded-For.
+        TRUST_PROXY: 2
       depends_on:
         redis:
           condition: service_healthy
@@ -221,7 +232,8 @@ Internet ─► Caddy (80/443, Docker network "edge")
 
 ## Task 8: Secrets and access (VPS + GitHub UI, user)
 
-- [ ] On the VPS, as `deploy`: `echo "JWT_SECRET=$(openssl rand -hex 32)" > /srv/apps/skyteam/.env && chmod 600 /srv/apps/skyteam/.env`
+- [ ] On the VPS, as `deploy`: `echo "JWT_SECRET=$(openssl rand -hex 32)" > /srv/apps/skyteam/.env && chmod 600 /srv/apps/skyteam/.env`. The server refuses to start in production without a real secret (32+ characters, not a placeholder).
+- [ ] Check the vCPU count with `nproc`. If it's more than 2, append `NPC_WORKERS=<nproc − 1>` to the same `.env`.
 - [ ] If the GHCR packages are private, run `docker login ghcr.io` as `deploy` with a classic PAT that has only the `read:packages` scope.
 - [ ] Create a deploy key pair with `ssh-keygen -t ed25519 -f skyteam-deploy -N ""`. Append the `.pub` to `/home/deploy/.ssh/authorized_keys`.
 - [ ] GitHub repo → Settings → Environments → `production`. Add these secrets:
