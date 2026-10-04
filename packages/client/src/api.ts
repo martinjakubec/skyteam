@@ -30,6 +30,28 @@ export function storeToken(token: string): void {
   sessionStorage.setItem(tokenKey(), token);
 }
 
+// The player's name, unlike their identity, is shared by every tab and kept
+// across visits: choose it once and each new room starts with it. Storage can
+// be unavailable (private mode, blocked site data) — then names just don't stick.
+const NAME_KEY = "skyteam.name";
+
+export function getStoredName(): string {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function storeName(name: string): void {
+  try {
+    if (name) localStorage.setItem(NAME_KEY, name);
+    else localStorage.removeItem(NAME_KEY);
+  } catch {
+    // not kept; the room still has it
+  }
+}
+
 interface RoomResponse {
   roomId: string;
   inviteCode: string;

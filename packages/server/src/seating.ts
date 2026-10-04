@@ -51,3 +51,8 @@ export const npcGivesUp = (rejections: number) => rejections >= NPC_MAX_REJECTIO
 export function abandonsOnDisconnect(room: Room): boolean {
   return botSeat(room) === null;
 }
+
+/** Whether players may rename themselves: in the lobby, never mid-game. */
+export function canRename(room: Room): boolean {
+  return room.status === "lobby" || room.status === "ready";
+}

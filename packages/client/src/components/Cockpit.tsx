@@ -26,6 +26,7 @@ import { ExtraDieContext, Slot } from "./Slot";
 import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
 import type { CockpitSection } from "./cockpitSections";
+import { seatNames } from "./Seats";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
@@ -53,6 +54,9 @@ export function Cockpit({
       : game.copilotId === snapshot.you.playerId
         ? "copilot"
         : null;
+  // What to call each crew: its player's name, else "the Pilot"/"the Co-Pilot".
+  const names = seatNames(snapshot);
+  const who = (crew: Crew) => names[crew] ?? `the ${label(crew)}`;
   const myTurn = myCrew !== null && game.turn === myCrew && game.phase === "placement";
   // Intern: a crew that has just trained holds a token it must place before
   // anything else. While it's mine, it's the only thing I can place.
@@ -225,7 +229,7 @@ export function Cockpit({
   const clockOffset = clockOffsetOverride ?? serverOffset;
   // Who the paused clock is waiting for (the host flies as Pilot).
   const awaited = snapshot.seats.find((s) => s.connection === "disconnected");
-  const pausedNote = awaited ? `waiting for the ${awaited.playerId === game.pilotId ? "Pilot" : "Co-Pilot"} to reconnect` : undefined;
+  const pausedNote = awaited ? `waiting for ${who(awaited.playerId === game.pilotId ? "pilot" : "copilot")} to reconnect` : undefined;
   // Wind sits right of the Co-Pilot's Radio. Dev `?preview=wind` shows the ring.
   const windOn = (game.scenario.modules?.includes("wind") ?? false) || previewModule("wind");
   // Intern sits under Concentration. Dev `?preview=intern` (module not in play)
@@ -277,9 +281,9 @@ export function Cockpit({
       // The offered die lies face-up on the card, so its value is visible.
       const offer = game.pendingSwap!;
       const value = game.dice[offer.from].find((d) => d.id === offer.dieId)?.value;
-      return `Working Together — the ${label(offer.from)} offers a ${value ?? "die"}; tap one of your dice to swap.`;
+      return `Working Together — ${who(offer.from)} offers a ${value ?? "die"}; tap one of your dice to swap.`;
     }
-    if (waitingForSwap) return `Working Together — waiting for the ${label(myCrew === "pilot" ? "copilot" : "pilot")} to pick a die…`;
+    if (waitingForSwap) return `Working Together — waiting for ${who(myCrew === "pilot" ? "copilot" : "pilot")} to pick a die…`;
     if (trafficHeld) {
       return trafficHeldMine
         ? `Synchronisation — place the Traffic die (${trafficHeld.value}) on any empty space, any colour.`
@@ -288,12 +292,12 @@ export function Cockpit({
     if (internHeld) {
       return internHeldMine
         ? `Intern trained — place the ${internHeld.value} token on a panel space.`
-        : `Waiting for the ${label(internHeld.crew)} to place the Intern token…`;
+        : `Waiting for ${who(internHeld.crew)} to place the Intern token…`;
     }
-    if (waitingForReroll) return `Reroll — waiting for the ${label(game.pendingReroll!)} to pick dice…`;
+    if (waitingForReroll) return `Reroll — waiting for ${who(game.pendingReroll!)} to pick dice…`;
     if (iMustRespond) return "Reroll offered — pick any of your dice to reroll, or Skip.";
     if (!myCrew) return "Spectating the approach.";
-    if (!myTurn) return `Silence. Waiting for the ${label(game.turn)}…`;
+    if (!myTurn) return `Silence. Waiting for ${who(game.turn)}…`;
     return rerollMode ? "Reroll — pick the dice to reroll, then Confirm." : "Your turn — drag a die onto a panel space.";
   };
 
@@ -746,7 +750,7 @@ export function Cockpit({
                   );
                 })}
                 <span className="opp">
-                  {label(myCrew === "pilot" ? "copilot" : "pilot")}:
+                  {names[myCrew === "pilot" ? "copilot" : "pilot"] ?? label(myCrew === "pilot" ? "copilot" : "pilot")}:
                   <span className="opp-dice">
                     {oppDice.map((d) => (
                       <span key={d.id} className={`die mini facedown ${d.placed ? "spent" : ""}`} />
@@ -800,7 +804,7 @@ export function Cockpit({
                     )}
                   </span>
                 ) : waitingForReroll ? (
-                  <span className="muted">Waiting for the {label(game.pendingReroll!)} to reroll…</span>
+                  <span className="muted">Waiting for {who(game.pendingReroll!)} to reroll…</span>
                 ) : (
                   <>
                     {game.coffee > 0 && selDie && (

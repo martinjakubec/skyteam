@@ -8,7 +8,7 @@ import type {
   ServerToClientEvents,
 } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
-import { getStoredToken } from "./api";
+import { getStoredName, getStoredToken, storeName } from "./api";
 import { uuid } from "./uuid";
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -24,6 +24,8 @@ interface GameStore {
 
   connect: (roomId: string) => void;
   setReady: (ready: boolean) => void;
+  /** Rename yourself (lobby only); remembered in this browser for later rooms. */
+  setName: (name: string) => void;
   setSetup: (setup: GameSetup) => void;
   startGame: () => void;
   resetGame: () => void;
@@ -56,7 +58,7 @@ export const useGame = create<GameStore>((set, get) => ({
         set({ lastError: "Missing identity token." });
         return;
       }
-      socket.emit("room:join", { roomId, token, lastVersion: get().snapshot?.version }, (res) => {
+      socket.emit("room:join", { roomId, token, lastVersion: get().snapshot?.version, name: getStoredName() || undefined }, (res) => {
         if (!res.ok) set({ lastError: res.error });
       });
     };
@@ -85,6 +87,12 @@ export const useGame = create<GameStore>((set, get) => ({
   setReady: (ready) =>
     get().socket?.emit("seat:ready", { ready }, (res) => {
       if (!res.ok) set({ lastError: res.error });
+    }),
+
+  setName: (name) =>
+    get().socket?.emit("seat:name", { name }, (res) => {
+      if (res.ok) storeName(name.trim().replace(/\s+/g, " "));
+      else set({ lastError: res.error });
     }),
 
   setSetup: (setup) =>

@@ -3,6 +3,7 @@ import {
   ABILITY_LABELS,
   ABILITY_TEXT,
   DEFAULT_MAX_ABILITIES,
+  MAX_NAME_LENGTH,
   EXCLUSIVE_MODULE_GROUPS,
   IMPLEMENTED_MODULES,
   conflictingModules,
@@ -16,7 +17,7 @@ import {
   type RoomSnapshot,
   type ScenarioId,
 } from "@skyteam/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScenarioPicker } from "./ScenarioPicker";
 import type { TutorialId } from "../tutorials/types";
 import { TutorialModal } from "./TutorialModal";
@@ -24,11 +25,13 @@ import { TutorialModal } from "./TutorialModal";
 export function Lobby({
   snapshot,
   onReady,
+  onName,
   onSetup,
   onStart,
 }: {
   snapshot: RoomSnapshot;
   onReady: (ready: boolean) => void;
+  onName: (name: string) => void;
   onSetup: (setup: GameSetup) => void;
   onStart: () => void;
 }) {
@@ -37,6 +40,7 @@ export function Lobby({
   const canStart = isHost && snapshot.status === "ready";
   return (
     <div className="panel">
+      <NameField name={me?.name ?? ""} onSave={onName} />
       <SetupPicker setup={snapshot.setup} editable={isHost} onChange={onSetup} />
       <div className="row">
         <button onClick={() => onReady(!me?.ready)}>{me?.ready ? "Unready" : "Ready up"}</button>
@@ -48,6 +52,38 @@ export function Lobby({
       </div>
       {isHost && !canStart && <p className="muted">Both players must be ready to start.</p>}
     </div>
+  );
+}
+
+/** Your name in this room — and, kept in the browser, in every room after. */
+function NameField({ name, onSave }: { name: string; onSave: (name: string) => void }) {
+  const [draft, setDraft] = useState(name);
+  // Follow the server's copy (e.g. the stored name arriving with the join).
+  useEffect(() => setDraft(name), [name]);
+  const changed = draft.trim().replace(/\s+/g, " ") !== name;
+  return (
+    <form
+      className="name-field"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed) onSave(draft);
+      }}
+    >
+      <label className="setup-label" htmlFor="player-name">
+        Your name
+      </label>
+      <input
+        id="player-name"
+        value={draft}
+        maxLength={MAX_NAME_LENGTH}
+        placeholder="Pick a name"
+        autoComplete="nickname"
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button type="submit" disabled={!changed}>
+        Save
+      </button>
+    </form>
   );
 }
 

@@ -16,6 +16,7 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
       ready: s.ready,
       connection: s.connected ? "connected" : "disconnected",
       ...(s.bot ? { bot: s.bot } : {}),
+      ...(s.name ? { name: s.name } : {}),
     })),
     hostCrew: room.hostCrew ?? "pilot",
     observerCount: room.observers.length,

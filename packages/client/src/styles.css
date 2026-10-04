@@ -234,6 +234,21 @@ ul {
   color: #ff8a7d;
 }
 
+/* Lobby: your name (kept in the browser for the next room). */
+.name-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.name-field input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+}
+
 /* Lobby game setup (airport + modules) */
 .setup {
   display: flex;
