@@ -11,13 +11,19 @@ import { mulberry32 } from "./rng";
 
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
 
+/** Real-Time: with this little time left in the round, the crew's own Axis and Engine come first. */
+export const REAL_TIME_URGENT_MS = 20_000;
+
 /**
- * Real-Time: the round can end any second, and an open Axis or Engine then
- * loses the game — while the crew's own are open, only those are worth
+ * Real-Time: when the round ends, an open Axis or Engine loses the game —
+ * once time runs short, while the crew's own are open, only those are worth
  * searching (rollouts don't model the clock, so they'd happily wait).
  */
-export function realTimeFirst(view: GameState, crew: Crew, moves: GameCommand[]): GameCommand[] {
+export function realTimeFirst(view: GameState, crew: Crew, moves: GameCommand[], now = Date.now()): GameCommand[] {
   if (!view.scenario.modules?.includes("realTime") || view.phase !== "placement") return moves;
+  // Only near the end: with time to spare the search plays freely (forcing it
+  // from the first second cost 37 → 23 YUL landings of 80). A paused clock has no end.
+  if (view.timerEndsAt == null || view.timerEndsAt - now > REAL_TIME_URGENT_MS) return moves;
   if (view.axis[crew] !== null && view.engines[crew] !== null) return moves;
   const first = moves.filter((m) => m.type === "placeDie" && (m.target.kind === "axis" || m.target.kind === "engine"));
   return first.length > 0 ? first : moves;
@@ -117,6 +123,8 @@ export interface SearchOptions {
   dedupe?: boolean;
   /** Search these candidates instead of picking them (tests). */
   candidates?: GameCommand[];
+  /** The clock (ms, as the game's timestamps) — Real-Time reads the time left. Default: Date.now(). */
+  now?: number;
 }
 
 /**
@@ -140,9 +148,9 @@ export function searchStats(
   view: GameState,
   crew: Crew,
   rand: Rand,
-  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given }: SearchOptions,
+  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
 ): SearchStats {
-  const moves = given ?? icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew)));
+  const moves = given ?? icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew), clock ?? Date.now()));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
   const candidates = given ?? searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);

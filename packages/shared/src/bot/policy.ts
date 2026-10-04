@@ -58,6 +58,7 @@ export function quickMove(view: GameState, crew: Crew, rand: Rand): GameCommand 
  * Monte Carlo search over the dice it can't see, within `budgetMs` — or, for
  * benchmarks, a fixed number of samples per candidate.
  */
-export function chooseMove(view: GameState, crew: Crew, rand: Rand, opts?: { budgetMs?: number; samples?: number }): GameCommand | null {
-  return searchMove(view, crew, rand, opts?.samples ? { budgetMs: Infinity, maxSamples: opts.samples } : { budgetMs: opts?.budgetMs ?? 600 });
+export function chooseMove(view: GameState, crew: Crew, rand: Rand, opts?: { budgetMs?: number; samples?: number; now?: number }): GameCommand | null {
+  const now = opts?.now;
+  return searchMove(view, crew, rand, opts?.samples ? { budgetMs: Infinity, maxSamples: opts.samples, now } : { budgetMs: opts?.budgetMs ?? 600, now });
 }

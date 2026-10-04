@@ -53,7 +53,7 @@ export function selfPlay(
     if (!crew) break;
     const id = crew === "pilot" ? "P" : "C";
     const view = redactGameStateFor(g, id);
-    const move = opts?.strategy === "quick" ? quickMove(view, crew, botRand) : chooseMove(view, crew, botRand, opts);
+    const move = opts?.strategy === "quick" ? quickMove(view, crew, botRand) : chooseMove(view, crew, botRand, { ...opts, now: now() });
     if (!move) return { outcome: "stuck", reason: `no legal move for the ${crew} (round ${g.round})`, rounds: g.round, moves, rolls, final: g };
     // A reroll's new values come from this round's stream; once a round ends
     // (g.round has moved on), settle rolls the next one from its own stream.

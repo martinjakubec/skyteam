@@ -73,6 +73,11 @@ function idleCheck(slot: Slot): void {
 
 /** Fill the pool ahead of the first Aviator move (workers take a few seconds to
  *  load); resolves once they're all ready (or gone). */
+/** How many search workers have loaded, of the pool's size (served on /health). */
+export function searchWorkers(): { ready: number; of: number } {
+  return { ready: pool.filter((s) => s.isReady).length, of: poolSize };
+}
+
 export function warmThinking(): Promise<void> {
   if (failures > maxRestarts()) return Promise.resolve();
   while (pool.length < poolSize) startSlot();

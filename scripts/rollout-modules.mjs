@@ -2,7 +2,7 @@
 // are lost, and which landing checks fail. Usage: npx tsx scripts/rollout-modules.mjs [games=200]
 import { newGame, rolloutGame, landingChecks, mulberry32 } from "../packages/shared/src/index.ts";
 const N = Number(process.argv[2] ?? 200);
-for (const mods of [[], ["kerosene"], ["intern"], ["wind"], ["iceBrakes"], ["kerosene", "intern", "wind", "iceBrakes"]]) {
+for (const mods of (process.env.SETS ? JSON.parse(process.env.SETS) : [[], ["kerosene"], ["intern"], ["wind"], ["iceBrakes"], ["kerosene", "intern", "wind", "iceBrakes"]])) {
   let won = 0;
   const why = {}, fails = {};
   const t0 = Date.now();

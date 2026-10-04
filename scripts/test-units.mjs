@@ -501,7 +501,7 @@ console.log("5) Seating: who flies which seat; bot seats");
 
 console.log("6) think(): Aviator in a worker, with a fallback");
 {
-  const { think, warmThinking, stopThinking, thinkStats, setPoolSizeForTests } = await import("../packages/server/src/think.ts");
+  const { think, warmThinking, stopThinking, thinkStats, setPoolSizeForTests, searchWorkers } = await import("../packages/server/src/think.ts");
   setPoolSizeForTests(4); // the pool tests need several workers, whatever this machine's cores
   const { newGame, mulberry32, redactGameStateFor, legalMoves } = await import("../packages/shared/src/index.ts");
   const g = newGame(DEFAULT_SETUP, "P", "C", mulberry32(9), 0);
@@ -510,6 +510,7 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   const { applyIntent: apply } = await import("../packages/shared/src/index.ts");
   const legal = (m) => { try { return !!m && !!apply(g, m, "P", mulberry32(1), () => 0); } catch { return false; } };
   await warmThinking(); // the worker takes a few seconds to load
+  check("once warm, every search worker reports ready (for /health)", JSON.stringify(searchWorkers()) === JSON.stringify({ ready: 4, of: 4 }));
   const t0 = Date.now();
   const m = await think(view, "pilot", 1);
   check("Aviator answers through the worker within its budget", Date.now() - t0 < 2000 && legal(m) && thinkStats.worker === 1 && thinkStats.fallback === 0);

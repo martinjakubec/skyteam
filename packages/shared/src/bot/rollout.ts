@@ -67,6 +67,8 @@ export const POLICY_PARAMS = {
   /** Kerosene: the highest die fed to it at once ("share": this round's share
    *  of the fuel left); otherwise only the crew's last free die feeds it. */
   keroseneEarly: 2 as number | "share",
+  /** Kerosene Leak: cost per point of fuel the Engine dice would leak. */
+  leakWeight: 4,
   /** In a sampled world, plan the Axis/Engine against the partner's (sampled)
    *  hand. Off (default): only against what a player could know — the partner's
    *  dice already down, else any face — as real partners can't see each other's
@@ -182,11 +184,14 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     const adv = advanceFor(s, speed);
     return (crashes(adv) ? 1000 : 0) + Math.abs(adv - want) * P.paceWeight;
   };
+  // Kerosene Leak: the Engine dice drain |difference| + 1 a round — matching them saves fuel.
+  const leakOn = mods.includes("keroseneLeak");
+  const pairCost = (v: number, w: number) => speedCost(v + w + wind) + (leakOn ? (Math.abs(v - w) + 1) * P.leakWeight : 0);
   const engineCost = (v: number) => {
     const theirs = s.engines[partner];
-    if (theirs !== null) return speedCost(v + theirs + wind);
-    if (partnerDice.length) return Math.min(...partnerDice.map((w) => speedCost(v + w + wind)));
-    return [1, 2, 3, 4, 5, 6].reduce((a, f) => a + speedCost(v + f + wind), 0) / 6;
+    if (theirs !== null) return pairCost(v, theirs);
+    if (partnerDice.length) return Math.min(...partnerDice.map((w) => pairCost(v, w)));
+    return [1, 2, 3, 4, 5, 6].reduce((a, f) => a + pairCost(v, f), 0) / 6;
   };
 
   const axisOpen = s.axis[crew] === null;

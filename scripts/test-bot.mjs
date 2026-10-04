@@ -137,14 +137,22 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
 
-  // Real-Time: the round can end any second, and an open Axis or Engine then
-  // loses — so the bot fills its own first.
+  // Real-Time: when the round may end soon, an open Axis or Engine loses —
+  // so with little time left the bot fills its own first.
   const rtFirst = [0, 1, 2, 3, 4, 5].map((seed) => {
-    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(seed), Date.now());
-    const m = chooseMove(redactGameStateFor(g, P), "pilot", mulberry32(seed), { samples: 2 });
+    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(seed), 0);
+    const m = chooseMove(redactGameStateFor(g, P), "pilot", mulberry32(seed), { samples: 2, now: g.timerEndsAt - 10_000 });
     return m.type === "placeDie" && (m.target.kind === "axis" || m.target.kind === "engine");
   });
-  check("Real-Time: Aviator fills its Axis and Engine before anything else", rtFirst.every(Boolean));
+  check("Real-Time, 10 s left: Aviator fills its Axis and Engine first", rtFirst.every(Boolean));
+  {
+    const { realTimeFirst, legalMoves } = await import("../packages/shared/src/index.ts");
+    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(3), 0);
+    const all = legalMoves(redactGameStateFor(g, P), "pilot");
+    check("Real-Time, a full minute left: every move stays open", realTimeFirst(redactGameStateFor(g, P), "pilot", all, g.timerEndsAt - 60_000).length === all.length);
+    const paused = { ...g, timerEndsAt: null, timerRemainingMs: 5_000 };
+    check("Real-Time, clock paused: every move stays open", realTimeFirst(redactGameStateFor(paused, P), "pilot", all, 0).length === all.length);
+  }
 
   // Step 4: switch capacity per crew (each has its own two free dice a round), and
   // Flaps — in order, with set numbers — realistically about one a round.
@@ -498,6 +506,9 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
   check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
   check("Kerosene: games reach the landing (≥ 50 of 200)", count(kero, (g) => /^Landing/.test(g.outcome?.reason ?? "")) >= 50);
+  const leak = play(["keroseneLeak"]);
+  check("Kerosene Leak: the tank seldom runs dry (≤ 40 of 200; 77 before the Engines minded the leak)", count(leak, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
+  check("Kerosene Leak: games land (≥ 17 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 17);
   const intern = play(["intern"]);
   check("Intern: rarely lands untrained (≤ 15 of 200)", count(intern, (g) => failed(g, "intern")) <= 15);
   const ice = play(["iceBrakes"]);
