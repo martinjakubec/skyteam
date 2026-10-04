@@ -16,6 +16,10 @@ server.listen(env.PORT, () => {
   void warmThinking(); // the Aviator bot's search worker takes a few seconds to load
 });
 
+// A last line of defence: handlers, routes and timers catch their own errors,
+// but anything that slips through is logged rather than ending every game.
+process.on("unhandledRejection", (e) => console.error("[server] unhandled rejection:", e));
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     console.log(`[server] ${signal} received, shutting down.`);

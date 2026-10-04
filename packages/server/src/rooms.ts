@@ -3,6 +3,10 @@ import { DEFAULT_SETUP, MAX_PLAYERS, type BotLevel, type Crew } from "@skyteam/s
 import type { Room } from "./types";
 import { getRoom, getRoomIdByInvite, saveRoom } from "./store";
 
+/** Spectators one room takes. Each is kept in the room's record, which is saved
+ *  on every move, so an unbounded list would let anyone slow a game down. */
+export const MAX_OBSERVERS = 20;
+
 export class RoomError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -50,8 +54,10 @@ export async function joinByInvite(code: string, playerId: string): Promise<Room
 
   if (room.status === "lobby" && room.seats.length < MAX_PLAYERS) {
     room.seats.push({ playerId, role: "guest", ready: false, connected: false });
-  } else {
+  } else if (room.observers.length < MAX_OBSERVERS) {
     room.observers.push(playerId);
+  } else {
+    throw new RoomError("full", "This room is full: it can't take more spectators.");
   }
   await saveRoom(room);
   return room;

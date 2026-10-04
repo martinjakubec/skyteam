@@ -17,6 +17,10 @@ export const env = {
    *  to the CPUs the container may really use: the default (a spare core each,
    *  at most 4) counts the host's cores, which may exceed a container's quota. */
   NPC_WORKERS: Math.max(1, Number(process.env.NPC_WORKERS) || Math.min(4, availableParallelism() - 1)),
+  /** How many reverse proxies sit in front of the server (production: Caddy and
+   *  the client's nginx = 2), so the client's own address can be read from
+   *  X-Forwarded-For for the rate limits. 0 = none: the socket's address is it. */
+  TRUST_PROXY: Number(process.env.TRUST_PROXY ?? 0),
   /** Testing only: shortens every Real-Time round (unset = the game's 60 s). */
   REAL_TIME_SECONDS: process.env.REAL_TIME_SECONDS ? Number(process.env.REAL_TIME_SECONDS) : undefined,
 };

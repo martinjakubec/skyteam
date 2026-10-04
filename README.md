@@ -140,6 +140,7 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | `NPC_WORKERS` | Search worker threads for the bot (a decision fans out to the idle ones). Set it to the CPUs the container may really use | a spare core each, at most 4 |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens. **Required in production** (32+ characters, not a placeholder) | dev placeholder |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev). **Required in production**, and `*` is refused there | `http://localhost:8080` |
+| `TRUST_PROXY` | Reverse proxies in front of the server, so the per-client rate limits see the real address in `X-Forwarded-For` (2 behind Caddy + the client's nginx) | `0` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |
 | `VITE_SERVER_PORT` | Server port used when deriving the URL | `3001` |
 
@@ -239,6 +240,10 @@ landing checks).
   is shared by every tab, so two tabs would become one player; keeping
   injected scripts out (no raw HTML anywhere, a Content-Security-Policy) is
   what protects the token instead.
+- **Abuse limits.** Per client address and minute: 20 new rooms, 60 joins, 60
+  identities; per socket, 20 events a second; messages up to 16 KB; at most 20
+  spectators a room. Socket handlers, routes and timers catch their own
+  errors, so a malformed or hostile message can't take the server down.
 - **Scaling** is single-server today. The pieces to go multi-node later are
   already in place (Redis for shared state, rooms keyed by id): add Redis pub/sub
   for cross-node broadcast (`@socket.io/redis-adapter`) and sticky routing.

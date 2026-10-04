@@ -1,6 +1,7 @@
 import Redis from "ioredis";
 import { DEFAULT_SETUP, ROOM_TTL_SECONDS, SCENARIOS, normalizeBotLevel, normalizeGameState } from "@skyteam/shared";
 import { env } from "./env";
+import { evictExpired } from "./guard";
 import type { Room } from "./types";
 
 /**
@@ -18,6 +19,8 @@ export const redis = new Redis(env.REDIS_URL, { lazyConnect: false });
 redis.on("error", (err) => console.error("[redis] error:", err.message));
 
 const cache = new Map<string, Room>();
+// Rooms nobody has saved for the TTL have expired in Redis: forget them here too.
+setInterval(() => evictExpired(cache, Date.now(), ROOM_TTL_SECONDS * 1000), 60_000).unref();
 
 const roomKey = (id: string) => `room:${id}`;
 const inviteKey = (code: string) => `invite:${code}`;

@@ -18,5 +18,7 @@ COPY packages/server packages/server
 RUN npm run build -w @skyteam/shared
 
 ENV NODE_ENV=production
+# Run as the image's unprivileged user, not root.
+USER node
 EXPOSE 3001
 CMD ["npm", "run", "start", "-w", "@skyteam/server"]
