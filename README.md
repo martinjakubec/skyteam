@@ -71,8 +71,13 @@ Everything runs in containers, so you don't need Node installed locally.
 ### Full app (production-style build)
 
 ```bash
+cp .env.example .env    # then set JWT_SECRET: openssl rand -hex 32
 docker compose up --build
 ```
+
+The server image runs with `NODE_ENV=production`, and a production server
+refuses to start without a real `JWT_SECRET` (32+ characters, not a
+placeholder) and an explicit `CLIENT_ORIGIN` that isn't `*`.
 
 - Client: <http://localhost:8080>
 - Server: <http://localhost:3001>
@@ -133,8 +138,8 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | `NPC_DELAY_MS` | Pause before each move of a solo game's bot, so a human can follow | `900` |
 | `NPC_THINK_MS` | How long the Aviator bot may search for a move | `600` |
 | `NPC_WORKERS` | Search worker threads for the bot (a decision fans out to the idle ones). Set it to the CPUs the container may really use | a spare core each, at most 4 |
-| `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
-| `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
+| `JWT_SECRET` | Secret for signing anonymous identity tokens. **Required in production** (32+ characters, not a placeholder) | dev placeholder |
+| `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev). **Required in production**, and `*` is refused there | `http://localhost:8080` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |
 | `VITE_SERVER_PORT` | Server port used when deriving the URL | `3001` |
 
@@ -227,9 +232,13 @@ landing checks).
 - **Spectators** are already modelled: anyone joining a full or in-progress room
   becomes an `observer` (receives broadcasts, cannot act). The v1 UI just shows a
   watcher count; a spectator view can be built on top without backend changes.
-- **Identity** is anonymous (a signed token in `localStorage`). Accounts can be
-  added later by binding an account to the existing `playerId`. For production,
-  move the token to an `httpOnly` cookie.
+- **Identity** is anonymous: a signed token (HS256, 30 days) kept in
+  `sessionStorage` under a per-tab key, so every browser tab is its own player.
+  Accounts can be added later by binding an account to the existing `playerId`.
+  An `httpOnly` cookie would keep the token away from page scripts, but a cookie
+  is shared by every tab, so two tabs would become one player; keeping
+  injected scripts out (no raw HTML anywhere, a Content-Security-Policy) is
+  what protects the token instead.
 - **Scaling** is single-server today. The pieces to go multi-node later are
   already in place (Redis for shared state, rooms keyed by id): add Redis pub/sub
   for cross-node broadcast (`@socket.io/redis-adapter`) and sticky routing.

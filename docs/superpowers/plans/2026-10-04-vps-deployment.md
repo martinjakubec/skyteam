@@ -120,6 +120,8 @@ Internet ─► Caddy (80/443, Docker network "edge")
       environment:
         REDIS_URL: redis://redis:6379
         CLIENT_ORIGIN: https://skyteam.mjakubec.eu
+        # Search threads for the bot: the VPS's vCPUs minus one (at least 1).
+        NPC_WORKERS: ${NPC_WORKERS:-1}
       depends_on:
         redis:
           condition: service_healthy
@@ -221,7 +223,8 @@ Internet ─► Caddy (80/443, Docker network "edge")
 
 ## Task 8: Secrets and access (VPS + GitHub UI, user)
 
-- [ ] On the VPS, as `deploy`: `echo "JWT_SECRET=$(openssl rand -hex 32)" > /srv/apps/skyteam/.env && chmod 600 /srv/apps/skyteam/.env`
+- [ ] On the VPS, as `deploy`: `echo "JWT_SECRET=$(openssl rand -hex 32)" > /srv/apps/skyteam/.env && chmod 600 /srv/apps/skyteam/.env`. The server refuses to start in production without a real secret (32+ characters, not a placeholder).
+- [ ] Check the vCPU count with `nproc`. If it's more than 2, append `NPC_WORKERS=<nproc − 1>` to the same `.env`.
 - [ ] If the GHCR packages are private, run `docker login ghcr.io` as `deploy` with a classic PAT that has only the `read:packages` scope.
 - [ ] Create a deploy key pair with `ssh-keygen -t ed25519 -f skyteam-deploy -N ""`. Append the `.pub` to `/home/deploy/.ssh/authorized_keys`.
 - [ ] GitHub repo → Settings → Environments → `production`. Add these secrets:
