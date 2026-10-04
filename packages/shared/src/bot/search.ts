@@ -60,6 +60,17 @@ export function icePlan(view: GameState, crew: Crew, moves: GameCommand[]): Game
   return moves;
 }
 
+/**
+ * Kerosene: the tank and the first Brakes want the same die (a 2), and with
+ * no Brakes there's no landing — while none are set, a Pilot holding a 2
+ * sets them.
+ */
+export function keroseneBrakes(view: GameState, crew: Crew, moves: GameCommand[]): GameCommand[] {
+  if (!view.scenario.modules?.includes("kerosene") || view.phase !== "placement" || crew !== "pilot" || view.brakesDeployed > 0) return moves;
+  const brakes = moves.filter((m) => m.type === "placeDie" && m.target.kind === "brakes" && m.target.slot === 0 && !m.coffeeDelta);
+  return brakes.length > 0 ? brakes : moves;
+}
+
 /** The moves the search compares: the quick strategy's best few, plus the rollout
  *  policy's own choice — the quick strategy scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
@@ -150,7 +161,7 @@ export function searchStats(
   rand: Rand,
   { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
 ): SearchStats {
-  const moves = given ?? icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew), clock ?? Date.now()));
+  const moves = given ?? keroseneBrakes(view, crew, icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew), clock ?? Date.now())));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
   const candidates = given ?? searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);

@@ -583,6 +583,16 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
     icePlan(busyView, "pilot", legalMoves(busyView, "pilot")).length === legalMoves(busyView, "pilot").length);
   const plainView = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P);
   check("Ice Brakes plan: no effect without the module", icePlan(plainView, "pilot", legalMoves(plainView, "pilot")).length === legalMoves(plainView, "pilot").length);
+  // Kerosene: while no Brakes are set, a Pilot holding a 2 sets them (the
+  // tank wants the same die, and there's no landing without Brakes).
+  const { keroseneBrakes } = await import("../packages/shared/src/index.ts");
+  const kb = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  kb.dice.pilot = kb.dice.pilot.map((d, i) => ({ ...d, value: [2, 5, 6, 6][i] }));
+  const kbView = redactGameStateFor(kb, P);
+  const kbMoves = keroseneBrakes(kbView, "pilot", legalMoves(kbView, "pilot"));
+  check("Kerosene: with no Brakes set, the Pilot's 2 sets the first", kbMoves.length > 0 && kbMoves.every((m) => m.target?.kind === "brakes" && m.target.slot === 0));
+  const kbPlain = redactGameStateFor({ ...kb, scenario: { ...kb.scenario, modules: [] } }, P);
+  check("…and nothing changes without Kerosene", keroseneBrakes(kbPlain, "pilot", legalMoves(kbPlain, "pilot")).length === legalMoves(kbPlain, "pilot").length);
   // A half-filled Ice Brakes step is worth something (if the partner finishes it).
   const half = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
   const elsewhere = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "concentration", slot: 0 } }, P).state;
