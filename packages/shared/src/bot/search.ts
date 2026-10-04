@@ -31,8 +31,9 @@ export function realTimeFirst(view: GameState, crew: Crew, moves: GameCommand[])
  * are more than the search finds by sampling (a lone half scores nothing), so
  * the crew follows a plan: the Pilot starts the next step on the top space —
  * with a Coffee if no die fits — while the Co-Pilot still has two dice to
- * answer with; a started step is finished by whoever can. Measured on YUL
- * (20 games, 30 samples): 0.55 steps a game by search alone, 2.8 with the plan.
+ * answer with and no airplane is near; a started step is finished by whoever
+ * can. Measured on YUL (20 games, 30 samples): 0.55 steps a game by search
+ * alone, 2.3 with the plan, and as few crashes as without it.
  */
 export function icePlan(view: GameState, crew: Crew, moves: GameCommand[]): GameCommand[] {
   if (!view.scenario.modules?.includes("iceBrakes") || view.phase !== "placement") return moves;
@@ -45,7 +46,9 @@ export function icePlan(view: GameState, crew: Crew, moves: GameCommand[]): Game
     const finish = on();
     return finish.length > 0 ? finish : moves;
   }
-  if (crew === "pilot" && step.top === null && view.dice.copilot.filter((d) => !d.placed).length >= 2) {
+  // No forced start with an airplane on this space or the next: the dice may be needed to clear it.
+  const trafficNear = (view.airplanes[view.position] ?? 0) + (view.airplanes[view.position + 1] ?? 0) > 0;
+  if (crew === "pilot" && step.top === null && !trafficNear && view.dice.copilot.filter((d) => !d.placed).length >= 2) {
     const tops = on("top");
     const exact = tops.filter((m) => m.type === "placeDie" && !m.coffeeDelta);
     const start = exact.length > 0 ? exact : tops.filter((m) => m.type === "placeDie" && Math.abs(m.coffeeDelta ?? 0) === 1);

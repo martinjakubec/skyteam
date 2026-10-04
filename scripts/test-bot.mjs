@@ -545,7 +545,9 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   // Co-Pilot can still answer, and a started step is finished.
   const { icePlan } = await import("../packages/shared/src/index.ts");
   const { legalMoves } = await import("../packages/shared/src/index.ts");
-  const startView = redactGameStateFor(ig, P);
+  const clearPath = structuredClone(ig);
+  clearPath.airplanes = clearPath.airplanes.map(() => 0);
+  const startView = redactGameStateFor(clearPath, P);
   const startMoves = icePlan(startView, "pilot", legalMoves(startView, "pilot"));
   check("Ice Brakes plan: the Pilot holding a 2 starts the first step",
     startMoves.length > 0 && startMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.space === "top"));
@@ -555,6 +557,11 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   const finMoves = icePlan(finView, "copilot", legalMoves(finView, "copilot"));
   check("Ice Brakes plan: the Co-Pilot finishes a started step",
     finMoves.length > 0 && finMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.slot === 0 && m.target.space === "bottom"));
+  const busy = structuredClone(ig);
+  busy.airplanes[busy.position + 1] = 1; // an airplane on the next space: the dice may be needed to clear it
+  const busyView = redactGameStateFor(busy, P);
+  check("Ice Brakes plan: no forced start with an airplane on this space or the next",
+    icePlan(busyView, "pilot", legalMoves(busyView, "pilot")).length === legalMoves(busyView, "pilot").length);
   const plainView = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P);
   check("Ice Brakes plan: no effect without the module", icePlan(plainView, "pilot", legalMoves(plainView, "pilot")).length === legalMoves(plainView, "pilot").length);
   // A half-filled Ice Brakes step is worth something (if the partner finishes it).
