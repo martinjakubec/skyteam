@@ -295,8 +295,9 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // under 6 beats the idle burn — never one that would empty the tank.
   const keroOpen = mods.includes("kerosene") && s.keroseneSlot == null;
   const keroSafe = (v: number) => keroOpen && v < KEROSENE_IDLE_BURN && v < s.kerosene;
-  const kerosene = (max: number) => {
-    const d = spare.reduce<(typeof hand)[number] | null>((m, x) => (!m || x.value! < m.value! ? x : m), null);
+  const kerosene = (max: number, keepSwitchDice = false) => {
+    const pool = keepSwitchDice ? spare.filter((x) => switchTargets(x.value!).length === 0) : spare;
+    const d = pool.reduce<(typeof hand)[number] | null>((m, x) => (!m || x.value! < m.value! ? x : m), null);
     if (!d) return;
     if (d.value! <= max && keroSafe(d.value!)) return at(d.id, { kind: "kerosene" });
     // Coffee may bring it down to burn less.
@@ -318,7 +319,8 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   if (held !== null) return internMove(held);
   clearAirplanes(0, 1);
   iceFinish();
-  kerosene(freeDice <= 1 ? KEROSENE_IDLE_BURN - 1 : P.keroseneEarly === "share" ? keroShare : P.keroseneEarly);
+  // (Early on, not a die a switch could use: the low dice are also the first Flaps and Gear.)
+  kerosene(freeDice <= 1 ? KEROSENE_IDLE_BURN - 1 : P.keroseneEarly === "share" ? keroShare : P.keroseneEarly, freeDice > 1);
   if (behind) switches(true); // Coffee only when behind: it's also what levels the Axis
   clearAirplanes(2, 2);
   if (!behind) switches(false);

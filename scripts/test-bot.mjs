@@ -541,6 +541,22 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
     searchCandidates(redactGameStateFor(kgc, P), "pilot", mulberry32(1), 6, undefined, false).some((m) => m.target?.kind === "kerosene"));
   const yulc = searchCandidates(redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P), "pilot", mulberry32(1), 6, undefined, false);
   check("plain YUL keeps its shortlist (6 candidates at most)", yulc.length <= 6);
+  // Aviator's Ice Brakes plan: the Pilot starts the next step while the
+  // Co-Pilot can still answer, and a started step is finished.
+  const { icePlan } = await import("../packages/shared/src/index.ts");
+  const { legalMoves } = await import("../packages/shared/src/index.ts");
+  const startView = redactGameStateFor(ig, P);
+  const startMoves = icePlan(startView, "pilot", legalMoves(startView, "pilot"));
+  check("Ice Brakes plan: the Pilot holding a 2 starts the first step",
+    startMoves.length > 0 && startMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.space === "top"));
+  const started = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
+  started.dice.copilot = started.dice.copilot.map((d, i) => ({ ...d, value: [2, 6, 6, 6][i] }));
+  const finView = redactGameStateFor(started, C);
+  const finMoves = icePlan(finView, "copilot", legalMoves(finView, "copilot"));
+  check("Ice Brakes plan: the Co-Pilot finishes a started step",
+    finMoves.length > 0 && finMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.slot === 0 && m.target.space === "bottom"));
+  const plainView = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P);
+  check("Ice Brakes plan: no effect without the module", icePlan(plainView, "pilot", legalMoves(plainView, "pilot")).length === legalMoves(plainView, "pilot").length);
   // A half-filled Ice Brakes step is worth something (if the partner finishes it).
   const half = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
   const elsewhere = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "concentration", slot: 0 } }, P).state;

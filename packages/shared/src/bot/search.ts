@@ -26,6 +26,34 @@ export function realTimeFirst(view: GameState, crew: Crew, moves: GameCommand[])
   return first.length > 0 ? first : moves;
 }
 
+/**
+ * Aviator's Ice Brakes plan. Four steps of two dice each, both in one round,
+ * are more than the search finds by sampling (a lone half scores nothing), so
+ * the crew follows a plan: the Pilot starts the next step on the top space —
+ * with a Coffee if no die fits — while the Co-Pilot still has two dice to
+ * answer with; a started step is finished by whoever can. Measured on YUL
+ * (20 games, 30 samples): 0.55 steps a game by search alone, 2.8 with the plan.
+ */
+export function icePlan(view: GameState, crew: Crew, moves: GameCommand[]): GameCommand[] {
+  if (!view.scenario.modules?.includes("iceBrakes") || view.phase !== "placement") return moves;
+  const slot = view.brakesDeployed;
+  const step = view.iceBrakeSlots[slot];
+  if (!step) return moves;
+  const on = (space?: "top" | "bottom") =>
+    moves.filter((m) => m.type === "placeDie" && m.target.kind === "iceBrakes" && m.target.slot === slot && (!space || m.target.space === space));
+  if ((step.top === null) !== (step.bottom === null)) {
+    const finish = on();
+    return finish.length > 0 ? finish : moves;
+  }
+  if (crew === "pilot" && step.top === null && view.dice.copilot.filter((d) => !d.placed).length >= 2) {
+    const tops = on("top");
+    const exact = tops.filter((m) => m.type === "placeDie" && !m.coffeeDelta);
+    const start = exact.length > 0 ? exact : tops.filter((m) => m.type === "placeDie" && Math.abs(m.coffeeDelta ?? 0) === 1);
+    if (start.length > 0) return start;
+  }
+  return moves;
+}
+
 export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew), dedupe = true): GameCommand[] {
   // Moves that lead to the same game — a die of the same value, the same
   // Coffee spent, on the same space (however the space is spelled: a target
@@ -111,7 +139,7 @@ export function searchStats(
   rand: Rand,
   { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given }: SearchOptions,
 ): SearchStats {
-  const moves = given ?? realTimeFirst(view, crew, legalMoves(view, crew));
+  const moves = given ?? icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew)));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
   const candidates = given ?? searchCandidates(view, crew, candidateSeed === undefined ? rand : mulberry32(candidateSeed), shortlist, moves, dedupe);
   const totals = candidates.map(() => 0);
