@@ -9,9 +9,6 @@ import { rankMoves } from "./policy";
 import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
 import { mulberry32 } from "./rng";
 
-/** The moves the search compares: the quick strategy's best few, plus the rollout
- *  policy's own choice — the quick strategy scores one step ahead and can miss what
- *  the plan needs (e.g. Flaps falling behind). */
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
 
 /**
@@ -57,6 +54,9 @@ export function icePlan(view: GameState, crew: Crew, moves: GameCommand[]): Game
   return moves;
 }
 
+/** The moves the search compares: the quick strategy's best few, plus the rollout
+ *  policy's own choice — the quick strategy scores one step ahead and can miss what
+ *  the plan needs (e.g. Flaps falling behind). */
 export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortlist: number, moves = legalMoves(view, crew), dedupe = true): GameCommand[] {
   // Moves that lead to the same game — a die of the same value, the same
   // Coffee spent, on the same space (however the space is spelled: a target
