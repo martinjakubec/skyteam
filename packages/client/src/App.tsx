@@ -1,4 +1,4 @@
-import { BOT_LEVELS, BOT_LEVEL_LABELS, type BotLevel, type Crew } from "@skyteam/shared";
+import { type Crew } from "@skyteam/shared";
 import { useEffect, useRef, useState } from "react";
 import { createRoom, joinRoom } from "./api";
 import { useGame } from "./store";
@@ -7,13 +7,6 @@ import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
 import { Seats } from "./components/Seats";
 import { TutorialModal } from "./components/TutorialModal";
-
-/** What each bot level plays like. */
-const BOT_LEVEL_BLURBS: Record<BotLevel, string> = {
-  cadet: "learning the ropes",
-  navigator: "steady and sensible",
-  aviator: "plans every die",
-};
 
 export function App() {
   const { snapshot, connected, lastError, connect, setReady, setName, setSetup, startGame, resetGame, exitGame, sendCommand } =
@@ -45,9 +38,8 @@ export function App() {
   }, []);
 
   const [soloCrew, setSoloCrew] = useState<Crew>("pilot");
-  const [soloLevel, setSoloLevel] = useState<BotLevel>("navigator");
 
-  const onCreate = async (solo?: { crew: Crew; level: BotLevel }) => {
+  const onCreate = async (solo?: { crew: Crew }) => {
     setBusy(true);
     try {
       const r = await createRoom(solo);
@@ -74,7 +66,7 @@ export function App() {
         <p className="muted">Open an invite link to join an existing room.</p>
         <section className="panel solo">
           <h2 className="setup-label">Play solo</h2>
-          <p className="muted">A bot flies the other seat.</p>
+          <p className="muted">The Aviator bot flies the other seat.</p>
           <fieldset className="solo-options">
             <legend className="setup-label">Your seat</legend>
             {(["pilot", "copilot"] as const).map((crew) => (
@@ -84,18 +76,7 @@ export function App() {
               </label>
             ))}
           </fieldset>
-          <fieldset className="solo-options">
-            <legend className="setup-label">The bot</legend>
-            {BOT_LEVELS.map((level) => (
-              <label key={level}>
-                <input type="radio" name="solo-level" checked={soloLevel === level} onChange={() => setSoloLevel(level)} />
-                <span>
-                  {BOT_LEVEL_LABELS[level]} <span className="muted">— {BOT_LEVEL_BLURBS[level]}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <button disabled={busy} onClick={() => onCreate({ crew: soloCrew, level: soloLevel })}>
+          <button disabled={busy} onClick={() => onCreate({ crew: soloCrew })}>
             Play solo
           </button>
         </section>

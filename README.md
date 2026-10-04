@@ -33,11 +33,10 @@ grace-timer logic.
 
 ```bash
 npm test    # rules + unit + bot suites (run inside a node:22 container; see below)
-npm run bench -- [games=30] [level=navigator] [ALL]   # bot win rate
+npm run bench -- [games=30] [quick|samples] [ALL]   # bot win rate
+npm run bench -- [games=40] landing [samples=20|600ms]   # YUL landings (MODULES="kerosene,intern" adds modules)
 ```
 
-`npm run bench -- 20 compare` plays Cadet, Navigator and Aviator on the same
-setups and checks they rank in that order (see "Running it").
 `npm run bench` plays the bot against itself and prints, per setup, the win
 rate, the average round reached and the top loss reasons, then the overall win
 rate. By default it covers every scenario card, every module combination and
@@ -90,25 +89,27 @@ human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
 seat would see, and answers Reroll and Working Together offers on its own.
 Opening a solo room's invite link makes you an observer.
 
-The bot has three levels:
+The bot is **Aviator**. It searches: for its best few moves it repeatedly
+fills in the dice it can't see, plays the game out with a fast rollout
+policy, and keeps the move that lands most often, within `NPC_THINK_MS`. It
+thinks in worker threads, so it never blocks other rooms. Its **quick
+strategy** — every legal move scored one step ahead (approach pace, traffic,
+tilt, switches, the landing) — is what it falls back to if a search fails,
+and what the rollouts use when nothing cheap fits. Rooms and clients from
+before the levels were retired (Cadet, Navigator) get Aviator.
 
-- **Cadet** plays the Navigator's choice, but about a third of the time picks
-  one of the next few moves instead.
-- **Navigator** scores every legal move one step ahead (approach pace, traffic,
-  tilt, switches, the landing) and plays the best.
-- **Aviator** searches: for its best few moves it repeatedly fills in the dice
-  it can't see, plays the round out, and keeps the move that does best on
-  average, within `NPC_THINK_MS`. It thinks in a worker thread, so it never
-  blocks other rooms, and falls back to Navigator if that fails.
+It plays every module. The rollouts feed Kerosene, mind the Kerosene Leak
+when pairing Engine dice, train the Intern and place its tokens, and work
+the Ice Brakes. A few plans steer the search where sampling alone can't:
+Ice Brakes steps are started by the Pilot and always finished; with
+Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
+20 s are left, the crew's own Axis and Engine come first.
 
-`npm run bench -- 20 compare` plays all three on the same 6 setups, starting
-from the same seeds (Aviator at 50 ms a move). The levels draw on the random
-stream differently, so their games soon diverge, and Aviator's results depend
-on machine speed (its search is time-budgeted): treat the numbers as
-indicative, not as a paired comparison. Measured: Cadet 0.8% won, progress 3.86 · Navigator
-0.8% won, progress 5.12 · Aviator 0.0% won, progress 5.87 (progress = rounds
-survived, +1 for a landing). The levels are in order, but all three still land
-rarely — the evaluator is the place to improve them.
+Measured on YUL (80 games each, 120 samples a candidate, seeds 0–79), the
+share of games that land: no module 70%; Intern 86%; Kerosene Leak 63%;
+Wind 59%; Real-Time 70%; Kerosene 8% (19% with the Intern); Ice Brakes about 0% (the
+eight dice it needs leave too few for the Flaps and the pace). Real-Time
+is measured on a still clock: it tests the plan, not the time pressure.
 
 ### Development (hot reload)
 
@@ -131,6 +132,7 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | `RECONNECT_GRACE_MS` | How long a dropped player's seat is held before the game is abandoned | `60000` |
 | `NPC_DELAY_MS` | Pause before each move of a solo game's bot, so a human can follow | `900` |
 | `NPC_THINK_MS` | How long the Aviator bot may search for a move | `600` |
+| `NPC_WORKERS` | Search worker threads for the bot (a decision fans out to the idle ones). Set it to the CPUs the container may really use | a spare core each, at most 4 |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens — **change in production** | dev placeholder |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev) | `http://localhost:8080` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |

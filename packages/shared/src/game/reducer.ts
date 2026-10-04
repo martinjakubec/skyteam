@@ -78,7 +78,15 @@ const PLAYER_ACTIONS: ReadonlySet<ReduceCommand["type"]> = new Set([
  * resolve* / endOfRound steps below.
  */
 export function reduce(state: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
-  const draft: GameState = structuredClone(state);
+  return reduceInPlace(structuredClone(state), command, byPlayerId);
+}
+
+/**
+ * reduce, applied to the state it's given instead of a copy — for bot
+ * rollouts, which own their sampled world and play thousands of moves on it.
+ * If the command is illegal it throws part-way, leaving `draft` unusable.
+ */
+export function reduceInPlace(draft: GameState, command: ReduceCommand, byPlayerId: PlayerId): ReduceResult {
   if (draft.timerRemainingMs !== null && PLAYER_ACTIONS.has(command.type)) {
     throw new GameRuleError("The clock is paused until both players are connected.");
   }
@@ -1042,23 +1050,51 @@ function isFinalRound(s: GameState): boolean {
   return s.round >= s.scenario.rounds;
 }
 
-function evaluateLanding(s: GameState): void {
-  const reasons: string[] = [];
+/** Each condition for landing, true when met (a module not in play is met).
+ *  The landing check below uses exactly these; bots and benchmarks read them. */
+export interface LandingChecks {
+  airport: boolean;
+  clear: boolean;
+  gear: boolean;
+  flaps: boolean;
+  level: boolean;
+  iceBrakes: boolean;
+  intern: boolean;
+  brakes: boolean;
+}
 
-  if (s.position !== airportIndex(s.scenario)) reasons.push("did not reach the airport in time");
-  if (airplanesRemaining(s) > 0) reasons.push("airplanes still on the approach path");
-  if (!s.gearGreen.every(Boolean)) reasons.push("landing gear not fully deployed");
-  if (!s.flapsGreen.every(Boolean)) reasons.push("flaps not fully deployed");
-  if (s.axis.offset !== 0) reasons.push("plane not level");
-
+export function landingChecks(s: GameState): LandingChecks {
   // Ice Brakes: the marker must be past the 5 (every step done) to land at all.
   const ice = hasModule(s, "iceBrakes");
-  if (ice && s.brakesDeployed < ICE_BRAKE_VALUES.length) reasons.push("ice brakes not fully deployed");
-  if (hasModule(s, "intern") && s.internTokens.some((t) => t !== null)) reasons.push("intern not fully trained");
   const brakeSteps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeValue = s.brakesDeployed > 0 ? brakeSteps[s.brakesDeployed - 1] : 0;
   const speed = s.lastSpeed ?? (s.engines.pilot ?? 0) + (s.engines.copilot ?? 0);
-  if (!(s.brakesDeployed > 0 && speed <= brakeValue)) reasons.push("speed too high for the brakes");
+  return {
+    airport: s.position === airportIndex(s.scenario),
+    clear: airplanesRemaining(s) === 0,
+    gear: s.gearGreen.every(Boolean),
+    flaps: s.flapsGreen.every(Boolean),
+    level: s.axis.offset === 0,
+    iceBrakes: !ice || s.brakesDeployed >= ICE_BRAKE_VALUES.length,
+    intern: !hasModule(s, "intern") || s.internTokens.every((t) => t === null),
+    brakes: s.brakesDeployed > 0 && speed <= brakeValue,
+  };
+}
+
+const LANDING_FAILURES: Record<keyof LandingChecks, string> = {
+  airport: "did not reach the airport in time",
+  clear: "airplanes still on the approach path",
+  gear: "landing gear not fully deployed",
+  flaps: "flaps not fully deployed",
+  level: "plane not level",
+  iceBrakes: "ice brakes not fully deployed",
+  intern: "intern not fully trained",
+  brakes: "speed too high for the brakes",
+};
+
+function evaluateLanding(s: GameState): void {
+  const checks = landingChecks(s);
+  const reasons = (Object.keys(LANDING_FAILURES) as (keyof LandingChecks)[]).filter((k) => !checks[k]).map((k) => LANDING_FAILURES[k]);
 
   if (reasons.length === 0) {
     s.phase = "won";

@@ -1,7 +1,7 @@
 import type { GameCommand, PlayerId } from "../protocol";
 import { TRAFFIC_DIE_FACES } from "./abilities";
 import { scenarioForSetup, type GameSetup } from "./catalog";
-import { reduce, type ReduceCommand } from "./reducer";
+import { reduce, reduceInPlace, type ReduceCommand } from "./reducer";
 import { DICE_PER_PLAYER, INTERN_TOKEN_COUNT, type DieValue } from "./scenario";
 import { createInitialGameState, type GameState } from "./state";
 
@@ -86,4 +86,13 @@ export function newGame(
 export function applyIntent(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand, now: () => number): GameState {
   const dice = randDice(rand);
   return settle(reduce(game, withEntropy(command, dice), playerId).state, dice, now);
+}
+
+/** applyIntent on a state the caller owns: no copies (bot rollouts). */
+export function applyIntentInPlace(game: GameState, command: GameCommand, playerId: PlayerId, rand: Rand, now: () => number): GameState {
+  const dice = randDice(rand);
+  let g = reduceInPlace(game, withEntropy(command, dice), playerId).state;
+  while (g.trafficPending && !g.outcome) g = reduceInPlace(g, { type: "rollTraffic", value: dice.traffic() }, "").state;
+  while (g.phase === "rolling" && !g.outcome) g = reduceInPlace(g, roundRoll(g, dice, now()), "").state;
+  return g;
 }

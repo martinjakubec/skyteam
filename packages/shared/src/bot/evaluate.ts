@@ -1,7 +1,38 @@
 import { airportIndex, type GameState } from "../game/state";
-import { BRAKE_VALUES, ICE_BRAKE_VALUES, WIND_RING, type Crew } from "../game/scenario";
+import { BRAKE_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, WIND_RING, type Crew } from "../game/scenario";
 
 export const WIN = 10_000;
+
+/** Kerosene a round the evaluator plans for: a low die, most rounds. */
+const KEROSENE_PER_ROUND = 2.5;
+
+/** The evaluator's weights — tunable by `scripts/tune.mjs eval` against the
+ *  quick strategy's landing rate. Defaults are the tuned values. */
+export const EVAL_WEIGHTS = {
+  /** Per airplane within two spaces / further along the path. */
+  airplaneNear: 120,
+  airplaneFar: 60,
+  /** Per pip of tilt (and when one pip from a spin). */
+  tilt: 80,
+  tiltDanger: 400,
+  /** A tilt the current space's Turn forbids. */
+  turn: 600,
+  /** Per switch (Gear, Flaps) still to deploy. */
+  switchTodo: 60,
+  /** Per switch beyond a crew's capacity (two a round). */
+  switchOverCapacity: 300,
+  /** Per Flaps beyond about one a round. */
+  flapsPace: 150,
+  /** Per Brakes step still to deploy. */
+  brakes: 100,
+  /** Per open Axis/Engine of the crew's own. */
+  openMandatory: 1000,
+  /** Kerosene: per point of fuel short of what the rounds left will burn. */
+  kerosene: 60,
+  /** Credit per Coffee and per Reroll token. */
+  coffee: 15,
+  reroll: 25,
+};
 
 /**
  * Heuristic value of a state for the crew (co-operative, so the same for both
@@ -12,6 +43,7 @@ export const WIN = 10_000;
  */
 export function evaluate(s: GameState, crew: Crew): number {
   if (s.outcome) return s.outcome.result === "won" ? WIN : -WIN;
+  const W = EVAL_WEIGHTS;
   // Rounds still able to move: up to the one before landing, and not this one
   // once its Engines have resolved (the plane has moved this round).
   const moved = s.phase === "placement" && s.engines.pilot !== null && s.engines.copilot !== null;
@@ -20,38 +52,55 @@ export function evaluate(s: GameState, crew: Crew): number {
   let v = 0;
   v -= paceRisk(s, crew, remaining, roundsLeft, moved);
   // Airplanes still on the path (each must be cleared before the plane leaves its space).
-  s.airplanes.forEach((n, i) => { if (i >= s.position) v -= n * (i - s.position <= 2 ? 120 : 60); });
+  s.airplanes.forEach((n, i) => { if (i >= s.position) v -= n * (i - s.position <= 2 ? W.airplaneNear : W.airplaneFar); });
   // Tilt: 0 is level; ±spinAt is fatal (already an outcome); landing needs 0.
-  v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? 400 : 80);
+  v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? W.tiltDanger : W.tilt);
   v -= axisRisk(s, crew);
-  // Real-Time: the round can end any second, and an open Axis or Engine then
-  // loses the game — fill the crew's own before anything else.
-  if (s.scenario.modules?.includes("realTime") && s.phase === "placement") {
-    v -= ((s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0)) * 1000;
+  // The crew's own Axis and Engine, still open: filling them early keeps them
+  // on the search's shortlist (found in Real-Time, where this began: every
+  // game lands more — YUL 37 → 56 of 80, Wind 30 → 47, Kerosene Leak 31 → 50).
+  if (s.phase === "placement") {
+    v -= ((s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0)) * W.openMandatory;
   }
   v -= landingSpeedRisk(s, crew);
   // Turns: flying off this space with a tilt it doesn't allow loses — once
   // this round's tilt is final, and not on the landing round (no movement).
   const allowed = s.scenario.approachTrack[s.position]?.axisAllowed;
   const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
-  if (allowed && tiltFinal && !isLanding(s) && !allowed.includes(s.axis.offset)) v -= 600;
-  // Switches to deploy before landing.
-  const todo = s.gearGreen.filter((g) => !g).length + s.flapsGreen.filter((g) => !g).length;
-  // Capacity: the rounds still to move plus this one (switches can be set after
-  // the move, and on the landing round), two switch dice a round.
-  v -= todo * 60 + Math.max(0, todo - 2 * (roundsLeft + 1)) * 300;
+  if (allowed && tiltFinal && !isLanding(s) && !allowed.includes(s.axis.offset)) v -= W.turn;
+  // Switches to deploy before landing. Each crew has its own two free dice a
+  // round, over the rounds still to move plus this one (switches can be set
+  // after the move, and on the landing round). The Co-Pilot's Flaps go in
+  // order with set numbers: about one a round is a realistic pace.
+  const gearTodo = s.gearGreen.filter((g) => !g).length;
+  const flapsTodo = s.flapsGreen.filter((g) => !g).length;
+  const placeRounds = roundsLeft + 1;
+  v -= (gearTodo + flapsTodo) * W.switchTodo;
+  v -= (Math.max(0, gearTodo - 2 * placeRounds) + Math.max(0, flapsTodo - 2 * placeRounds)) * W.switchOverCapacity;
+  v -= Math.max(0, flapsTodo - placeRounds) * W.flapsPace;
   const iceOn = s.scenario.modules?.includes("iceBrakes");
   // Every step: two dice average 7, more than any Brakes but the last allow.
   const brakeGoal = iceOn ? ICE_BRAKE_VALUES.length : BRAKE_VALUES.length;
-  v -= Math.max(0, brakeGoal - s.brakesDeployed) * (iceOn ? 150 : 100);
-  if (s.scenario.modules?.some((m) => m === "kerosene" || m === "keroseneLeak")) {
+  v -= Math.max(0, brakeGoal - s.brakesDeployed) * (iceOn ? 1.5 * W.brakes : W.brakes);
+  // A started Ice Brakes step: one half in, worth part of a step if finished this round.
+  const step = iceOn ? s.iceBrakeSlots[s.brakesDeployed] : undefined;
+  if (step && s.phase === "placement" && (step.top === null) !== (step.bottom === null)) v += 0.75 * W.brakes;
+  if (s.scenario.modules?.includes("kerosene")) {
+    // Kerosene: this round's burn is still to come while the space is empty —
+    // about a low die if someone can still feed it, the idle 6 if nobody can —
+    // then about KEROSENE_PER_ROUND for every round after (the landing one too).
+    const free = (c: Crew) => Math.max(0, s.dice[c].filter((d) => !d.placed).length - (s.axis[c] === null ? 1 : 0) - (s.engines[c] === null ? 1 : 0));
+    const pending = s.phase === "placement" && s.keroseneSlot == null ? (free("pilot") + free("copilot") > 0 ? KEROSENE_PER_ROUND : KEROSENE_IDLE_BURN) : 0;
+    const later = s.scenario.rounds - s.round;
+    v -= Math.max(0, later * KEROSENE_PER_ROUND + 1 - (s.kerosene - pending)) * W.kerosene;
+  } else if (s.scenario.modules?.includes("keroseneLeak")) {
     v -= Math.max(0, roundsLeft * 4 - s.kerosene) * 50;
   }
   if (s.scenario.modules?.includes("intern")) {
     const untrained = s.internTokens.filter((t) => t !== null).length;
     v -= untrained * 40 + Math.max(0, untrained - 2 * (roundsLeft + 1)) * 400;
   }
-  v += s.coffee * 15 + s.rerollTokens * 25;
+  v += s.coffee * W.coffee + s.rerollTokens * W.reroll;
   return v;
 }
 

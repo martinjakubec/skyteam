@@ -56,7 +56,7 @@ const emit = (s, event, ...args) => new Promise((resolve) => s.emit(event, ...ar
 /** One solo game: true if a time-up opened round 2 and the bot played in it,
  *  false if the time-up lost the game (retry), throws on anything else. */
 async function attempt(n) {
-  const room = await post("/rooms", { solo: { crew: "pilot", level: "navigator" } });
+  const room = await post("/rooms", { solo: { crew: "pilot" } });
   const s = io(BASE, { transports: ["websocket"], reconnection: false, forceNew: true });
   let game = null;
   let status = "lobby";
@@ -87,6 +87,12 @@ async function attempt(n) {
     }
     await sleep(30);
   }
+  if (plan.length && status === "finished") {
+    // The 3-second round ran out before our own dice were down (a slow first
+    // move): a lost attempt like any other, not a failure of the bot.
+    s.close();
+    return false;
+  }
   if (plan.length) throw new Error(`couldn't place our round-1 dice (status ${status}, turn ${game?.turn})`);
 
   // Wait out the round: a time-up either opens round 2 or loses the game.
@@ -104,7 +110,9 @@ async function attempt(n) {
 async function main() {
   for (let i = 0; i < 40; i++) {
     try {
-      if ((await (await fetch(`${BASE}/health`)).json()).ok) break;
+      // Up, and its bot's search workers loaded (as on a server that's been running a while).
+      const h = await (await fetch(`${BASE}/health`)).json();
+      if (h.ok && h.botWorkers?.ready === h.botWorkers?.of) break;
     } catch {}
     await sleep(500);
   }
@@ -115,9 +123,11 @@ async function main() {
     if (await attempt(n)) woke = true;
     else losses++;
   }
-  console.log(`  (time-ups that lost the game first, as the bot hadn't placed its Axis and Engine: ${losses})`);
+  console.log(`  (attempts the 3-second clock ended first: ${losses})`);
   check("after a time-up opens round 2, the bot (Co-Pilot, leading) plays without any command from us", woke);
-  check("the server logged no bot errors", !/\[npc\]/.test(serverLog));
+  const npcLines = serverLog.split("\n").filter((l) => l.includes("[npc]"));
+  check("the server logged no bot errors", npcLines.length === 0);
+  for (const l of npcLines) console.log(`     ${l}`);
   console.log(failures === 0 ? "\nALL CHECKS PASSED ✅" : `\n${failures} CHECK(S) FAILED ❌`);
   stop(failures === 0 ? 0 : 1);
 }

@@ -2,6 +2,17 @@
 import { newGame, applyIntent, randDice, shuffledInternTokens, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
 
 let failures = 0;
+/** Two moves lead to the same game: the same space (spelled with or without the
+ *  crew's own side), a die of the same value, the same Coffee spent. */
+const sameGame = (view, crew, a, b) => {
+  if (!a || !b || a.type !== b.type) return false;
+  if (a.type !== "placeDie") return JSON.stringify(a) === JSON.stringify(b);
+  const val = (m) => view.dice[crew].find((d) => d.id === m.dieId)?.value;
+  const sp = (t) => `${t.kind}:${t.slot ?? ""}:${t.space ?? ""}:${t.side ?? crew}`;
+  return sp(a.target) === sp(b.target) && val(a) === val(b) && (a.coffeeDelta ?? 0) === (b.coffeeDelta ?? 0);
+};
+/** The rules accept this move from `who` on `state` (the same move can be spelled differently). */
+const accepts = (state, who, m) => { try { return !!m && !!applyIntent(state, m, who, mulberry32(1), () => 0); } catch { return false; } };
 const check = (label, cond) => { console.log(`${cond ? "  ✅" : "  ❌"} ${label}`); if (!cond) failures++; };
 const P = "P", C = "C";
 const clock = () => 0;
@@ -46,9 +57,9 @@ console.log("2) legalMoves from the bot's own (redacted) view");
   check("off-turn: only off-turn actions (Adaptation)", legalMoves(redactGameStateFor(full, C), "copilot").every((m) => m.type === "adapt"));
 }
 
-console.log("3) actorFor, evaluate, chooseMove (Navigator)");
+console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
 {
-  const { actorFor, chooseMove, evaluate, redactGameStateFor, createInitialGameState, reduce, scenarioForSetup } = await import("../packages/shared/src/index.ts");
+  const { actorFor, chooseMove, quickMove, evaluate, redactGameStateFor, createInitialGameState, reduce, scenarioForSetup } = await import("../packages/shared/src/index.ts");
   const t0 = () => fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   const setup = (mods = [], abs = [], scenarioId = "YUL") => ({ scenarioId, modules: mods, abilities: abs });
   const fresh = (dp, dc, s = setup()) => reduce(createInitialGameState(scenarioForSetup(s), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
@@ -62,7 +73,7 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   let s = fresh([1, 5, 6, 6], [6, 1, 1, 1]);
   s.turn = "copilot";
   s = reduce(s, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
-  const m = chooseMove(redactGameStateFor(s, P), "pilot", "navigator", mulberry32(1));
+  const m = quickMove(redactGameStateFor(s, P), "pilot", mulberry32(1));
   check("doesn't spin the plane", !(m.type === "placeDie" && m.target.kind === "axis" && s.dice.pilot[m.dieId].value === 1));
 
   // Keep the die that saves the Axis: the Co-Pilot's 6 is down, so only the
@@ -70,7 +81,7 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   let k = fresh([5, 1, 1, 2], [6, 1, 1, 1]);
   k.turn = "copilot";
   k = reduce(k, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
-  const keep = chooseMove(redactGameStateFor(k, P), "pilot", "navigator", mulberry32(4));
+  const keep = quickMove(redactGameStateFor(k, P), "pilot", mulberry32(4));
   check("keeps the only die that avoids a spin for the Axis", !(keep.type === "placeDie" && k.dice.pilot[keep.dieId].value === 5 && keep.target.kind !== "axis"));
 
   // First Axis die, partner's unknown: a 1 spins on any partner 4–6, a 3 only on a 6.
@@ -80,7 +91,7 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   // Partner's Axis die unknown: the Pilot's 3 is its safest Axis die (1s and 6s
   // spin on half the partner's faces), so it isn't spent elsewhere first.
   const r = fresh([3, 1, 6, 6], [1, 1, 1, 1]);
-  const first = chooseMove(redactGameStateFor(r, P), "pilot", "navigator", mulberry32(5));
+  const first = quickMove(redactGameStateFor(r, P), "pilot", mulberry32(5));
   check("keeps its safest Axis die rather than spending it elsewhere", !(first.type === "placeDie" && r.dice.pilot[first.dieId].value === 3 && first.target.kind !== "axis"));
 
   // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6.
@@ -126,14 +137,47 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
 
-  // Real-Time: the round can end any second, and an open Axis or Engine then
-  // loses — so the bot fills its own first.
+  // Every game: the crew's own Axis and Engine are worth filling early — the
+  // search's shortlist then keeps them in view (YUL 37 → 56 of 80 landings).
+  {
+    const g = newGame(DEFAULT_SETUP, P, C, mulberry32(4), 0);
+    const filled = { ...g, axis: { ...g.axis, pilot: 3 }, engines: { ...g.engines, pilot: 3 } };
+    check("evaluate: an open Axis and Engine of the crew's own cost (plain YUL too)", evaluate(g, "pilot") < evaluate(filled, "pilot") - 1000);
+  }
+
+  // Real-Time: when the round may end soon, an open Axis or Engine loses —
+  // so with little time left the bot fills its own first.
   const rtFirst = [0, 1, 2, 3, 4, 5].map((seed) => {
-    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(seed), Date.now());
-    const m = chooseMove(redactGameStateFor(g, P), "pilot", "navigator", mulberry32(seed));
+    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(seed), 0);
+    const m = chooseMove(redactGameStateFor(g, P), "pilot", mulberry32(seed), { samples: 2, now: g.timerEndsAt - 10_000 });
     return m.type === "placeDie" && (m.target.kind === "axis" || m.target.kind === "engine");
   });
-  check("Real-Time: the bot fills its Axis and Engine before anything else", rtFirst.every(Boolean));
+  check("Real-Time, 10 s left: Aviator fills its Axis and Engine first", rtFirst.every(Boolean));
+  {
+    const { realTimeFirst, legalMoves } = await import("../packages/shared/src/index.ts");
+    const g = newGame({ ...DEFAULT_SETUP, modules: ["realTime"] }, P, C, mulberry32(3), 0);
+    const all = legalMoves(redactGameStateFor(g, P), "pilot");
+    check("Real-Time, a full minute left: every move stays open", realTimeFirst(redactGameStateFor(g, P), "pilot", all, g.timerEndsAt - 60_000).length === all.length);
+    const paused = { ...g, timerEndsAt: null, timerRemainingMs: 5_000 };
+    check("Real-Time, clock paused: every move stays open", realTimeFirst(redactGameStateFor(paused, P), "pilot", all, 0).length === all.length);
+  }
+
+  // Step 4: switch capacity per crew (each has its own two free dice a round), and
+  // Flaps — in order, with set numbers — realistically about one a round.
+  const sw = (gear, flaps, round) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round, airplanes: Array(8).fill(0), position: 7 - Math.max(0, 7 - round),
+    gearGreen: [0, 1, 2].map((i) => i >= gear), flapsGreen: [0, 1, 2, 3].map((i) => i >= flaps) });
+  check("landing round: 2 Gear + 2 Flaps left is tight but each crew can still do it", evaluate(sw(0, 0, 7), "pilot") - evaluate(sw(2, 2, 7), "pilot") < 600);
+  check("round 6: 4 Flaps left is much worse than 2 (about one Flaps a round)", evaluate(sw(0, 2, 6), "pilot") - evaluate(sw(0, 4, 6), "pilot") > 300);
+
+  // Step 6: the evaluator's weights are tunable.
+  const { EVAL_WEIGHTS } = await import("../packages/shared/src/index.ts");
+  const probe = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
+  const base = evaluate(probe, "pilot");
+  const savedW = { ...EVAL_WEIGHTS };
+  EVAL_WEIGHTS.switchTodo *= 2;
+  const changed = evaluate(probe, "pilot");
+  Object.assign(EVAL_WEIGHTS, savedW);
+  check("tunable evaluator: a weight changes the score", changed < base && evaluate(probe, "pilot") === base);
 
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
   check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
@@ -143,10 +187,10 @@ console.log("3) actorFor, evaluate, chooseMove (Navigator)");
   check("evaluate penalises a tilt the Turn forbids", evaluate({ ...turn, axis: { ...turn.axis, offset: -1 } }, "pilot") < evaluate({ ...turn, axis: { ...turn.axis, offset: 1 } }, "pilot"));
 
   const n = reduce(fresh([2, 1, 1, 1], [1, 1, 1, 1], setup(["intern"])), { type: "placeDie", dieId: 0, target: { kind: "intern" } }, P).state;
-  check("places a held Intern token", chooseMove(redactGameStateFor(n, P), "pilot", "navigator", mulberry32(2))?.type === "placeIntern");
+  check("places a held Intern token", quickMove(redactGameStateFor(n, P), "pilot", mulberry32(2))?.type === "placeIntern");
 
   const over = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), phase: "lost" };
-  check("no legal move → null", chooseMove(over, "pilot", "navigator", mulberry32(3)) === null);
+  check("no legal move → null (Aviator and its quick strategy)", quickMove(over, "pilot", mulberry32(3)) === null && chooseMove(over, "pilot", mulberry32(3), { samples: 2 }) === null);
 }
 
 console.log("4) Self-play: every card, every module combination, every ability");
@@ -156,12 +200,12 @@ console.log("4) Self-play: every card, every module combination, every ability")
   const setups = representativeSetups();
   check("every ability is played", ABILITY_IDS.every((a) => setups.some((s) => s.abilities.includes(a))));
   const label = (s) => `${s.scenarioId}: ${[...s.modules, ...s.abilities].join("+") || "base"}`;
-  const results = setups.map((s, i) => ({ s, r: selfPlay(s, { pilot: "navigator", copilot: "navigator" }, 1000 + i) }));
+  const results = setups.map((s, i) => ({ s, r: selfPlay(s, 1000 + i, 400, { strategy: "quick" }) }));
   const stuck = results.filter(({ r }) => r.outcome === "stuck");
   check(`${setups.length} setups each play to a finished game`, stuck.length === 0);
   stuck.slice(0, 5).forEach(({ s, r }) => console.log(`     ↳ stuck: ${label(s)} — ${r.reason}`));
-  const a = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
-  const b = selfPlay(setups[0], { pilot: "navigator", copilot: "navigator" }, 42);
+  const a = selfPlay(setups[0], 42, 400, { strategy: "quick" });
+  const b = selfPlay(setups[0], 42, 400, { strategy: "quick" });
   check("same seed, same game", JSON.stringify(a) === JSON.stringify(b));
 }
 
@@ -178,7 +222,7 @@ console.log("5) Monte Carlo search (Aviator)");
   const moves = legalMoves(view, "pilot");
   check("rankMoves orders every legal move", rankMoves(view, "pilot", moves, mulberry32(9)).length === moves.length);
   const m = searchMove(view, "pilot", mulberry32(3), { budgetMs: 150, shortlist: 4, maxSamples: 20 });
-  check("search returns a legal move", moves.some((x) => JSON.stringify(x) === JSON.stringify(m)));
+  check("search returns a legal move", accepts(g, P, m));
   // One legal move → returned at once: the Pilot's last die, Axis done, Engine open.
   const lastDie = fresh([1, 1, 1, 4], [1, 1, 1, 1]);
   lastDie.dice.pilot.slice(0, 3).forEach((x) => (x.placed = true));
@@ -199,25 +243,361 @@ console.log("5) Monte Carlo search (Aviator)");
   check("search answers a pending Reroll prompt", searchMove(redactGameStateFor(offered, P), "pilot", mulberry32(8), { budgetMs: 100 })?.type === "reroll");
 }
 
-console.log("6) Difficulty levels behave differently");
+console.log("6) One bot: Aviator (its one-step quick strategy is internal)");
 {
-  const { chooseMove, redactGameStateFor, rankMoves, legalMoves } = await import("../packages/shared/src/index.ts");
-  const picks = (view, level, n = 30) => new Set(Array.from({ length: n }, (_, i) => JSON.stringify(chooseMove(view, "pilot", level, mulberry32(i)))));
-  // A position where the Navigator's best move is unique (the same across seeds).
-  let view = null;
-  for (let seed = 21; seed < 60 && !view; seed++) {
-    const v = redactGameStateFor(newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(seed), 0), P);
-    if (picks(v, "navigator").size === 1) view = v;
-  }
-  check("(setup: a position with a unique best move)", !!view);
-  const ranked = rankMoves(view, "pilot", legalMoves(view, "pilot"), mulberry32(0)).map((m) => JSON.stringify(m));
-  const cadet = picks(view, "cadet", 60);
-  check("Cadet sometimes plays other than the unique best move", cadet.size > 1);
-  check("…but only among the top few (no wild blunders)", [...cadet].every((m) => ranked.slice(0, 6).includes(m)));
+  const { chooseMove, quickMove, redactGameStateFor, BOT_LEVELS } = await import("../packages/shared/src/index.ts");
+  check("Aviator is the only bot level", JSON.stringify(BOT_LEVELS) === JSON.stringify(["aviator"]));
+  const full = newGame({ ...DEFAULT_SETUP, modules: ["kerosene"] }, P, C, mulberry32(21), 0);
+  const view = redactGameStateFor(full, P);
   const t0 = Date.now();
-  const a = chooseMove(view, "pilot", "aviator", mulberry32(1), { budgetMs: 150 });
-  const spent = Date.now() - t0;
-  check("Aviator searches (uses its budget) and returns a legal move", spent >= 100 && legalMoves(view, "pilot").some((m) => JSON.stringify(m) === JSON.stringify(a)));
+  const a = chooseMove(view, "pilot", mulberry32(1), { budgetMs: 150 });
+  check("Aviator searches (uses its budget) and returns a legal move", Date.now() - t0 >= 100 && accepts(full, P, a));
+  const t1 = Date.now();
+  const q = quickMove(view, "pilot", mulberry32(2));
+  check("its quick strategy answers at once with a legal move", Date.now() - t1 < 100 && accepts(full, P, q));
+}
+
+console.log("7) Measurement: landing checklist; dice independent of the bots");
+{
+  const { landingChecks, selfPlay } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(3), 0);
+  const ready = { ...g, round: 7, position: 7, airplanes: Array(8).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
+  check("landingChecks: a ready plane passes every condition", Object.values(landingChecks(ready)).every(Boolean));
+  const late = landingChecks({ ...ready, position: 6, flapsGreen: [true, true, true, false], lastSpeed: 9 });
+  check("…and names each one that fails", !late.airport && !late.flaps && !late.brakes && late.gear && late.level && late.clear);
+  const setup = { scenarioId: "YUL", modules: [], abilities: [] };
+  const a = selfPlay(setup, 77, 400, { strategy: "quick" });
+  const b = selfPlay(setup, 77, 400, { samples: 1 });
+  const shared = Math.min(a.rolls.length, b.rolls.length);
+  check("self-play: every round's roll depends on the seed only, not on the bots' play", shared >= 2 && a.rolls.slice(0, shared).join() === b.rolls.slice(0, shared).join());
+}
+
+console.log("8) Rollouts: a plan-aware fast policy, played to the end of the game");
+{
+  const { fastMove, rolloutGame, rolloutValue, searchMove, legalMoves, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce, WIN } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc) => reduce(createInitialGameState(scenarioForSetup(DEFAULT_SETUP), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const die = (st, crew, m) => st.dice[crew].find((d) => d.id === m.dieId)?.value;
+  // Answer the partner's Axis die: the Pilot levels the plane.
+  let a = fresh([1, 4, 6, 2], [4, 1, 1, 1]);
+  a = reduce({ ...a, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const ma = fastMove(a, "pilot", mulberry32(1));
+  check("fast policy: answers the partner's Axis die with the levelling die", ma.target.kind === "axis" && die(a, "pilot", ma) === 4);
+  // Clear the airplane right ahead (YUL space 1 holds one): a 2 on the Radio.
+  const r = fresh([2, 3, 3, 5], [1, 1, 1, 1]);
+  const mr = fastMove(r, "pilot", mulberry32(2));
+  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 2);
+  // Deploy the next Flaps when the value is in hand.
+  const f = { ...fresh([3, 3, 3, 3], [1, 5, 5, 5]), turn: "copilot", airplanes: Array(8).fill(0) };
+  const mf = fastMove(f, "copilot", mulberry32(3));
+  check("fast policy: deploys the next Flaps with a fitting die", mf.target.kind === "flaps" && die(f, "copilot", mf) === 1);
+  // Landing round: the Engine die must keep the speed within the Brakes.
+  let l = { ...fresh([1, 6, 5, 5], [3, 1, 1, 1]), round: 7, brakesDeployed: 2, airplanes: Array(8).fill(0), axis: { pilot: 5, copilot: 5, offset: 0 } };
+  l.dice.pilot[2].placed = true;
+  l.dice.copilot[1].placed = true;
+  l = reduce({ ...l, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  const ml = fastMove(l, "pilot", mulberry32(4));
+  check("fast policy: landing round — an Engine die within the Brakes (1, not 6)", ml.target.kind === "engine" && die(l, "pilot", ml) === 1);
+  // On schedule (round 2, 6 spaces, 5 moving rounds left): fly one space, don't stall.
+  let p = { ...fresh([3, 3, 1, 1], [3, 5, 1, 1]), round: 2, position: 1, airplanes: Array(8).fill(0), turn: "copilot" };
+  p = reduce(p, { type: "placeDie", dieId: 1, target: { kind: "engine" } }, C).state; // Co-Pilot's Engine: 5
+  p.turn = "pilot";
+  const mp = fastMove(p, "pilot", mulberry32(5));
+  check("fast policy: on schedule, sets a speed that flies on (not 0)", mp.target.kind !== "engine" || die(p, "pilot", mp) + 5 > p.aeroBlue);
+  // Never fly into traffic when a slower Engine die exists.
+  let c = { ...fresh([6, 1, 2, 2], [4, 1, 1, 1]), airplanes: [0, 1, 0, 0, 0, 0, 0, 0], position: 0 }; // flying through space 1 collides
+  c = reduce({ ...c, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // Co-Pilot's Engine: 4
+  const mc = fastMove(c, "pilot", mulberry32(6));
+  check("fast policy: no double move through a space with an airplane", !(mc.target.kind === "engine" && die(c, "pilot", mc) + 4 > c.aeroOrange));
+  // Spare dice go on free spaces; the dice kept for the Axis and Engine stay put.
+  const k = { ...fresh([3, 6, 6, 6], [1, 1, 1, 1]), airplanes: [0, 0, 0, 0, 0, 1, 0, 0] }; // a 6 could clear space 5, a 3 nothing
+  const mk = fastMove(k, "pilot", mulberry32(7));
+  check("fast policy: free placements use spare dice, not the one kept for the Axis", !(mk.target.kind !== "axis" && mk.target.kind !== "engine" && die(k, "pilot", mk) === 3));
+  // Behind on Flaps (round 5, all four still up): Flaps before a far airplane, and Coffee makes a die fit.
+  const behind = { ...fresh([5, 5, 5, 5], [5, 3, 5, 5]), round: 5, turn: "copilot", coffee: 1, airplanes: [0, 0, 1, 0, 0, 0, 0, 0] }; // the 3 is spare (5s level the Axis)
+  const mb = fastMove(behind, "copilot", mulberry32(8));
+  check("fast policy: behind on Flaps, deploys one (a 3 −1 Coffee → 2) before clearing a far airplane", mb.target.kind === "flaps" && die(behind, "copilot", mb) + (mb.coffeeDelta ?? 0) <= 2);
+  // Early and behind schedule: no Landing Gear yet (it raises the speed needed to fly on).
+  const early = { ...fresh([2, 3, 3, 4], [3, 3, 3, 3]), round: 2, position: 0, airplanes: Array(8).fill(0) }; // 7 spaces, 5 moving rounds after this
+  const me = fastMove(early, "pilot", mulberry32(9));
+  check("fast policy: behind schedule early on, keeps the Landing Gear up", me.target.kind !== "landingGear");
+  // Step 6: the policy's choices come from tunable parameters.
+  const { POLICY_PARAMS } = await import("../packages/shared/src/index.ts");
+  const saved = { ...POLICY_PARAMS };
+  POLICY_PARAMS.gearSlack = 10; // lower the Gear whenever a die fits
+  const eager = fastMove(early, "pilot", mulberry32(9));
+  Object.assign(POLICY_PARAMS, saved);
+  check("tunable policy: a parameter changes the choice (eager Gear)", eager.target.kind === "landingGear" && fastMove(early, "pilot", mulberry32(9)).target.kind !== "landingGear");
+  // Limit 1: with peek off, a crew plans only with what it could know — its own
+  // dice and the partner's dice already down — not the partner's hidden hand.
+  const pk = { ...fresh([1, 4, 6, 6], [1, 1, 1, 1]), airplanes: Array(8).fill(0) }; // partner holds only 1s
+  POLICY_PARAMS.peek = true;
+  const peeking = fastMove(pk, "pilot", mulberry32(10));
+  POLICY_PARAMS.peek = false;
+  const blind = fastMove(pk, "pilot", mulberry32(10));
+  check("peek off: the Pilot doesn't plan around the partner's hidden 1s", JSON.stringify(peeking) !== JSON.stringify(blind));
+  // The cheap pre-check never rules out a move the rules accept.
+  const { maybeLegal, legalMoves: lm } = await import("../packages/shared/src/index.ts");
+  let missed = 0, checked = 0;
+  for (let seed = 0; seed < 30; seed++) {
+    let st = newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0);
+    for (let k = 0; k < 12 && !st.outcome; k++) {
+      const crew = st.turn;
+      for (const m of lm(st, crew)) if (m.type === "placeDie") { checked++; if (!maybeLegal(st, crew, m)) missed++; }
+      const mv = fastMove(st, crew, mulberry32(seed + k));
+      st = applyIntent(st, mv, crew === "pilot" ? P : C, mulberry32(seed * 31 + k), () => 0);
+    }
+  }
+  check(`maybeLegal keeps every legal placement (${checked} checked)`, missed === 0 && checked > 500);
+  // Full-game rollouts and their value.
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(12), 0);
+  const end = rolloutGame(g, mulberry32(13));
+  check("a full-game rollout ends with an outcome", !!end.outcome);
+  check("rollout value: a landing beats a failed landing beats a crash", rolloutValue({ ...end, outcome: { result: "won" } }, "pilot") === WIN &&
+    rolloutValue({ ...end, round: 7, outcome: { result: "lost", reason: "Landing failed: plane not level." } }, "pilot") > rolloutValue({ ...end, round: 3, outcome: { result: "lost", reason: "The plane went into a spin!" } }, "pilot"));
+  const v = redactGameStateFor(g, P);
+  const m = searchMove(v, "pilot", mulberry32(14), { budgetMs: Infinity, maxSamples: 3 });
+  check("search over full-game rollouts returns a legal move", accepts(g, P, m));
+}
+
+console.log("9) Aviator's candidates include the rollout policy's own choice");
+{
+  const { searchCandidates, fastMove, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  let included = 0;
+  for (let seed = 0; seed < 10; seed++) {
+    const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), P);
+    const own = JSON.stringify(fastMove(v, "pilot", mulberry32(seed)));
+    if (searchCandidates(v, "pilot", mulberry32(seed), 6).some((m) => sameGame(v, "pilot", m, JSON.parse(own)))) included++;
+  }
+  check("the policy's move is always among the candidates", included === 10);
+  // Step 5: no two candidates lead to the same game (same value on the same space).
+  const key = (v, m) => m.type === "placeDie" ? `${m.target.kind}:${m.target.slot ?? ""}:${m.target.side ?? "pilot"}=${v.dice.pilot.find((d) => d.id === m.dieId).value}/${m.coffeeDelta ?? 0}` : JSON.stringify(m);
+  let dupes = 0;
+  for (let seed = 0; seed < 10; seed++) {
+    const v = redactGameStateFor({ ...newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), coffee: 2 }, P);
+    const keys = searchCandidates(v, "pilot", mulberry32(seed), 6).map((m) => key(v, m));
+    dupes += keys.length - new Set(keys).size;
+  }
+  check("candidates are all different moves (no same-value, same-space duplicates)", dupes === 0);
+}
+
+console.log("10) Fast rollouts: moves applied in place; surely-legal placements");
+{
+  const { reduceInPlace, placementCheck, fastMove, reduce, legalMoves, actorFor, determinize, redactGameStateFor, rolloutGame } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(4), 0);
+  const copy = structuredClone(g);
+  const viaCopy = reduce(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P).state;
+  const inPlace = reduceInPlace(copy, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, P).state;
+  check("reduceInPlace changes the state it's given, exactly as reduce would", inPlace === copy && JSON.stringify(inPlace) === JSON.stringify(viaCopy));
+  // "Surely legal" must never be wrong: check it against the rules on many real positions.
+  let wrong = 0, sure = 0;
+  for (let seed = 0; seed < 40; seed++) {
+    let st = newGame({ ...DEFAULT_SETUP, modules: seed % 2 ? ["kerosene", "intern"] : ["iceBrakes"] }, P, C, mulberry32(seed), 0);
+    for (let k = 0; k < 30 && !st.outcome; k++) {
+      const crew = actorFor(st);
+      if (!crew) break;
+      const id = crew === "pilot" ? P : C;
+      for (const m of legalMoves(st, crew)) if (m.type === "placeDie" && placementCheck(st, crew, m) === false) wrong++;
+      for (const d of st.dice[crew].filter((x) => !x.placed)) {
+        for (const target of [{ kind: "axis" }, { kind: "engine" }, { kind: "radio", slot: 0 }, { kind: "radio", slot: 1 }, { kind: "concentration", slot: 0 }, { kind: "landingGear", slot: 1 }, { kind: "flaps", slot: 0 }, { kind: "brakes", slot: 0 }]) {
+          const m = { type: "placeDie", dieId: d.id, target };
+          if (placementCheck(st, crew, m) !== true) continue;
+          sure++;
+          try { reduce(st, m, id); } catch { wrong++; }
+        }
+      }
+      st = applyIntent(st, fastMove(st, crew, mulberry32(seed + k)), id, mulberry32(seed * 7 + k), () => 0);
+    }
+  }
+  check(`placementCheck: never rules out a legal move, never calls an illegal one sure (${sure} sure)`, wrong === 0 && sure > 500);
+  // …and across every representative setup (all cards, module combinations,
+  // abilities), every target, both sides, every slot, every Coffee adjustment.
+  const { representativeSetups } = await import("../packages/shared/src/index.ts");
+  const sides = ["pilot", "copilot", undefined];
+  const ALL = [
+    ...sides.flatMap((side) => [{ kind: "axis", side }, { kind: "engine", side }, { kind: "radio", slot: 0, side }, { kind: "radio", slot: 1, side }]),
+    ...[0, 1, 2].map((slot) => ({ kind: "landingGear", slot })), ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps", slot })),
+    ...[0, 1, 2].map((slot) => ({ kind: "brakes", slot })), ...[0, 1].map((slot) => ({ kind: "concentration", slot })),
+  ].map((t) => (t.side === undefined ? Object.fromEntries(Object.entries(t).filter(([k]) => k !== "side")) : t));
+  let wide = 0, wideWrong = 0, wideSure = 0;
+  for (const [n, setup] of representativeSetups().entries()) {
+    let st = newGame(setup, P, C, mulberry32(500 + n), 0);
+    for (let k = 0; k < 6 && !st.outcome; k++) {
+      const crew = actorFor(st);
+      if (!crew) break;
+      const id = crew === "pilot" ? P : C;
+      for (const d of st.dice[crew].filter((x) => !x.placed)) {
+        for (let c = -st.coffee; c <= st.coffee; c++) {
+          for (const target of ALL) {
+            const m = { type: "placeDie", dieId: d.id, target, ...(c ? { coffeeDelta: c } : {}) };
+            const verdict = placementCheck(st, crew, m);
+            let ok = true;
+            try { reduce(st, m, id); } catch { ok = false; }
+            wide++;
+            if (verdict === true) wideSure++;
+            if ((verdict === true && !ok) || (verdict === false && ok)) wideWrong++;
+          }
+        }
+      }
+      st = applyIntent(st, fastMove(st, crew, mulberry32(n * 13 + k)), id, mulberry32(n * 31 + k), () => 0);
+    }
+  }
+  check(`placementCheck agrees with the rules on every setup, target, side, slot and Coffee (${wide} checked, ${wideSure} sure)`, wideWrong === 0 && wideSure > 1000);
+  const v = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(5), 0), P);
+  const world = determinize(v, mulberry32(6));
+  check("a sampled world carries no log (nothing to copy or write)", world.log.length === 0 && (world.log.push("x"), world.log.length === 0));
+  check("rollouts on sampled worlds still end in an outcome", !!rolloutGame(world, mulberry32(7)).outcome);
+  // No quick-strategy fallback for an ordinary placement: a die that fits only an
+  // already-set switch is placed by the policy's own catch-all.
+  const { legalMoves: lmFast } = await import("../packages/shared/src/index.ts");
+  let st = { ...newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), brakesDeployed: 1, gearGreen: [true, true, true], radioPilot: 6, concentrationSlots: [{ value: 1, crew: "copilot" }, { value: 1, crew: "copilot" }] };
+  st.dice.pilot = [{ id: 0, value: 2, placed: false }, { id: 1, value: 5, placed: true }, { id: 2, value: 5, placed: true }, { id: 3, value: 5, placed: true }];
+  st.axis = { pilot: 5, copilot: null, offset: 0 };
+  st.engines = { pilot: 5, copilot: null };
+  st.placedThisRound = 3;
+  const tFast = performance.now();
+  const mStuck = fastMove(st, "pilot", mulberry32(9));
+  const spentFast = performance.now() - tFast;
+  // (The 2 fits only switches that are already set — Brakes 2, or the down 1/2 Landing Gear.)
+  check("an odd last die (a 2 that fits only set switches) is placed without the quick-strategy fallback", ["brakes", "landingGear"].includes(mStuck?.target?.kind) && accepts(st, P, mStuck) && spentFast < 5);
+}
+
+console.log("11) Parallel search: per-worker stats, merged");
+{
+  const { searchStats, pickBest, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(31), 0);
+  const v = redactGameStateFor(g, P);
+  const a = searchStats(v, "pilot", mulberry32(1), { budgetMs: Infinity, maxSamples: 4, candidateSeed: 99 });
+  const b = searchStats(v, "pilot", mulberry32(2), { budgetMs: Infinity, maxSamples: 4, candidateSeed: 99 });
+  check("workers given the same candidate seed compare the same candidates", JSON.stringify(a.candidates) === JSON.stringify(b.candidates) && a.candidates.length > 1);
+  check("…but sample different worlds", JSON.stringify(a.totals) !== JSON.stringify(b.totals));
+  const merged = pickBest([a, b]);
+  check("pickBest merges their samples and returns a legal move", accepts(g, P, merged));
+  const lopsided = { candidates: a.candidates, totals: a.candidates.map((_, i) => (i === 0 ? 9000 : 50 * 8)), counts: a.candidates.map((_, i) => (i === 0 ? 1 : 8)) };
+  check("…ignoring a candidate with too few samples to trust", JSON.stringify(pickBest([lopsided])) !== JSON.stringify(a.candidates[0]));
+}
+
+console.log("12) Search robustness (review fixes)");
+{
+  const { searchStats, searchCandidates, pickBest, fastMove, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(41), 0);
+  const v = redactGameStateFor(g, P);
+  // A sample that throws a rule error is skipped and counted, not fatal to the search.
+  const good = searchStats(v, "pilot", mulberry32(1), { budgetMs: Infinity, maxSamples: 2 }).candidates;
+  const bad = { type: "placeDie", dieId: 0, target: { kind: "brakes", slot: 2 } }; // out of order: the rules refuse it
+  let threw = false, st = null;
+  try { st = searchStats(v, "pilot", mulberry32(2), { budgetMs: Infinity, maxSamples: 2, candidates: [...good, bad] }); } catch { threw = true; }
+  check("a sample the rules refuse is skipped and counted (the search goes on)", !threw && st.errors > 0 && st.counts.slice(0, good.length).every((n) => n > 0));
+  // No samples at all: still a move (the best-ranked candidate), never undefined.
+  const none = pickBest([{ candidates: good, totals: good.map(() => 0), counts: good.map(() => 0) }]);
+  check("with no samples, pickBest returns the best-ranked candidate", JSON.stringify(none) === JSON.stringify(good[0]));
+  // The policy's own move survives even when a quick-strategy move puts the same value
+  // on the same space without Coffee (different games: one spends a Coffee).
+  let lost = 0;
+  for (let seed = 0; seed < 20; seed++) {
+    const vv = redactGameStateFor({ ...newGame(DEFAULT_SETUP, P, C, mulberry32(seed), 0), coffee: 2 }, P);
+    const own = JSON.stringify(fastMove(vv, "pilot", mulberry32(seed)));
+    if (!searchCandidates(vv, "pilot", mulberry32(seed), 6, undefined, false).some((m) => sameGame(vv, "pilot", m, JSON.parse(own)))) lost++;
+  }
+  check("the policy's own move is always kept (Coffee moves aren't 'duplicates')", lost === 0);
+}
+
+console.log("13) The rollout policy plays the modules (full information, 200 games each)");
+{
+  const { rolloutGame, landingChecks } = await import("../packages/shared/src/index.ts");
+  const play = (modules) => Array.from({ length: 200 }, (_, i) =>
+    rolloutGame(newGame({ scenarioId: "YUL", modules, abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
+  const count = (games, f) => games.filter(f).length;
+  const failed = (g, check) => /^Landing failed/.test(g.outcome?.reason ?? "") && !landingChecks(g)[check];
+  const yul = play([]);
+  check("plain YUL is unchanged by the module play (27 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 27);
+  const kero = play(["kerosene"]);
+  // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
+  check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
+  check("Kerosene: games reach the landing (≥ 50 of 200)", count(kero, (g) => /^Landing/.test(g.outcome?.reason ?? "")) >= 50);
+  const leak = play(["keroseneLeak"]);
+  check("Kerosene Leak: the tank seldom runs dry (≤ 40 of 200; 77 before the Engines minded the leak)", count(leak, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
+  check("Kerosene Leak: games land (≥ 17 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 17);
+  const intern = play(["intern"]);
+  check("Intern: rarely lands untrained (≤ 15 of 200)", count(intern, (g) => failed(g, "intern")) <= 15);
+  const ice = play(["iceBrakes"]);
+  check("Ice Brakes: fewer landings without them (≤ 120 of 200)", count(ice, (g) => failed(g, "iceBrakes")) <= 120);
+  check("Ice Brakes: steps get deployed (≥ 200 over 200 games)", ice.reduce((a, g) => a + g.brakesDeployed, 0) >= 200);
+  // A failed landing with more Ice Brakes steps (or Intern tokens) done scores higher.
+  const { rolloutValue } = await import("../packages/shared/src/index.ts");
+  const failedAt = (modules, patch) => {
+    const g = newGame({ scenarioId: "YUL", modules, abilities: [] }, P, C, mulberry32(5), 0);
+    return Object.assign(g, { outcome: { result: "lost", reason: "Landing failed: x" }, phase: "lost" }, patch);
+  };
+  check("rollout score: more Ice Brakes steps on a failed landing score higher",
+    rolloutValue(failedAt(["iceBrakes"], { brakesDeployed: 3 }), "pilot") > rolloutValue(failedAt(["iceBrakes"], { brakesDeployed: 1 }), "pilot"));
+  const someTrained = (g) => ({ internTokens: g.internTokens.map((t, i) => (i < 4 ? null : t)) });
+  const base = failedAt(["intern"], {});
+  check("rollout score: more Intern tokens trained on a failed landing score higher",
+    rolloutValue(failedAt(["intern"], someTrained(base)), "pilot") > rolloutValue(base, "pilot"));
+  // The evaluator: the round's last free die on Kerosene beats leaving the
+  // space to burn idle (6) at the round's end.
+  const { evaluate, reduce: red } = await import("../packages/shared/src/index.ts");
+  const kg = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  kg.dice.copilot = kg.dice.copilot.map((d) => ({ ...d, placed: true })); // the Co-Pilot is done…
+  Object.assign(kg.axis, { pilot: 3, copilot: 3 });
+  Object.assign(kg.engines, { pilot: 3, copilot: 3 });
+  kg.dice.pilot = kg.dice.pilot.map((d, i) => ({ ...d, value: [3, 3, 2, 6][i], placed: i !== 2 })); // …the Pilot holds one 2
+  kg.turn = "pilot";
+  const two = kg.dice.pilot[2].id;
+  const fed = red(kg, { type: "placeDie", dieId: two, target: { kind: "kerosene" } }, P).state;
+  const notFed = red(kg, { type: "placeDie", dieId: two, target: { kind: "concentration", slot: 0 } }, P).state;
+  check("evaluate: the last free die on Kerosene beats Concentration (the empty space burns 6)", evaluate(fed, "pilot") > evaluate(notFed, "pilot"));
+  // The search always weighs the module spaces in play: here the Pilot's 2
+  // could start the first Ice Brakes step.
+  const { searchCandidates, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const ig = newGame({ scenarioId: "YUL", modules: ["iceBrakes"], abilities: [] }, P, C, mulberry32(8), 0);
+  ig.dice.pilot = ig.dice.pilot.map((d, i) => ({ ...d, value: [4, 5, 2, 1][i] }));
+  const iview = redactGameStateFor(ig, P);
+  check("search candidates include an Ice Brakes move when one is legal",
+    searchCandidates(iview, "pilot", mulberry32(1), 6, undefined, false).some((m) => m.target?.kind === "iceBrakes"));
+  const kgc = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  check("search candidates include a Kerosene move when one is legal",
+    searchCandidates(redactGameStateFor(kgc, P), "pilot", mulberry32(1), 6, undefined, false).some((m) => m.target?.kind === "kerosene"));
+  const yulc = searchCandidates(redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P), "pilot", mulberry32(1), 6, undefined, false);
+  check("plain YUL keeps its shortlist (6 candidates at most)", yulc.length <= 6);
+  // Aviator's Ice Brakes plan: the Pilot starts the next step while the
+  // Co-Pilot can still answer, and a started step is finished.
+  const { icePlan } = await import("../packages/shared/src/index.ts");
+  const { legalMoves } = await import("../packages/shared/src/index.ts");
+  const clearPath = structuredClone(ig);
+  clearPath.airplanes = clearPath.airplanes.map(() => 0);
+  const startView = redactGameStateFor(clearPath, P);
+  const startMoves = icePlan(startView, "pilot", legalMoves(startView, "pilot"));
+  check("Ice Brakes plan: the Pilot holding a 2 starts the first step",
+    startMoves.length > 0 && startMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.space === "top"));
+  const started = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
+  started.dice.copilot = started.dice.copilot.map((d, i) => ({ ...d, value: [2, 6, 6, 6][i] }));
+  const finView = redactGameStateFor(started, C);
+  const finMoves = icePlan(finView, "copilot", legalMoves(finView, "copilot"));
+  check("Ice Brakes plan: the Co-Pilot finishes a started step",
+    finMoves.length > 0 && finMoves.every((m) => m.target?.kind === "iceBrakes" && m.target.slot === 0 && m.target.space === "bottom"));
+  const busy = structuredClone(ig);
+  busy.airplanes[busy.position + 1] = 1; // an airplane on the next space: the dice may be needed to clear it
+  const busyView = redactGameStateFor(busy, P);
+  check("Ice Brakes plan: no forced start with an airplane on this space or the next",
+    icePlan(busyView, "pilot", legalMoves(busyView, "pilot")).length === legalMoves(busyView, "pilot").length);
+  const plainView = redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P);
+  check("Ice Brakes plan: no effect without the module", icePlan(plainView, "pilot", legalMoves(plainView, "pilot")).length === legalMoves(plainView, "pilot").length);
+  // Kerosene: while no Brakes are set, a Pilot holding a 2 sets them (the
+  // tank wants the same die, and there's no landing without Brakes).
+  const { keroseneBrakes } = await import("../packages/shared/src/index.ts");
+  const kb = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  kb.dice.pilot = kb.dice.pilot.map((d, i) => ({ ...d, value: [2, 5, 6, 6][i] }));
+  const kbView = redactGameStateFor(kb, P);
+  const kbMoves = keroseneBrakes(kbView, "pilot", legalMoves(kbView, "pilot"));
+  check("Kerosene: with no Brakes set, the Pilot's 2 sets the first", kbMoves.length > 0 && kbMoves.every((m) => m.target?.kind === "brakes" && m.target.slot === 0));
+  const kbPlain = redactGameStateFor({ ...kb, scenario: { ...kb.scenario, modules: [] } }, P);
+  check("…and nothing changes without Kerosene", keroseneBrakes(kbPlain, "pilot", legalMoves(kbPlain, "pilot")).length === legalMoves(kbPlain, "pilot").length);
+  // A half-filled Ice Brakes step is worth something (if the partner finishes it).
+  const half = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
+  const elsewhere = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "concentration", slot: 0 } }, P).state;
+  check("evaluate: a started Ice Brakes step beats a Coffee", evaluate(half, "pilot") > evaluate(elsewhere, "pilot"));
+  check("Intern: games land (≥ 25 of 200)", count(intern, (g) => g.outcome?.result === "won") >= 25);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

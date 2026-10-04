@@ -4,6 +4,7 @@ import { corsOptions } from "./cors";
 import { issueToken, verifyToken } from "./identity";
 import { SoloRoomRequest } from "@skyteam/shared";
 import { createRoom, joinByInvite, RoomError } from "./rooms";
+import { searchWorkers } from "./think";
 
 export function createApp() {
   const app = express();
@@ -11,7 +12,7 @@ export function createApp() {
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, botWorkers: searchWorkers() });
   });
 
   // Issue (or echo back) an anonymous identity token.
