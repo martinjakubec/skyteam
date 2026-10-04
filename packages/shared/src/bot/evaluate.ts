@@ -25,6 +25,8 @@ export const EVAL_WEIGHTS = {
   flapsPace: 150,
   /** Per Brakes step still to deploy. */
   brakes: 100,
+  /** Per open Axis/Engine of the crew's own. */
+  openMandatory: 1000,
   /** Kerosene: per point of fuel short of what the rounds left will burn. */
   kerosene: 60,
   /** Credit per Coffee and per Reroll token. */
@@ -54,10 +56,11 @@ export function evaluate(s: GameState, crew: Crew): number {
   // Tilt: 0 is level; ±spinAt is fatal (already an outcome); landing needs 0.
   v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? W.tiltDanger : W.tilt);
   v -= axisRisk(s, crew);
-  // Real-Time: the round can end any second, and an open Axis or Engine then
-  // loses the game — fill the crew's own before anything else.
-  if (s.scenario.modules?.includes("realTime") && s.phase === "placement") {
-    v -= ((s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0)) * 1000;
+  // The crew's own Axis and Engine, still open: filling them early keeps them
+  // on the search's shortlist (found in Real-Time, where this began: every
+  // game lands more — YUL 37 → 56 of 80, Wind 30 → 47, Kerosene Leak 31 → 50).
+  if (s.phase === "placement") {
+    v -= ((s.axis[crew] === null ? 1 : 0) + (s.engines[crew] === null ? 1 : 0)) * W.openMandatory;
   }
   v -= landingSpeedRisk(s, crew);
   // Turns: flying off this space with a tilt it doesn't allow loses — once

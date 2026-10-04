@@ -137,6 +137,14 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
 
+  // Every game: the crew's own Axis and Engine are worth filling early — the
+  // search's shortlist then keeps them in view (YUL 37 → 56 of 80 landings).
+  {
+    const g = newGame(DEFAULT_SETUP, P, C, mulberry32(4), 0);
+    const filled = { ...g, axis: { ...g.axis, pilot: 3 }, engines: { ...g.engines, pilot: 3 } };
+    check("evaluate: an open Axis and Engine of the crew's own cost (plain YUL too)", evaluate(g, "pilot") < evaluate(filled, "pilot") - 1000);
+  }
+
   // Real-Time: when the round may end soon, an open Axis or Engine loses —
   // so with little time left the bot fills its own first.
   const rtFirst = [0, 1, 2, 3, 4, 5].map((seed) => {

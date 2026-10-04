@@ -7,10 +7,12 @@
 //   ALL:     every module combination × every ability set, plus every card (slow)
 //   ONLY="intern,kerosene" (env) keeps setups containing all those ids
 //   (scenario id, module or ability).
-import { selfPlay, representativeSetups, allSetups, SetSetupPayload, landingChecks, POLICY_PARAMS, SEARCH_DEFAULTS } from "../packages/shared/src/index.ts";
+import { selfPlay, representativeSetups, allSetups, SetSetupPayload, landingChecks, POLICY_PARAMS, SEARCH_DEFAULTS, EVAL_WEIGHTS } from "../packages/shared/src/index.ts";
 // POLICY='{"peek":false}' / SEARCH='{"halving":false}' (env) override rollout or search settings for this run.
 if (process.env.POLICY) Object.assign(POLICY_PARAMS, JSON.parse(process.env.POLICY));
 if (process.env.SEARCH) Object.assign(SEARCH_DEFAULTS, JSON.parse(process.env.SEARCH));
+// EVAL='{"openMandatory":1000}' (env) overrides evaluator weights.
+if (process.env.EVAL) Object.assign(EVAL_WEIGHTS, JSON.parse(process.env.EVAL));
 const N = Number(process.argv[2] ?? 30);
 
 // landing: how often Aviator lands YUL (optionally with modules), and which
