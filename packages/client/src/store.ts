@@ -1,11 +1,13 @@
 import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
-import type {
-  ClientToServerEvents,
-  GameCommand,
-  GameSetup,
-  RoomSnapshot,
-  ServerToClientEvents,
+import {
+  UNAVAILABLE,
+  type Ack,
+  type ClientToServerEvents,
+  type GameCommand,
+  type GameSetup,
+  type RoomSnapshot,
+  type ServerToClientEvents,
 } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
 import { getStoredName, getStoredToken, storeName } from "./api";
@@ -18,6 +20,8 @@ interface GameStore {
   connected: boolean;
   snapshot: RoomSnapshot | null;
   lastError: string | null;
+  /** The server can't reach its storage: the app shows its 500 page. */
+  serverDown: boolean;
   /** Server clock − this device's clock (ms), from the latest message: maps a
    *  Real-Time deadline onto local time. */
   clockOffset: number;
@@ -31,92 +35,90 @@ interface GameStore {
   resetGame: () => void;
   exitGame: () => void;
   sendCommand: (command: GameCommand) => void;
+  serverIsDown: () => void;
 }
 
-export const useGame = create<GameStore>((set, get) => ({
-  socket: null,
-  connected: false,
-  snapshot: null,
-  lastError: null,
-  clockOffset: 0,
+export const useGame = create<GameStore>((set, get) => {
+  /** A refused request: "unavailable" means the 500 page, anything else is shown as an error. */
+  const refused = (res: Ack) => {
+    if (res.ok) return;
+    set(res.code === UNAVAILABLE ? { serverDown: true } : { lastError: res.error });
+  };
 
-  connect: (roomId) => {
-    if (get().socket) return; // guard against React StrictMode double-invoke
+  return {
+    socket: null,
+    connected: false,
+    snapshot: null,
+    lastError: null,
+    serverDown: false,
+    clockOffset: 0,
 
-    const socket: TypedSocket = io(SERVER_URL, {
-      transports: ["websocket"],
-      reconnection: true,
-      reconnectionDelayMax: 5000,
-    });
+    connect: (roomId) => {
+      if (get().socket) return; // guard against React StrictMode double-invoke
 
-    // Re-join on EVERY (re)connect. Socket.IO auto-reconnects after an internet
-    // drop, fires "connect" again, and we re-send room:join — the server then
-    // cancels the grace timer and replies with a full state snapshot.
-    const join = () => {
-      const token = getStoredToken();
-      if (!token) {
-        set({ lastError: "Missing identity token." });
-        return;
-      }
-      socket.emit("room:join", { roomId, token, lastVersion: get().snapshot?.version, name: getStoredName() || undefined }, (res) => {
-        if (!res.ok) set({ lastError: res.error });
+      const socket: TypedSocket = io(SERVER_URL, {
+        transports: ["websocket"],
+        reconnection: true,
+        reconnectionDelayMax: 5000,
       });
-    };
 
-    socket.on("connect", () => {
-      set({ connected: true, lastError: null });
-      join();
-    });
-    socket.on("disconnect", () => set({ connected: false }));
-    // Each message re-measures the server clock offset, but network delay makes
-    // it jitter by a few ms — adopt a new value only when it really moved, so
-    // the Real-Time bar doesn't twitch on every move.
-    const offset = (serverTime: number) => {
-      const fresh = serverTime - Date.now();
-      return Math.abs(fresh - get().clockOffset) > 250 ? fresh : get().clockOffset;
-    };
-    socket.on("room:state", (snapshot) => set({ snapshot, clockOffset: offset(snapshot.serverTime) }));
-    socket.on("game:event", (msg) => {
-      const snap = get().snapshot;
-      if (snap) set({ snapshot: { ...snap, game: msg.game, version: msg.version }, clockOffset: offset(msg.serverTime) });
-    });
+      // Re-join on EVERY (re)connect. Socket.IO auto-reconnects after an internet
+      // drop, fires "connect" again, and we re-send room:join — the server then
+      // cancels the grace timer and replies with a full state snapshot.
+      const join = () => {
+        const token = getStoredToken();
+        if (!token) {
+          set({ lastError: "Missing identity token." });
+          return;
+        }
+        socket.emit("room:join", { roomId, token, lastVersion: get().snapshot?.version, name: getStoredName() || undefined }, refused);
+      };
 
-    set({ socket });
-  },
+      socket.on("connect", () => {
+        set({ connected: true, lastError: null });
+        join();
+      });
+      socket.on("disconnect", () => set({ connected: false }));
+      // Each message re-measures the server clock offset, but network delay makes
+      // it jitter by a few ms — adopt a new value only when it really moved, so
+      // the Real-Time bar doesn't twitch on every move.
+      const offset = (serverTime: number) => {
+        const fresh = serverTime - Date.now();
+        return Math.abs(fresh - get().clockOffset) > 250 ? fresh : get().clockOffset;
+      };
+      socket.on("room:state", (snapshot) => set({ snapshot, clockOffset: offset(snapshot.serverTime) }));
+      socket.on("game:event", (msg) => {
+        const snap = get().snapshot;
+        if (snap) set({ snapshot: { ...snap, game: msg.game, version: msg.version }, clockOffset: offset(msg.serverTime) });
+      });
 
-  setReady: (ready) =>
-    get().socket?.emit("seat:ready", { ready }, (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
+      set({ socket });
+    },
 
-  setName: (name) =>
-    get().socket?.emit("seat:name", { name }, (res) => {
-      if (res.ok) storeName(name.trim().replace(/\s+/g, " "));
-      else set({ lastError: res.error });
-    }),
+    setReady: (ready) =>
+      get().socket?.emit("seat:ready", { ready }, refused),
 
-  setSetup: (setup) =>
-    get().socket?.emit("room:setup", setup, (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
+    setName: (name) =>
+      get().socket?.emit("seat:name", { name }, (res) => {
+        if (res.ok) storeName(name.trim().replace(/\s+/g, " "));
+        else refused(res);
+      }),
 
-  startGame: () =>
-    get().socket?.emit("game:start", (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
+    setSetup: (setup) =>
+      get().socket?.emit("room:setup", setup, refused),
 
-  resetGame: () =>
-    get().socket?.emit("game:reset", (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
+    startGame: () =>
+      get().socket?.emit("game:start", refused),
 
-  exitGame: () =>
-    get().socket?.emit("game:exit", (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
+    resetGame: () =>
+      get().socket?.emit("game:reset", refused),
 
-  sendCommand: (command) =>
-    get().socket?.emit("game:command", { commandId: uuid(), command }, (res) => {
-      if (!res.ok) set({ lastError: res.error });
-    }),
-}));
+    exitGame: () =>
+      get().socket?.emit("game:exit", refused),
+
+    sendCommand: (command) =>
+      get().socket?.emit("game:command", { commandId: uuid(), command }, refused),
+
+    serverIsDown: () => set({ serverDown: true }),
+  };
+});

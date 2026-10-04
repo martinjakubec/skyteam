@@ -1,4 +1,4 @@
-import type { Crew } from "@skyteam/shared";
+import { UNAVAILABLE, type Crew } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
 import { uuid } from "./uuid";
 
@@ -58,6 +58,9 @@ interface RoomResponse {
   token: string;
 }
 
+/** The server can't reach its storage: show the 500 page, not an alert. */
+export class ServerUnavailableError extends Error {}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${SERVER_URL}${path}`, {
     method: "POST",
@@ -65,7 +68,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const detail = (await res.json().catch(() => ({}))) as { error?: string };
+    const detail = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    if (detail.code === UNAVAILABLE) throw new ServerUnavailableError(detail.error);
     throw new Error(detail.error ?? res.statusText);
   }
   return res.json() as Promise<T>;

@@ -244,6 +244,10 @@ landing checks).
   identities; per socket, 20 events a second; messages up to 16 KB; at most 20
   spectators a room. Socket handlers, routes and timers catch their own
   errors, so a malformed or hostile message can't take the server down.
+- **Redis outages.** While Redis is unreachable the server refuses requests at
+  once (a 500 with `code: "unavailable"`) instead of queueing them, and the
+  client shows a "Lost contact with the tower" page; Try again reloads into
+  the room once Redis is back.
 - **Scaling** is single-server today. The pieces to go multi-node later are
   already in place (Redis for shared state, rooms keyed by id): add Redis pub/sub
   for cross-node broadcast (`@socket.io/redis-adapter`) and sticky routing.

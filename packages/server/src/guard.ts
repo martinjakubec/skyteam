@@ -4,7 +4,11 @@
  * the unit tests can drive them directly.
  */
 
-export type Ack = (res: { ok: true } | { ok: false; error: string }) => void;
+import type { Ack as AckResult } from "@skyteam/shared";
+
+export type Ack = (res: AckResult) => void;
+type Failure = Extract<AckResult, { ok: false }>;
+export const SERVER_ERROR: Failure = { ok: false, error: "Server error." };
 
 /**
  * A fixed-window counter per key: at most `limit` hits per `windowMs`. Windows
@@ -35,12 +39,14 @@ export function rateLimiter(limit: number, windowMs: number, now: () => number =
  * with something else in its place), and a handler may throw (Redis down, a
  * bug). Either used to reject a promise nobody caught, which ends the process.
  * Here a missing ack becomes a no-op, a throw is logged and answered, and an
- * event over the socket's rate limit is refused without running.
+ * event over the socket's rate limit is refused without running. `failure`
+ * says how to answer a throw (e.g. "storage is down" when Redis is).
  */
 export function guard(
   handle: (payload: unknown, ack: Ack) => Promise<void>,
   allow: () => boolean,
   label: string,
+  failure: () => Failure = () => SERVER_ERROR,
 ): (...args: unknown[]) => Promise<void> {
   return async (...args) => {
     const last = args.at(-1);
@@ -52,7 +58,7 @@ export function guard(
       await handle(payload, ack);
     } catch (e) {
       console.error(`[socket] ${label} failed:`, e);
-      ack({ ok: false, error: "Server error." }); // ignored if the handler already answered
+      ack(failure()); // ignored if the handler already answered
     }
   };
 }

@@ -25,12 +25,12 @@ import {
 } from "@skyteam/shared";
 import { env } from "./env";
 import { corsOptions } from "./cors";
-import { getRoom, saveRoom } from "./store";
+import { getRoom, saveRoom, storageUp, UNAVAILABLE_ERROR } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
 import { abandonsOnDisconnect, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
-import { guard, rateLimiter, type Ack } from "./guard";
+import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
@@ -74,10 +74,20 @@ export function attachSocket(server: http.Server): IOServer {
   });
 
   io.on("connection", (socket) => {
-    // Every handler is guarded: a missing ack, a throw or a flood can't crash the server.
+    // Every handler is guarded: a missing ack, a throw or a flood can't crash the
+    // server. While Redis is down nothing could be saved: refuse up front, and
+    // answer a failure as "unavailable" so the client shows its 500 page.
     const allow = rateLimiter(SOCKET_EVENTS_PER_SECOND, 1000);
     const on = (event: keyof ClientToServerEvents, handle: (payload: unknown, ack: Ack) => Promise<void>) =>
-      socket.on(event, guard(handle, () => allow(socket.id), event));
+      socket.on(
+        event,
+        guard(
+          (payload, ack) => (storageUp() ? handle(payload, ack) : Promise.resolve(ack(UNAVAILABLE_ERROR))),
+          () => allow(socket.id),
+          event,
+          () => (storageUp() ? SERVER_ERROR : UNAVAILABLE_ERROR),
+        ),
+      );
     on("room:join", (payload, ack) => onJoin(io, socket, payload, ack));
     on("seat:ready", (payload, ack) => onReady(io, socket, payload, ack));
     on("seat:name", (payload, ack) => onName(io, socket, payload, ack));

@@ -3,6 +3,7 @@ import cors from "cors";
 import { corsOptions } from "./cors";
 import { env } from "./env";
 import { rateLimiter } from "./guard";
+import { storageUp, UNAVAILABLE_ERROR } from "./store";
 import { issueToken, verifyToken } from "./identity";
 import { SoloRoomRequest } from "@skyteam/shared";
 import { createRoom, joinByInvite, RoomError } from "./rooms";
@@ -31,9 +32,16 @@ const route =
   (req, res, next) =>
     void handle(req, res).catch(next);
 
+/** Rooms live in Redis: while it's down, refuse at once with a 500 the client
+ *  shows as its "server unavailable" page, instead of failing halfway. */
+const requireStorage: RequestHandler = (_req, res, next) => {
+  if (storageUp()) return next();
+  res.status(500).json(UNAVAILABLE_ERROR);
+};
+
 const onError: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error("[http] request failed:", err);
-  if (!res.headersSent) res.status(500).json({ error: "Server error." });
+  if (!res.headersSent) res.status(500).json(storageUp() ? { error: "Server error." } : UNAVAILABLE_ERROR);
 };
 
 export function createApp() {
@@ -55,7 +63,7 @@ export function createApp() {
   });
 
   // Create a room; the caller becomes the host. With `solo`, a bot takes the other seat.
-  app.post("/rooms", limit(ROOMS_PER_MINUTE), route(async (req, res) => {
+  app.post("/rooms", limit(ROOMS_PER_MINUTE), requireStorage, route(async (req, res) => {
     const me = resolveIdentity(req.body?.token);
     let solo: SoloRoomRequest | undefined;
     if (req.body?.solo !== undefined) {
@@ -72,7 +80,7 @@ export function createApp() {
   }));
 
   // Join a room by invite code.
-  app.post("/rooms/:code/join", limit(JOINS_PER_MINUTE), route(async (req, res) => {
+  app.post("/rooms/:code/join", limit(JOINS_PER_MINUTE), requireStorage, route(async (req, res) => {
     const me = resolveIdentity(req.body?.token);
     try {
       const room = await joinByInvite(req.params.code, me.playerId);
