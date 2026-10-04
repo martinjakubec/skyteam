@@ -5,6 +5,8 @@ import {
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
+  PlayerName,
+  SetNamePayload,
   SetReadyPayload,
   SetSetupPayload,
   hasModule,
@@ -27,7 +29,7 @@ import { getRoom, saveRoom } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
-import { abandonsOnDisconnect, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
+import { abandonsOnDisconnect, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
 import type { Room } from "./types";
 
 // No server-to-server events in a single-server deployment (default map).
@@ -62,6 +64,7 @@ export function attachSocket(server: http.Server): IOServer {
   io.on("connection", (socket) => {
     socket.on("room:join", (payload, ack) => void onJoin(io, socket, payload, ack));
     socket.on("seat:ready", (payload, ack) => void onReady(io, socket, payload, ack));
+    socket.on("seat:name", (payload, ack) => void onName(io, socket, payload, ack));
     socket.on("room:setup", (payload, ack) => void onSetup(io, socket, payload, ack));
     socket.on("game:start", (ack) => void onStart(io, socket, ack));
     socket.on("game:reset", (ack) => void onReset(io, socket, ack));
@@ -98,7 +101,12 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   clearGrace(room.id, playerId);
 
   const seat = room.seats.find((s) => s.playerId === playerId);
-  if (seat) seat.connected = true;
+  if (seat) {
+    seat.connected = true;
+    // The name the player kept from earlier rooms; a bad one is just ignored.
+    const name = PlayerName.safeParse(parsed.data.name);
+    if (name.success && name.data && canRename(room)) seat.name = name.data;
+  }
   await saveRoom(room);
 
   ack({ ok: true });
@@ -123,6 +131,24 @@ async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
 
   seat.ready = parsed.data.ready;
   room.status = lobbyStatus(room.seats);
+  await saveRoom(room);
+
+  ack({ ok: true });
+  broadcastState(io, room);
+}
+
+/** A seated player renames themselves — in the lobby only, never mid-game. */
+async function onName(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
+  const parsed = SetNamePayload.safeParse(payload);
+  if (!parsed.success) return ack({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid name." });
+
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const seat = room.seats.find((s) => s.playerId === playerId);
+  if (!seat) return ack({ ok: false, error: "Observers have no seat to name." });
+  if (!canRename(room)) return ack({ ok: false, error: "Names can only be changed in the lobby." });
+
+  seat.name = parsed.data.name || undefined;
   await saveRoom(room);
 
   ack({ ok: true });

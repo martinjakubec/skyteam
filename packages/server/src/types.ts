@@ -10,6 +10,8 @@ export interface Seat {
   connected: boolean;
   /** An NPC seat: always connected and ready. */
   bot?: BotLevel;
+  /** The name the player chose (empty or absent = none). Lobby-only to change. */
+  name?: string;
 }
 
 /** The authoritative room record. Persisted to Redis on every change. */

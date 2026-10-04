@@ -12,8 +12,10 @@ import {
   SCENARIOS,
   SCENARIO_TEMPLATES,
   YUL_MONTREAL,
+  SetNamePayload,
   SetSetupPayload,
   conflictingModules,
+  crewNames,
   createInitialGameState,
   hasAbility,
   normalizeGameState,
@@ -490,6 +492,35 @@ console.log("5) Seating: who flies which seat; bot seats");
   check("…then the bot gives up instead of retrying forever", npcGivesUp(3));
   check("a solo game waits for its human (nobody else is waiting)", !abandonsOnDisconnect(solo));
   check("a multiplayer game is abandoned when a player doesn't return", abandonsOnDisconnect({ ...base, seats }));
+}
+
+console.log("5b) Player names: lobby-only, crew-qualified when the same");
+{
+  const n = (name) => SetNamePayload.safeParse({ name });
+  check("a name is trimmed and its spaces collapsed", n("  Sky   Ace ").data?.name === "Sky Ace");
+  check("an empty name clears it", n("   ").data?.name === "");
+  check("a name over 20 characters is refused", !n("x".repeat(21)).success && n("x".repeat(20)).success);
+  check("a non-string name is refused", !n(42).success);
+  check("different names show as chosen", JSON.stringify(crewNames({ pilot: "Ann", copilot: "Bob" })) === JSON.stringify({ pilot: "Ann", copilot: "Bob" }));
+  const same = crewNames({ pilot: "Sam", copilot: "sam " });
+  check("the same name (any case) gets (Pilot) / (Co-Pilot)", same.pilot === "Sam (Pilot)" && same.copilot === "sam (Co-Pilot)");
+  const one = crewNames({ pilot: "Sam", copilot: undefined });
+  check("a crew without a name is null", one.pilot === "Sam" && one.copilot === null);
+  check("two unnamed crews aren't suffixed", JSON.stringify(crewNames({ pilot: "", copilot: undefined })) === JSON.stringify({ pilot: null, copilot: null }));
+
+  const { canRename } = seating;
+  check("renaming is allowed in the lobby", canRename({ status: "lobby" }) && canRename({ status: "ready" }));
+  check("…but not in a game", !canRename({ status: "in_progress" }) && !canRename({ status: "finished" }) && !canRename({ status: "abandoned" }));
+
+  const room = {
+    id: "r", inviteCode: "i", hostPlayerId: P, status: "lobby", hostCrew: "pilot", observers: [], setup: DEFAULT_SETUP, version: 0, game: null, updatedAt: 0,
+    seats: [
+      { playerId: P, role: "host", ready: false, connected: true, name: "Sam" },
+      { playerId: C, role: "guest", ready: false, connected: true },
+    ],
+  };
+  const snap = toSnapshot(room, C);
+  check("the snapshot carries each seat's name", snap.seats[0].name === "Sam" && !("name" in snap.seats[1]));
 }
 
 console.log("6) think(): Aviator in a worker, with a fallback");

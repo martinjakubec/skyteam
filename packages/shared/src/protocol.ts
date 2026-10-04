@@ -120,8 +120,24 @@ export const JoinRoomPayload = z.object({
   token: z.string().min(1),
   /** Last game version the client has applied; lets the server detect gaps. */
   lastVersion: z.number().int().nonnegative().optional(),
+  /** The name the player last chose (kept in their browser). Taken as their
+   *  seat's name while the room is in its lobby; ignored once a game runs. */
+  name: z.string().optional(),
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
+
+export const MAX_NAME_LENGTH = 20;
+
+/** A player's chosen name: trimmed, inner whitespace collapsed, at most
+ *  MAX_NAME_LENGTH characters. Empty means "no name". */
+export const PlayerName = z
+  .string()
+  .transform((s) => s.trim().replace(/\s+/g, " "))
+  .pipe(z.string().max(MAX_NAME_LENGTH, `A name is at most ${MAX_NAME_LENGTH} characters.`));
+
+/** Rename yourself — lobby only. */
+export const SetNamePayload = z.object({ name: PlayerName });
+export type SetNamePayload = z.infer<typeof SetNamePayload>;
 
 export const SetReadyPayload = z.object({ ready: z.boolean() });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
@@ -175,6 +191,8 @@ export interface SeatView {
   connection: ConnectionState;
   /** An NPC seat (solo play): its difficulty. */
   bot?: BotLevel;
+  /** The name the player chose, if any (see `crewNames` for display). */
+  name?: string;
 }
 
 /** A full, self-contained view of a room tailored to one recipient. Sent on
@@ -227,6 +245,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   "room:join": (payload: JoinRoomPayload, ack: (res: Ack) => void) => void;
   "seat:ready": (payload: SetReadyPayload, ack: (res: Ack) => void) => void;
+  "seat:name": (payload: SetNamePayload, ack: (res: Ack) => void) => void;
   "room:setup": (payload: SetSetupPayload, ack: (res: Ack) => void) => void;
   "game:start": (ack: (res: Ack) => void) => void;
   "game:reset": (ack: (res: Ack) => void) => void;
