@@ -95,9 +95,21 @@ policy, and keeps the move that lands most often, within `NPC_THINK_MS`. It
 thinks in worker threads, so it never blocks other rooms. Its **quick
 strategy** — every legal move scored one step ahead (approach pace, traffic,
 tilt, switches, the landing) — is what it falls back to if a search fails,
-and what the rollouts use when nothing cheap fits. In Real-Time it fills its
-own Axis and Engine before anything else. Rooms and clients from before the
-levels were retired (Cadet, Navigator) get Aviator.
+and what the rollouts use when nothing cheap fits. Rooms and clients from
+before the levels were retired (Cadet, Navigator) get Aviator.
+
+It plays every module. The rollouts feed Kerosene, mind the Kerosene Leak
+when pairing Engine dice, train the Intern and place its tokens, and work
+the Ice Brakes. A few plans steer the search where sampling alone can't:
+Ice Brakes steps are started by the Pilot and always finished; with
+Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
+20 s are left, the crew's own Axis and Engine come first.
+
+Measured on YUL (80 games each, 120 samples a candidate, seeds 0–79), the
+share of games that land: no module 70%; Intern 86%; Kerosene Leak 63%;
+Wind 59%; Real-Time 70%; Kerosene 8% (19% with the Intern); Ice Brakes about 0% (the
+eight dice it needs leave too few for the Flaps and the pace). Real-Time
+is measured on a still clock: it tests the plan, not the time pressure.
 
 ### Development (hot reload)
 
