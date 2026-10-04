@@ -125,35 +125,32 @@ export function think(
   const deadline = Date.now() + timeoutMs;
   return Promise.all(slots.map((slot, k) => ask(slot, { view, crew, seed: seed + 1 + k, candidateSeed: seed, budgetMs: env.NPC_THINK_MS, deadline }, timeoutMs))).then(
     (results) => {
-      const stats = results.filter((r): r is SearchStats => r !== null);
+      const stats = results.filter((r): r is SearchStats => !("error" in r));
+      const why = results.find((r): r is { error: string } => "error" in r)?.error ?? "timed out";
       const skipped = stats.reduce((a, st) => a + (st.errors ?? 0), 0);
       if (skipped) console.warn(`[npc] Aviator skipped ${skipped} sample(s) the rules refused — a gap in placementCheck?`);
       const move = stats.length ? pickBest(stats) : null;
-      if (!move) return fallback(stats.length ? "no move in the merged search" : lastError ?? "timed out");
+      if (!move) return fallback(stats.length ? "no move in the merged search" : why);
       thinkStats.worker += 1;
       return move;
     },
   );
 }
 
-let lastError: string | undefined;
-
-/** One worker's share of a search: its stats, or null on a timeout or error. */
-function ask(slot: Slot, request: Record<string, unknown>, timeoutMs: number): Promise<SearchStats | null> {
+/** One worker's share of a search: its stats, or why there are none (a timeout or error). */
+function ask(slot: Slot, request: Record<string, unknown>, timeoutMs: number): Promise<SearchStats | { error: string }> {
   return new Promise((resolve) => {
     const id = nextId++;
     const timer = setTimeout(() => {
       pending.delete(id);
       slot.inFlight.delete(id);
       idleCheck(slot);
-      lastError = "timed out";
-      resolve(null);
+      resolve({ error: "timed out" });
     }, timeoutMs); // the worker skips the request too once its deadline passes
     pending.set(id, (m) => {
       clearTimeout(timer);
       pending.delete(id);
-      if (m instanceof Error) lastError = m.message;
-      resolve(m instanceof Error ? null : m);
+      resolve(m instanceof Error ? { error: m.message } : m);
     });
     slot.inFlight.add(id);
     slot.w.postMessage({ id, ...request });

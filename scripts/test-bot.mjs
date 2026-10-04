@@ -485,5 +485,68 @@ console.log("12) Search robustness (review fixes)");
   check("the policy's own move is always kept (Coffee moves aren't 'duplicates')", lost === 0);
 }
 
+console.log("13) The rollout policy plays the modules (full information, 200 games each)");
+{
+  const { rolloutGame, landingChecks } = await import("../packages/shared/src/index.ts");
+  const play = (modules) => Array.from({ length: 200 }, (_, i) =>
+    rolloutGame(newGame({ scenarioId: "YUL", modules, abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
+  const count = (games, f) => games.filter(f).length;
+  const failed = (g, check) => /^Landing failed/.test(g.outcome?.reason ?? "") && !landingChecks(g)[check];
+  const yul = play([]);
+  check("plain YUL is unchanged by the module play (27 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 27);
+  const kero = play(["kerosene"]);
+  // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
+  check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
+  check("Kerosene: games reach the landing (≥ 50 of 200)", count(kero, (g) => /^Landing/.test(g.outcome?.reason ?? "")) >= 50);
+  const intern = play(["intern"]);
+  check("Intern: rarely lands untrained (≤ 15 of 200)", count(intern, (g) => failed(g, "intern")) <= 15);
+  const ice = play(["iceBrakes"]);
+  check("Ice Brakes: fewer landings without them (≤ 120 of 200)", count(ice, (g) => failed(g, "iceBrakes")) <= 120);
+  check("Ice Brakes: steps get deployed (≥ 200 over 200 games)", ice.reduce((a, g) => a + g.brakesDeployed, 0) >= 200);
+  // A failed landing with more Ice Brakes steps (or Intern tokens) done scores higher.
+  const { rolloutValue } = await import("../packages/shared/src/index.ts");
+  const failedAt = (modules, patch) => {
+    const g = newGame({ scenarioId: "YUL", modules, abilities: [] }, P, C, mulberry32(5), 0);
+    return Object.assign(g, { outcome: { result: "lost", reason: "Landing failed: x" }, phase: "lost" }, patch);
+  };
+  check("rollout score: more Ice Brakes steps on a failed landing score higher",
+    rolloutValue(failedAt(["iceBrakes"], { brakesDeployed: 3 }), "pilot") > rolloutValue(failedAt(["iceBrakes"], { brakesDeployed: 1 }), "pilot"));
+  const someTrained = (g) => ({ internTokens: g.internTokens.map((t, i) => (i < 4 ? null : t)) });
+  const base = failedAt(["intern"], {});
+  check("rollout score: more Intern tokens trained on a failed landing score higher",
+    rolloutValue(failedAt(["intern"], someTrained(base)), "pilot") > rolloutValue(base, "pilot"));
+  // The evaluator: the round's last free die on Kerosene beats leaving the
+  // space to burn idle (6) at the round's end.
+  const { evaluate, reduce: red } = await import("../packages/shared/src/index.ts");
+  const kg = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  kg.dice.copilot = kg.dice.copilot.map((d) => ({ ...d, placed: true })); // the Co-Pilot is done…
+  Object.assign(kg.axis, { pilot: 3, copilot: 3 });
+  Object.assign(kg.engines, { pilot: 3, copilot: 3 });
+  kg.dice.pilot = kg.dice.pilot.map((d, i) => ({ ...d, value: [3, 3, 2, 6][i], placed: i !== 2 })); // …the Pilot holds one 2
+  kg.turn = "pilot";
+  const two = kg.dice.pilot[2].id;
+  const fed = red(kg, { type: "placeDie", dieId: two, target: { kind: "kerosene" } }, P).state;
+  const notFed = red(kg, { type: "placeDie", dieId: two, target: { kind: "concentration", slot: 0 } }, P).state;
+  check("evaluate: the last free die on Kerosene beats Concentration (the empty space burns 6)", evaluate(fed, "pilot") > evaluate(notFed, "pilot"));
+  // The search always weighs the module spaces in play: here the Pilot's 2
+  // could start the first Ice Brakes step.
+  const { searchCandidates, redactGameStateFor } = await import("../packages/shared/src/index.ts");
+  const ig = newGame({ scenarioId: "YUL", modules: ["iceBrakes"], abilities: [] }, P, C, mulberry32(8), 0);
+  ig.dice.pilot = ig.dice.pilot.map((d, i) => ({ ...d, value: [4, 5, 2, 1][i] }));
+  const iview = redactGameStateFor(ig, P);
+  check("search candidates include an Ice Brakes move when one is legal",
+    searchCandidates(iview, "pilot", mulberry32(1), 6, undefined, false).some((m) => m.target?.kind === "iceBrakes"));
+  const kgc = newGame({ scenarioId: "YUL", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(8), 0);
+  check("search candidates include a Kerosene move when one is legal",
+    searchCandidates(redactGameStateFor(kgc, P), "pilot", mulberry32(1), 6, undefined, false).some((m) => m.target?.kind === "kerosene"));
+  const yulc = searchCandidates(redactGameStateFor(newGame(DEFAULT_SETUP, P, C, mulberry32(8), 0), P), "pilot", mulberry32(1), 6, undefined, false);
+  check("plain YUL keeps its shortlist (6 candidates at most)", yulc.length <= 6);
+  // A half-filled Ice Brakes step is worth something (if the partner finishes it).
+  const half = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "iceBrakes", slot: 0, space: "top" } }, P).state;
+  const elsewhere = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "concentration", slot: 0 } }, P).state;
+  check("evaluate: a started Ice Brakes step beats a Coffee", evaluate(half, "pilot") > evaluate(elsewhere, "pilot"));
+  check("Intern: games land (≥ 25 of 200)", count(intern, (g) => g.outcome?.result === "won") >= 25);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

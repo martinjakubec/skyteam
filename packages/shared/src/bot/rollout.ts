@@ -1,8 +1,8 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { applyIntentInPlace, type Rand } from "../game/entropy";
 import { GameRuleError, landingChecks, reduce } from "../game/reducer";
-import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, LANDING_GEAR_VALUES, WIND_RING, type Crew, type DieValue } from "../game/scenario";
-import { airportIndex, type GameState } from "../game/state";
+import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, WIND_RING, type Crew, type DieValue } from "../game/scenario";
+import { airportIndex, nextInternToken, type GameState } from "../game/state";
 import { actorFor } from "./actor";
 import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
@@ -29,6 +29,16 @@ export function determinize(view: GameState, rand: Rand): GameState {
 
 type Place = Extract<GameCommand, { type: "placeDie" }>;
 
+/** The switch spaces (a die that fits a set one goes there with no effect). */
+const SWITCH_SPACES: PlacementTarget[] = [
+  ...[0, 1, 2].map((slot) => ({ kind: "landingGear" as const, slot })),
+  ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps" as const, slot })),
+  ...[0, 1, 2].map((slot) => ({ kind: "brakes" as const, slot })),
+];
+const ICE_BRAKE_SPACES: PlacementTarget[] = [0, 1, 2, 3].flatMap((slot) =>
+  (["top", "bottom"] as const).map((space) => ({ kind: "iceBrakes" as const, slot, space })),
+);
+
 /**
  * The rollout policy's knobs, tunable by scripts/tune.mjs against the policy's
  * own landing rate. Note the trade-off: a policy that crashes less makes longer
@@ -54,6 +64,9 @@ export const POLICY_PARAMS = {
   paceWeight: 10,
   /** Airplanes this many spaces ahead (and nearer) may be cleared with any die. */
   clearAnyDieAhead: 1,
+  /** Kerosene: the highest die fed to it at once ("share": this round's share
+   *  of the fuel left); otherwise only the crew's last free die feeds it. */
+  keroseneEarly: 2 as number | "share",
   /** In a sampled world, plan the Axis/Engine against the partner's (sampled)
    *  hand. Off (default): only against what a player could know — the partner's
    *  dice already down, else any face — as real partners can't see each other's
@@ -125,10 +138,13 @@ const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : s
  */
 export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | null {
   const P = POLICY_PARAMS;
-  if (s.internHeld || s.trafficHeld || s.pendingSwap) return quickMove(s, crew, rand);
+  const held = s.internHeld?.crew === crew ? s.internHeld.value : null;
+  if ((s.internHeld && held === null) || s.trafficHeld || s.pendingSwap) return quickMove(s, crew, rand);
   if (s.pendingReroll) return { type: "reroll", dieIds: [] }; // keep our dice
   const hand = s.dice[crew].filter((d) => !d.placed && d.value !== undefined);
-  if (!hand.length) return null;
+  if (!hand.length && held === null) return null;
+  const mods = s.scenario.modules ?? [];
+  const ice = mods.includes("iceBrakes");
   const landing = s.round >= s.scenario.rounds;
   const partner = other(crew);
   const tries: Place[] = [];
@@ -154,7 +170,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // Pace: spread the spaces left over this round and the moving rounds after it.
   const want = Math.max(0, Math.min(2, remaining, Math.ceil(remaining / (roundsAfter + 1))));
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
-  const steps = s.scenario.modules?.includes("iceBrakes") ? ICE_BRAKE_VALUES : BRAKE_VALUES;
+  const steps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeLimit = s.brakesDeployed > 0 ? steps[s.brakesDeployed - 1] : 0;
   // Flying off (or through) a space with an airplane, or past the airport, loses.
   const crashes = (adv: number) => {
@@ -218,42 +234,130 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
       for (const d of ahead <= P.clearAnyDieAhead ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
     }
   };
+  /** The switches a die of value `v` would deploy now. */
+  const switchTargets = (v: number): PlacementTarget[] => {
+    // Ice Brakes first: eight dice of set values, two each in one round.
+    const out: PlacementTarget[] = iceTargets(v);
+    if (crew === "pilot") {
+      // Each Landing Gear raises the speed needed to fly on: lower them once
+      // the approach is on schedule, or when they can't wait any longer.
+      if (gearNow) LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as DieValue) && out.push({ kind: "landingGear", slot }));
+      if (!ice && s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === v) out.push({ kind: "brakes", slot: s.brakesDeployed });
+    } else {
+      const next = s.flapsGreen.findIndex((g) => !g);
+      if (next >= 0 && FLAPS_VALUES[next].includes(v as DieValue)) out.push({ kind: "flaps", slot: next });
+    }
+    return out;
+  };
+  /** Ice Brakes: start the next step only with a fair chance to finish it this
+   *  round (a lone half is cleared at the round's end) — finishing one is iceFinish. */
+  function iceTargets(v: number): PlacementTarget[] {
+    const out: PlacementTarget[] = [];
+    const step = s.brakesDeployed;
+    if (ice && step < ICE_BRAKE_VALUES.length && ICE_BRAKE_VALUES[step] === v && iceStartable) {
+      if (crew === "pilot" && s.iceBrakeSlots[step].top === null) out.push({ kind: "iceBrakes", slot: step, space: "top" });
+      if (s.iceBrakeSlots[step].bottom === null) out.push({ kind: "iceBrakes", slot: step, space: "bottom" });
+    }
+    return out;
+  }
+  // Ice Brakes, the next step: started (one half filled) — finish it, Coffee and all;
+  // not started — start it holding both dice (Pilot), or while the partner still
+  // has dice enough to answer.
+  const iceStep = ice && s.brakesDeployed < ICE_BRAKE_VALUES.length ? s.iceBrakeSlots[s.brakesDeployed] : null;
+  const iceNeed = ice ? ICE_BRAKE_VALUES[s.brakesDeployed] : 0;
+  const iceHalf = iceStep !== null && (iceStep.top === null) !== (iceStep.bottom === null);
+  const partnerLeft = s.dice[partner].filter((d) => !d.placed).length;
+  const iceStartable =
+    iceStep !== null && iceStep.top === null && iceStep.bottom === null &&
+    ((crew === "pilot" && spare.filter((d) => d.value === iceNeed).length >= 2) || partnerLeft >= 2);
+  const iceFinish = () => {
+    if (!iceHalf) return;
+    const space = iceStep!.top === null ? "top" : "bottom";
+    if (space === "top" && crew !== "pilot") return;
+    for (const d of spare) for (const c of coffeeOptions(d.value!)) if (d.value! + c === iceNeed) at(d.id, { kind: "iceBrakes", slot: s.brakesDeployed, space }, c);
+  };
   const switches = (withCoffee: boolean) => {
     for (const d of spare) {
-      for (const c of withCoffee ? coffeeOptions(d.value!) : [0]) {
-        const v = d.value! + c;
-        if (crew === "pilot") {
-          // Each Landing Gear raises the speed needed to fly on: lower them once
-          // the approach is on schedule, or when they can't wait any longer.
-          if (gearNow) LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as DieValue) && at(d.id, { kind: "landingGear", slot }, c));
-          if (s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === v) at(d.id, { kind: "brakes", slot: s.brakesDeployed }, c);
-        } else {
-          const next = s.flapsGreen.findIndex((g) => !g);
-          if (next >= 0 && FLAPS_VALUES[next].includes(v as DieValue)) at(d.id, { kind: "flaps", slot: next }, c);
-        }
-      }
+      for (const c of withCoffee ? coffeeOptions(d.value!) : [0]) for (const t of switchTargets(d.value! + c)) at(d.id, t, c);
     }
   };
+  const iceLeft = ice ? ICE_BRAKE_VALUES.length - s.brakesDeployed : 0;
   const switchesLeft =
     crew === "pilot"
-      ? s.gearGreen.filter((g) => !g).length + Math.max(0, P.brakeGoal - s.brakesDeployed)
-      : s.flapsGreen.filter((g) => !g).length;
+      ? s.gearGreen.filter((g) => !g).length + (ice ? iceLeft : Math.max(0, P.brakeGoal - s.brakesDeployed))
+      : s.flapsGreen.filter((g) => !g).length + iceLeft;
   const roundsToPlace = Math.max(1, s.scenario.rounds - s.round + 1);
   const behind = switchesLeft >= roundsToPlace - P.behindSlack;
   const gearLeft = s.gearGreen.filter((g) => !g).length;
   const gearNow = gearLeft >= roundsToPlace - P.gearSlack || remaining <= roundsAfter + P.paceSlack;
+  // Kerosene: one die a round burns its value; an empty space burns 6 at the
+  // round's end. A low spare die goes there early; late in the round any die
+  // under 6 beats the idle burn — never one that would empty the tank.
+  const keroOpen = mods.includes("kerosene") && s.keroseneSlot == null;
+  const keroSafe = (v: number) => keroOpen && v < KEROSENE_IDLE_BURN && v < s.kerosene;
+  const kerosene = (max: number) => {
+    const d = spare.reduce<(typeof hand)[number] | null>((m, x) => (!m || x.value! < m.value! ? x : m), null);
+    if (!d) return;
+    if (d.value! <= max && keroSafe(d.value!)) return at(d.id, { kind: "kerosene" });
+    // Coffee may bring it down to burn less.
+    const c = -Math.min(s.coffee, d.value! - 1);
+    if (c < 0 && d.value! + c <= max && keroSafe(d.value! + c)) at(d.id, { kind: "kerosene" }, c);
+  };
+  // Intern: every token must be trained by the landing. Training takes a die of
+  // another value than the next token and hands over the token, placed at once.
+  const internNext = mods.includes("intern") && s.internSlots[crew] === null ? nextInternToken(s, crew) : -1;
+  const train = () => {
+    if (internNext < 0) return;
+    const token = s.internTokens[internNext];
+    for (const d of spare) if (d.value !== token) at(d.id, { kind: "intern", side: crew });
+  };
+  // A low die feeds Kerosene at once (keroseneEarly); failing that, the crew's
+  // last free die does (anything under the idle 6).
+  const freeDice = hand.length - (axisOpen ? 1 : 0) - (engineOpen ? 1 : 0);
+  const keroShare = Math.max(1, Math.floor((s.kerosene - 1) / roundsToPlace));
+  if (held !== null) return internMove(held);
   clearAirplanes(0, 1);
+  iceFinish();
+  kerosene(freeDice <= 1 ? KEROSENE_IDLE_BURN - 1 : P.keroseneEarly === "share" ? keroShare : P.keroseneEarly);
   if (behind) switches(true); // Coffee only when behind: it's also what levels the Axis
   clearAirplanes(2, 2);
   if (!behind) switches(false);
+  train();
   // 4. Our own Axis and Engine with the dice kept for them.
   if (axisPick) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
   if (enginePick) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
-  // 5. A spare die anywhere harmless: Concentration, a Radio.
+  // 5. A spare die anywhere harmless: Kerosene (under the idle burn), Concentration, a Radio.
+  kerosene(KEROSENE_IDLE_BURN - 1);
   for (const d of spare) {
     at(d.id, { kind: "concentration", slot: 0 });
     at(d.id, { kind: "concentration", slot: 1 });
     for (const t of radioSlots) at(d.id, t);
+  }
+  /** Where the Intern's token goes: like a die — answer the partner's Axis or
+   *  Engine, clear an airplane, deploy a switch, Kerosene, our own Axis or
+   *  Engine if it serves them as well as the die kept for them — else anywhere. */
+  function internMove(v: number): GameCommand | null {
+    const targets: PlacementTarget[] = [];
+    if (axisOpen && s.axis[partner] !== null && axisByValue[v] <= (axisPick?.k ?? Infinity)) targets.push({ kind: "axis" });
+    if (engineOpen && s.engines[partner] !== null && engineByValue[v] <= (enginePick?.k ?? Infinity)) targets.push({ kind: "engine" });
+    const ahead = v - 1;
+    if (ahead <= 2 && (s.airplanes[s.position + ahead] ?? 0) > 0) targets.push(...radioSlots);
+    targets.push(...switchTargets(v));
+    if (keroSafe(v) && v <= 3) targets.push({ kind: "kerosene" });
+    if (axisOpen && axisByValue[v] <= (axisPick?.k ?? Infinity)) targets.push({ kind: "axis" });
+    if (engineOpen && engineByValue[v] <= (enginePick?.k ?? Infinity)) targets.push({ kind: "engine" });
+    if (keroSafe(v)) targets.push({ kind: "kerosene" });
+    targets.push(...radioSlots, { kind: "axis" }, { kind: "engine" }, ...SWITCH_SPACES, ...(ice ? ICE_BRAKE_SPACES : []));
+    for (const target of targets) {
+      const cmd: GameCommand = { type: "placeIntern", target };
+      try {
+        reduce(s, cmd, playerIdOf(s, crew));
+        return cmd;
+      } catch (e) {
+        if (!(e instanceof GameRuleError)) throw e;
+      }
+    }
+    return quickMove(s, crew, rand);
   }
   const firstLegal = (list: Place[]): Place | null => {
     for (const cmd of list) {
@@ -281,11 +385,15 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     ...radioSlots,
     { kind: "concentration", slot: 0 },
     { kind: "concentration", slot: 1 },
-    ...[0, 1, 2].map((slot) => ({ kind: "landingGear" as const, slot })),
-    ...[0, 1, 2, 3].map((slot) => ({ kind: "flaps" as const, slot })),
-    ...[0, 1, 2].map((slot) => ({ kind: "brakes" as const, slot })),
+    ...SWITCH_SPACES,
+    ...(ice ? ICE_BRAKE_SPACES : []),
   ];
-  for (const d of [...spare, ...hand]) for (const c of coffeeOptions(d.value!)) for (const t of anySpace) at(d.id, t, c);
+  for (const d of [...spare, ...hand]) {
+    for (const c of coffeeOptions(d.value!)) {
+      for (const t of anySpace) at(d.id, t, c);
+      if (keroSafe(d.value! + c)) at(d.id, { kind: "kerosene" }, c);
+    }
+  }
   const any = firstLegal(tries);
   if (any) return any;
   return quickMove(s, crew, rand); // nothing cheap fits: the quick strategy over all moves
@@ -323,12 +431,25 @@ export function rolloutInPlace(state: GameState, rand: Rand, maxSteps = 400, sto
  * to fix. A crash scores lowest, less so the later it happened. A rollout cut
  * short falls back to the evaluator.
  */
+/** Credit toward a module's landing check short of meeting it: Ice Brakes
+ *  steps deployed, Intern tokens trained (each a share of one check's 400). */
+function moduleProgress(s: GameState): number {
+  let v = 0;
+  const mods = s.scenario.modules ?? [];
+  if (mods.includes("iceBrakes") && s.brakesDeployed < ICE_BRAKE_VALUES.length) v += (s.brakesDeployed / ICE_BRAKE_VALUES.length) * 300;
+  if (mods.includes("intern")) {
+    const left = s.internTokens.filter((t) => t !== null).length;
+    if (left > 0) v += (1 - left / s.internTokens.length) * 300;
+  }
+  return v;
+}
+
 export function rolloutValue(s: GameState, crew: Crew): number {
   if (!s.outcome) return evaluate(s, crew);
   if (s.outcome.result === "won") return WIN;
   if (s.outcome.reason.startsWith("Landing failed")) {
     const met = Object.values(landingChecks(s)).filter(Boolean).length;
-    return -WIN / 2 + met * 400;
+    return -WIN / 2 + met * 400 + moduleProgress(s);
   }
   return -WIN + s.round * 300;
 }

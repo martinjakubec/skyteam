@@ -26,7 +26,7 @@ if (process.argv.includes("landing")) {
   if (!SetSetupPayload.safeParse(setup).success) throw new Error(`not a lobby setup: ${JSON.stringify(setup)}`);
   for (const lv of process.env.QUICK ? ["quick", "aviator"] : ["aviator"]) {
     let won = 0, rounds = 0, moves = 0, midFlight = 0;
-    const fails = {};
+    const fails = {}, whyLost = {};
     const t0 = Date.now();
     for (let i = 0; i < N; i++) {
       const r = selfPlay(setup, i, 400, lv === "aviator" ? (budgetMs ? { budgetMs } : { samples }) : { strategy: "quick" });
@@ -35,13 +35,18 @@ if (process.argv.includes("landing")) {
       if (r.outcome === "won") won++;
       else if (/^Landing failed/.test(r.reason)) {
         for (const [k, ok] of Object.entries(landingChecks(r.final))) if (!ok) fails[k] = (fails[k] ?? 0) + 1;
-      } else midFlight++;
+      } else {
+        midFlight++;
+        whyLost[r.reason] = (whyLost[r.reason] ?? 0) + 1;
+      }
     }
     const ms = (Date.now() - t0) / Math.max(1, moves);
     const checklist = Object.entries(fails).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ");
     const name = `${lv}${setup.modules.length ? ` +${setup.modules.join("+")}` : ""}`;
     console.log(`${name.padEnd(10)} ${((100 * won) / N).toFixed(1).padStart(5)}% landed (${won}/${N}) · avg round ${(rounds / N).toFixed(2)} · lost mid-flight ${midFlight} · ${ms.toFixed(0)} ms/decision${lv === "aviator" ? (budgetMs ? ` (${budgetMs} ms budget)` : ` (${samples} samples)`) : ""}`);
     console.log(`           failed landing conditions: ${checklist || "—"}`);
+    const lost = Object.entries(whyLost).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v}× ${k}`).join("; ");
+    if (lost) console.log(`           lost mid-flight: ${lost}`);
   }
   process.exit(0);
 }

@@ -1,9 +1,12 @@
 import { airportIndex, type GameState } from "../game/state";
-import { BRAKE_VALUES, ICE_BRAKE_VALUES, WIND_RING, type Crew } from "../game/scenario";
+import { BRAKE_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, WIND_RING, type Crew } from "../game/scenario";
 
 export const WIN = 10_000;
 
-/** The evaluator's weights — tunable by scripts/tune-eval.mjs against the
+/** Kerosene a round the evaluator plans for: a low die, most rounds. */
+const KEROSENE_PER_ROUND = 2.5;
+
+/** The evaluator's weights — tunable by `scripts/tune.mjs eval` against the
  *  quick strategy's landing rate. Defaults are the tuned values. */
 export const EVAL_WEIGHTS = {
   /** Per airplane within two spaces / further along the path. */
@@ -22,6 +25,8 @@ export const EVAL_WEIGHTS = {
   flapsPace: 150,
   /** Per Brakes step still to deploy. */
   brakes: 100,
+  /** Kerosene: per point of fuel short of what the rounds left will burn. */
+  kerosene: 60,
   /** Credit per Coffee and per Reroll token. */
   coffee: 15,
   reroll: 25,
@@ -74,7 +79,18 @@ export function evaluate(s: GameState, crew: Crew): number {
   // Every step: two dice average 7, more than any Brakes but the last allow.
   const brakeGoal = iceOn ? ICE_BRAKE_VALUES.length : BRAKE_VALUES.length;
   v -= Math.max(0, brakeGoal - s.brakesDeployed) * (iceOn ? 1.5 * W.brakes : W.brakes);
-  if (s.scenario.modules?.some((m) => m === "kerosene" || m === "keroseneLeak")) {
+  // A started Ice Brakes step: one half in, worth part of a step if finished this round.
+  const step = iceOn ? s.iceBrakeSlots[s.brakesDeployed] : undefined;
+  if (step && s.phase === "placement" && (step.top === null) !== (step.bottom === null)) v += 0.75 * W.brakes;
+  if (s.scenario.modules?.includes("kerosene")) {
+    // Kerosene: this round's burn is still to come while the space is empty —
+    // about a low die if someone can still feed it, the idle 6 if nobody can —
+    // then about KEROSENE_PER_ROUND for every round after (the landing one too).
+    const free = (c: Crew) => Math.max(0, s.dice[c].filter((d) => !d.placed).length - (s.axis[c] === null ? 1 : 0) - (s.engines[c] === null ? 1 : 0));
+    const pending = s.phase === "placement" && s.keroseneSlot == null ? (free("pilot") + free("copilot") > 0 ? KEROSENE_PER_ROUND : KEROSENE_IDLE_BURN) : 0;
+    const later = s.scenario.rounds - s.round;
+    v -= Math.max(0, later * KEROSENE_PER_ROUND + 1 - (s.kerosene - pending)) * W.kerosene;
+  } else if (s.scenario.modules?.includes("keroseneLeak")) {
     v -= Math.max(0, roundsLeft * 4 - s.kerosene) * 50;
   }
   if (s.scenario.modules?.includes("intern")) {

@@ -12,6 +12,8 @@ import { mulberry32 } from "./rng";
 /** The moves the search compares: the quick strategy's best few, plus the rollout
  *  policy's own choice — the quick strategy scores one step ahead and can miss what
  *  the plan needs (e.g. Flaps falling behind). */
+const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
+
 /**
  * Real-Time: the round can end any second, and an open Axis or Engine then
  * loses the game — while the crew's own are open, only those are worth
@@ -36,12 +38,21 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
     : JSON.stringify(m);
   const seen = new Set<string>();
   const ranked: GameCommand[] = [];
-  for (const m of rankMoves(view, crew, moves, rand)) {
+  const all = rankMoves(view, crew, moves, rand);
+  for (const m of all) {
     if (ranked.length >= shortlist) break;
     const k = dedupe ? key(m) : JSON.stringify(m);
     if (seen.has(k)) continue;
     seen.add(k);
     ranked.push(m);
+  }
+  // Module spaces pay off later than the one-step score sees (a lone Ice
+  // Brakes half, Kerosene against the idle burn, an Intern token): the best of
+  // each kind in play is always searched too.
+  for (const kind of MODULE_SPACES) {
+    if (ranked.some((m) => m.type === "placeDie" && m.target.kind === kind)) continue;
+    const best = all.find((m) => m.type === "placeDie" && m.target.kind === kind);
+    if (best) ranked.push(best);
   }
   const own = fastMove(view, crew, rand);
   if (own && moves.some((m) => key(m) === key(own)) && !ranked.some((m) => key(m) === key(own))) {
