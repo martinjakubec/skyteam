@@ -1,5 +1,7 @@
 import { airportIndex, type GameState } from "../game/state";
 import { BRAKE_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, WIND_RING, type Crew } from "../game/scenario";
+import { flightPlan, planTarget, turnTarget } from "./plan";
+import { weightsFor } from "./profiles";
 
 export const WIN = 10_000;
 
@@ -32,6 +34,13 @@ export const EVAL_WEIGHTS = {
   /** Credit per Coffee and per Reroll token. */
   coffee: 15,
   reroll: 25,
+  /** Per space behind / ahead of the flight plan after this round's move. */
+  paceBehind: 40,
+  paceAhead: 10,
+  /** Per Traffic dice icon on a space the plan says the plane should have left. */
+  trafficDiceWait: 60,
+  /** Per pip the Axis is likely to miss the tilt a coming turn needs. */
+  turnPrep: 100,
 };
 
 /**
@@ -43,18 +52,23 @@ export const EVAL_WEIGHTS = {
  */
 export function evaluate(s: GameState, crew: Crew): number {
   if (s.outcome) return s.outcome.result === "won" ? WIN : -WIN;
-  const W = EVAL_WEIGHTS;
+  const W = weightsFor(s);
   // Rounds still able to move: up to the one before landing, and not this one
   // once its Engines have resolved (the plane has moved this round).
   const moved = s.phase === "placement" && s.engines.pilot !== null && s.engines.copilot !== null;
   const roundsLeft = Math.max(0, s.scenario.rounds - s.round - (moved ? 1 : 0));
   const remaining = airportIndex(s.scenario) - s.position;
   let v = 0;
-  v -= paceRisk(s, crew, remaining, roundsLeft, moved);
+  v -= paceRisk(s, crew, remaining, roundsLeft, moved, W);
   // Airplanes still on the path (each must be cleared before the plane leaves its space).
   s.airplanes.forEach((n, i) => { if (i >= s.position) v -= n * (i - s.position <= 2 ? W.airplaneNear : W.airplaneFar); });
   // Tilt: 0 is level; ±spinAt is fatal (already an outcome); landing needs 0.
-  v -= Math.abs(s.axis.offset) * (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 ? W.tiltDanger : W.tilt);
+  // Tilt: level is the goal, except before flying off a turn, where it's the
+  // tilt the turn allows. One pip from a spin is dangerous unless that's the goal.
+  const tiltGoal = s.phase === "placement" && !moved ? turnTarget(s, 1) : null;
+  v -= Math.abs(s.axis.offset - (tiltGoal ?? 0)) * W.tilt;
+  if (Math.abs(s.axis.offset) >= s.scenario.axisSpinAt - 1 && s.axis.offset !== tiltGoal) v -= Math.abs(s.axis.offset) * (W.tiltDanger - W.tilt);
+  if (tiltGoal !== null) v -= turnPrepRisk(s, crew, tiltGoal) * W.turnPrep;
   v -= axisRisk(s, crew);
   // The crew's own Axis and Engine, still open: filling them early keeps them
   // on the search's shortlist (found in Real-Time, where this began: every
@@ -173,8 +187,34 @@ function axisRisk(s: GameState, crew: Crew): number {
   return isLanding(s) && s.axis.offset !== 0 ? 5000 : 0;
 }
 
-/** Must cover `remaining` spaces in `roundsLeft` moving rounds, ≤2 per round. */
-const paceCost = (remaining: number, roundsLeft: number) => (remaining > 2 * roundsLeft ? 3000 : 0) + Math.abs(remaining - roundsLeft) * 40;
+/** Pips the Axis is expected to end off `goal` this round (0 once it's final). */
+function turnPrepRisk(s: GameState, crew: Crew, goal: number): number {
+  const other: Crew = crew === "pilot" ? "copilot" : "pilot";
+  const mine = s.axis[crew], theirs = s.axis[other];
+  if (mine !== null && theirs !== null) return 0;
+  const faces = [1, 2, 3, 4, 5, 6];
+  const off = (m: number, t: number) => Math.abs(tiltWith(s, crew, m, t) - goal);
+  if (mine === null) {
+    const values = reachableValues(s, crew);
+    if (!values.length) return 0;
+    return Math.min(...values.map((v) => (theirs !== null ? off(v, theirs) : faces.reduce((a, f) => a + off(v, f), 0) / 6)));
+  }
+  return faces.reduce((a, f) => a + off(mine, f), 0) / 6;
+}
+
+/**
+ * Pace against the flight plan once the plane is at `pos` after this round's
+ * move: behind costs more than ahead, waiting on Traffic dice past the plan
+ * costs their airplanes, and more spaces than two a round can cover is fatal.
+ */
+function paceCost(s: GameState, pos: number, roundsLeftAfter: number, W: typeof EVAL_WEIGHTS): number {
+  const plan = flightPlan(s.scenario);
+  const remaining = plan.airport - pos;
+  const gap = planTarget(s) - pos;
+  let cost = (remaining > 2 * roundsLeftAfter ? 3000 : 0) + Math.max(0, gap) * W.paceBehind + Math.max(0, -gap) * W.paceAhead;
+  if (gap > 0) cost += (plan.trafficDice[pos] ?? 0) * W.trafficDiceWait;
+  return cost;
+}
 
 /**
  * Approach pace. Once this round's move is made (or on the landing round,
@@ -184,8 +224,8 @@ const paceCost = (remaining: number, roundsLeft: number) => (remaining > 2 * rou
  * a space with an airplane on it, or overshooting, is fatal. So keeping the
  * dice the pace needs scores the same as placing them now.
  */
-function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: number, moved: boolean): number {
-  if (moved || s.phase !== "placement" || isLanding(s)) return paceCost(remaining, roundsLeft);
+function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: number, moved: boolean, W: typeof EVAL_WEIGHTS): number {
+  if (moved || s.phase !== "placement" || isLanding(s)) return paceCost(s, s.position, roundsLeft, W);
   const after = roundsLeft - 1;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
@@ -199,14 +239,14 @@ function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: numbe
       const turn = s.scenario.approachTrack[from]?.axisAllowed;
       if (tiltFinal && turn && !turn.includes(s.axis.offset)) return 5000;
     }
-    return paceCost(remaining - adv, after);
+    return paceCost(s, s.position + adv, after, W);
   };
   const hidden = (mine: number) => [1, 2, 3, 4, 5, 6].reduce((a, f) => a + afterMove(mine + f + wind), 0) / 6;
   const other: Crew = crew === "pilot" ? "copilot" : "pilot";
   const theirs = s.engines[other];
   if (s.engines[crew] === null) {
     const values = reachableValues(s, crew);
-    if (!values.length) return paceCost(remaining, roundsLeft);
+    if (!values.length) return paceCost(s, s.position, roundsLeft, W);
     return Math.min(...values.map((v) => (theirs !== null ? afterMove(v + theirs + wind) : hidden(v))));
   }
   return hidden(s.engines[crew]!);

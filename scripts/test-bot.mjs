@@ -134,7 +134,10 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const tilted7 = land7({ flapsGreen: [true, true, true, true], axis: { pilot: 4, copilot: 3, offset: -1 } });
   check("landing round: no Turn penalty (the plane doesn't move)", evaluate(turnAt(0, [0])(tilted7), "copilot") === evaluate(tilted7, "copilot"));
   const before = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 2, axis: { pilot: null, copilot: null, offset: -1 } };
-  check("no Turn penalty before this round's Axis dice are down (the tilt isn't final)", evaluate(turnAt(0, [0])(before), "pilot") === evaluate(before, "pilot"));
+  // Before the tilt is final only the aim toward the turn's tilt counts (turnPrep), never the full penalty.
+  const { EVAL_WEIGHTS: EW } = await import("../packages/shared/src/index.ts");
+  const aimCost = evaluate(before, "pilot") - evaluate(turnAt(0, [0])(before), "pilot");
+  check("no Turn penalty before this round's Axis dice are down (only the aim toward its tilt)", aimCost >= 0 && aimCost < EW.turn);
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
 
@@ -644,6 +647,20 @@ console.log("15) Flight plan and card profiles");
   const noCard = { ...g, scenario: { ...g.scenario, cardId: undefined } };
   check("profiles: a board without a cardId plays the defaults", policyFor(noCard) === POLICY_PARAMS);
   delete BOT_PROFILES["green-YUL"];
+
+  const { evaluate, createInitialGameState, reduce } = await import("../packages/shared/src/index.ts");
+  const at = (id, dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: id, modules: [], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: Array(flightPlan(SCENARIOS[id]).trafficDice[0]).fill(5) }, "").state, ...extra });
+  // TGU round 3, both Engines down (moved): the plan wants space 2.
+  const moved = { engines: { pilot: 3, copilot: 3 }, airplanes: Array(5).fill(0) };
+  check("pace: ahead of the plan costs less than behind it", evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 3, position: 3 }), "pilot") > evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 3, position: 1 }), "pilot"));
+  check("pace: waiting on Traffic dice past the plan costs extra", evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 2, position: 0 }), "pilot") < evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 2, position: 1 }), "pilot") - 60);
+  // TGU space 1 allows tilts [2, 1]: a plane tilted 1 there isn't penalised like one tilted 1 on a plain space.
+  const tilted = (pos) => at("yellow-TGU", [3, 4, 3, 4], [3, 4, 3, 4], { round: 2, position: pos, axis: { pilot: null, copilot: null, offset: 1 }, airplanes: Array(5).fill(0) });
+  const level = (pos) => at("yellow-TGU", [3, 4, 3, 4], [3, 4, 3, 4], { round: 2, position: pos, axis: { pilot: null, copilot: null, offset: 0 }, airplanes: Array(5).fill(0) });
+  check("turns: on a turn space, the tilt it needs beats level", evaluate(tilted(1), "pilot") > evaluate(level(1), "pilot"));
+  check("turns: off a turn space, level still beats a tilt", evaluate(level(0), "pilot") > evaluate(tilted(0), "pilot"));
+  check("turnTarget: none on the landing round", turnTarget({ ...tilted(1), round: 7 }, 1) === null);
+  check("turnTarget: a 2-space advance over turns with no common tilt can't be flown", turnTarget({ ...tilted(0), scenario: { ...SCENARIOS.YUL, approachTrack: [{ traffic: 0, axisAllowed: [1] }, { traffic: 0, axisAllowed: [-1] }, { traffic: 0, airport: true }] } }, 2) === null);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
