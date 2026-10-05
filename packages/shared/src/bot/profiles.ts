@@ -20,7 +20,15 @@ export interface BotProfile {
  * Entries come from `CARD=<id> npm run tune` and are kept only once
  * bench-cards at 600 ms confirms them.
  */
-export const BOT_PROFILES: Record<string, BotProfile> = {};
+export const BOT_PROFILES: Record<string, BotProfile> = {
+  // green LHR (2026-10-06): 58.0% of 400 seeds at 600 ms (compiled), was 41.3%.
+  // The plan's move is searched and breaks near-ties; a short shortlist buys samples.
+  "green-LHR": {
+    plan: { engineMid: 40, searchBias: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true },
+  },
+};
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
 export function policyFor(s: GameState): typeof POLICY_PARAMS {

@@ -628,6 +628,7 @@ console.log("14) Aviator searches the Special Abilities");
   check("Control: a tie on the Axis goes to the die matching the partner's", answer(["control"]) === 4 && answer([]) === 2);
 }
 
+const { BOT_PROFILES: BOT_PROFILES_ALL } = await import("../packages/shared/src/index.ts");
 console.log("15) Flight plan and card profiles");
 {
   const { flightPlan, turnTarget, policyFor, weightsFor, BOT_PROFILES, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIOS, scenarioForSetup } = await import("../packages/shared/src/index.ts");
@@ -709,6 +710,7 @@ console.log("16) Experiment switches (off by default; measured, not adopted)");
 
 console.log("17) Partial credit for switches in a failed landing (switchCredit, per-card)");
 {
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
   const { rolloutValue, BOT_PROFILES, newGame: ng } = await import("../packages/shared/src/index.ts");
   const g = ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(1), 0);
   const failed = (flaps) => ({ ...g, outcome: { result: "lost", reason: "Landing failed: flaps not fully deployed." }, flapsGreen: [0, 1, 2, 3].map((i) => i < flaps) });
@@ -716,10 +718,12 @@ console.log("17) Partial credit for switches in a failed landing (switchCredit, 
   BOT_PROFILES["green-LHR"] = { policy: { switchCredit: 100 } };
   check("switchCredit: each switch down counts in a failed landing", rolloutValue(failed(3), "copilot") - rolloutValue(failed(0), "copilot") === 300);
   delete BOT_PROFILES["green-LHR"];
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
 }
 
 console.log("18) Search settings per card (shortlist, radioCandidate)");
 {
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
   const { BOT_PROFILES, searchStats, redactGameStateFor, newGame: ng } = await import("../packages/shared/src/index.ts");
   const v = redactGameStateFor(ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(0), 0), P);
   const cands = () => searchStats(v, "pilot", mulberry32(3), { budgetMs: Infinity, maxSamples: 1 }).candidates;
@@ -732,10 +736,12 @@ console.log("18) Search settings per card (shortlist, radioCandidate)");
   delete BOT_PROFILES["green-LHR"];
   check(`shortlist: a card's profile narrows the search (${before} -> ${narrow.length} candidates)`, narrow.length < before && narrow.length <= 3);
   check("radioCandidate: a card's profile adds the best Radio move", !radio(narrow) && radio(withRadio));
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
 }
 
 console.log("19) A card's scripted plan (planPolicy)");
 {
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
   const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
   const lhr = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-LHR", modules: [], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state, ...extra });
   // The Pilot's single Radio: a 2 clears the next space (the plane flies off it next), not a 5 for a far one.
@@ -777,6 +783,7 @@ console.log("19) A card's scripted plan (planPolicy)");
   BOT_PROFILES["green-LHR"] = { plan: true };
   check("plan: a planned Radio move is a candidate too", pr?.target.kind === "radio" && searchCandidates(vr, "pilot", mulberry32(1), 1).some((m) => key(m) === key(pr)));
   delete BOT_PROFILES["green-LHR"];
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
 }
 
 console.log("20) The plan's move breaks near-ties in the search (searchBias)");
