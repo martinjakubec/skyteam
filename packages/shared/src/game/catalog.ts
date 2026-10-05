@@ -160,6 +160,7 @@ export const SCENARIO_TEMPLATES: readonly ScenarioTemplate[] = CARDS.map((card) 
       : {
           ...YUL_MONTREAL,
           name: `${card.code} ${card.airport}`,
+          cardId: card.id,
           approachTrack: [...APPROACH_TRACKS[card.id]],
           rerollRounds: [...REROLL_ROUNDS[card.difficulty]],
           maxAbilities: card.abilityCount,

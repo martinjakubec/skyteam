@@ -113,6 +113,9 @@ export interface ApproachSpace {
 export interface Scenario {
   /** Human-readable airport name, e.g. "YUL Montréal-Trudeau". */
   name: string;
+  /** The scenario card this board is (e.g. "yellow-TGU"); the bot's per-card
+   *  profile is keyed by it. Unset on hand-built boards and old saved rooms. */
+  cardId?: string;
 
   /**
    * The Approach Track, index 0 = the plane's starting Current Position.
@@ -213,6 +216,7 @@ export const AIRPLANE_TOKENS = 12;
  */
 export const YUL_MONTREAL: Scenario = {
   name: "YUL Montréal-Trudeau",
+  cardId: "green-YUL",
   approachTrack: [
     { traffic: 0 }, // 0: starting Current Position (clouds)
     { traffic: 0 }, // 1

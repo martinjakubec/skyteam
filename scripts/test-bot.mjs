@@ -624,5 +624,27 @@ console.log("14) Aviator searches the Special Abilities");
   check("Control: a tie on the Axis goes to the die matching the partner's", answer(["control"]) === 4 && answer([]) === 2);
 }
 
+console.log("15) Flight plan and card profiles");
+{
+  const { flightPlan, turnTarget, policyFor, weightsFor, BOT_PROFILES, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIOS, scenarioForSetup } = await import("../packages/shared/src/index.ts");
+  const yul = flightPlan(SCENARIOS.YUL);
+  check("plan: YUL is one space a round", yul.airport === 6 && yul.target.slice(0, 8).join() === "0,1,2,3,4,5,6,6");
+  const tgu = flightPlan(SCENARIOS["yellow-TGU"]);
+  check("plan: a short track is front-loaded (TGU: 4 spaces over 6 moving rounds)", tgu.target.slice(0, 8).join() === "0,1,2,2,3,4,4,4");
+  check("plan: turns and Traffic dice come from the track", tgu.turn[1] !== null && tgu.turn[0] === null && tgu.trafficDice[0] === 3);
+  const custom = flightPlan({ ...SCENARIOS.YUL, cardId: undefined, approachTrack: [{ traffic: 0 }, { traffic: 0, axisAllowed: [1] }, { traffic: 0, airport: true }] });
+  check("plan: a hand-built board without a card gets its own plan", custom.airport === 2 && custom.turn[1].join() === "1");
+  check("cardId: every card's board carries it", SCENARIOS["yellow-TGU"].cardId === "yellow-TGU" && SCENARIOS.YUL.cardId === "green-YUL");
+  // Profiles: no profile, or no cardId -> the defaults themselves; a profile overrides only its keys.
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(1), 0);
+  check("profiles: no profile -> the defaults", policyFor(g) === POLICY_PARAMS && weightsFor(g) === EVAL_WEIGHTS);
+  BOT_PROFILES["green-YUL"] = { policy: { paceWeight: 99 }, eval: { tilt: 1 } };
+  const p = policyFor(g), w = weightsFor(g);
+  check("profiles: a card's overrides win, the rest are defaults", p.paceWeight === 99 && p.spareSlack === POLICY_PARAMS.spareSlack && w.tilt === 1 && w.coffee === EVAL_WEIGHTS.coffee);
+  const noCard = { ...g, scenario: { ...g.scenario, cardId: undefined } };
+  check("profiles: a board without a cardId plays the defaults", policyFor(noCard) === POLICY_PARAMS);
+  delete BOT_PROFILES["green-YUL"];
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
