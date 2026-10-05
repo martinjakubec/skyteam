@@ -14,6 +14,8 @@
 //   ABILITY_SETS=4            ability combinations per card with ★
 //   ABILITY_SEED=1            seed for picking them (same seed, same picks)
 //   ONLY="green-PRG,mastery"  keep setups containing all these ids (card, module or ability)
+//   PROFILES='{"yellow-TGU":{"policy":{…}}}'   try these card profiles over the ones in profiles.ts
+//   TAG=iter1                 kept apart in OUT from runs with another tag (e.g. other profiles)
 //   OUT=sim-output/bench-cards.jsonl   one line per finished game; a rerun skips
 //                             games already in it (resume after a stop)
 // Prints a summary table at the end; `SUMMARY=1` prints it from OUT without playing.
@@ -21,9 +23,10 @@ import { fork } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ABILITY_IDS, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } from "../packages/shared/src/index.ts";
+import { ABILITY_IDS, BOT_PROFILES, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } from "../packages/shared/src/index.ts";
 
 const env = process.env;
+if (env.PROFILES) Object.assign(BOT_PROFILES, JSON.parse(env.PROFILES));
 
 // ---- Worker: plays the games it's sent, one at a time --------------------------
 if (process.argv.includes("--worker")) {
@@ -40,7 +43,9 @@ if (process.argv.includes("--worker")) {
     });
     const failed = r.outcome === "lost" && /^Landing failed/.test(r.reason)
       ? Object.entries(landingChecks(r.final)).filter(([, ok]) => !ok).map(([k]) => k) : [];
-    process.send({ seed, outcome: r.outcome, reason: r.reason, rounds: r.rounds, moves: r.moves, ms: Date.now() - t0, failed, used });
+    // Where it ended: the position (of the airport's) and the airplanes left on the track.
+    const end = { pos: r.final.position, airport: r.final.scenario.approachTrack.length - 1, planes: r.final.airplanes.reduce((a, n) => a + n, 0) };
+    process.send({ seed, outcome: r.outcome, reason: r.reason, rounds: r.rounds, moves: r.moves, ms: Date.now() - t0, failed, used, end });
   });
   process.send({ ready: true });
 } else {
@@ -148,7 +153,7 @@ async function main() {
 
 /** A run's mode: a time budget or a fixed sample count; results of different modes never mix. */
 function modeName(budgetMs, samples) {
-  return budgetMs ? `${budgetMs}ms` : `${samples} samples`;
+  return (budgetMs ? `${budgetMs}ms` : `${samples} samples`) + (env.TAG ? ` ${env.TAG}` : "");
 }
 function modeOf(r) {
   return r.mode ?? modeName(r.budgetMs, r.samples);
