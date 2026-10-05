@@ -707,5 +707,32 @@ console.log("16) Experiment switches (off by default; measured, not adopted)");
   check("clearPlannedAny: clears an airplane in the next moves' path with a kept die", !before && after);
 }
 
+console.log("17) Partial credit for switches in a failed landing (switchCredit, per-card)");
+{
+  const { rolloutValue, BOT_PROFILES, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const g = ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(1), 0);
+  const failed = (flaps) => ({ ...g, outcome: { result: "lost", reason: "Landing failed: flaps not fully deployed." }, flapsGreen: [0, 1, 2, 3].map((i) => i < flaps) });
+  check("default: three Flaps of four score like none", rolloutValue(failed(3), "copilot") === rolloutValue(failed(0), "copilot"));
+  BOT_PROFILES["green-LHR"] = { policy: { switchCredit: 100 } };
+  check("switchCredit: each switch down counts in a failed landing", rolloutValue(failed(3), "copilot") - rolloutValue(failed(0), "copilot") === 300);
+  delete BOT_PROFILES["green-LHR"];
+}
+
+console.log("18) Search settings per card (shortlist, radioCandidate)");
+{
+  const { BOT_PROFILES, searchStats, redactGameStateFor, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const v = redactGameStateFor(ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(0), 0), P);
+  const cands = () => searchStats(v, "pilot", mulberry32(3), { budgetMs: Infinity, maxSamples: 1 }).candidates;
+  const radio = (c) => c.some((m) => m.type === "placeDie" && m.target.kind === "radio");
+  const before = cands().length;
+  BOT_PROFILES["green-LHR"] = { search: { shortlist: 2 } };
+  const narrow = cands();
+  BOT_PROFILES["green-LHR"] = { search: { shortlist: 2, radioCandidate: true } };
+  const withRadio = cands();
+  delete BOT_PROFILES["green-LHR"];
+  check(`shortlist: a card's profile narrows the search (${before} -> ${narrow.length} candidates)`, narrow.length < before && narrow.length <= 3);
+  check("radioCandidate: a card's profile adds the best Radio move", !radio(narrow) && radio(withRadio));
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

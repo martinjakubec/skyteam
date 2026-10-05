@@ -86,6 +86,10 @@ export const POLICY_PARAMS = {
   /** Experiment (off by default): airplanes on the spaces this round's planned
    *  move and the next one fly off are cleared with any die, not only spare ones. */
   clearPlannedAny: false,
+  /** In a failed landing, credit per switch down (Landing Gear, Flaps, Brakes):
+   *  otherwise three Flaps of four score like none, and the search never sees
+   *  a reason to start them. 0 by default; set per card. */
+  switchCredit: 0,
 };
 
 /**
@@ -484,7 +488,8 @@ export function rolloutValue(s: GameState, crew: Crew): number {
   if (s.outcome.result === "won") return WIN;
   if (s.outcome.reason.startsWith("Landing failed")) {
     const met = Object.values(landingChecks(s)).filter(Boolean).length;
-    return -WIN / 2 + met * 400 + moduleProgress(s);
+    const switchesDown = s.gearGreen.filter(Boolean).length + s.flapsGreen.filter(Boolean).length + s.brakesDeployed;
+    return -WIN / 2 + met * 400 + moduleProgress(s) + switchesDown * policyFor(s).switchCredit;
   }
   return -WIN + s.round * 300;
 }

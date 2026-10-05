@@ -7,6 +7,7 @@ import { evaluate } from "./evaluate";
 import { legalMoves, playerIdOf } from "./moves";
 import { rankMoves } from "./policy";
 import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
+import { searchFor } from "./profiles";
 import { mulberry32 } from "./rng";
 
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
@@ -106,7 +107,7 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
   }
   // Experiment (off by default): the best Radio move is always searched —
   // clearing an airplane further ahead scores low one step ahead.
-  if (SEARCH_DEFAULTS.radioCandidate && !ranked.some((m) => m.type === "placeDie" && m.target.kind === "radio")) {
+  if (searchFor(view).radioCandidate && !ranked.some((m) => m.type === "placeDie" && m.target.kind === "radio")) {
     const best = all.find((m) => m.type === "placeDie" && m.target.kind === "radio");
     if (best) ranked.push(best);
   }
@@ -177,7 +178,7 @@ export function searchStats(
   view: GameState,
   crew: Crew,
   rand: Rand,
-  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
+  { budgetMs, shortlist = searchFor(view).shortlist, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
 ): SearchStats {
   const moves = given ?? keroseneBrakes(view, crew, icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew), clock ?? Date.now())));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };

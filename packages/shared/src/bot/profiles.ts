@@ -1,11 +1,14 @@
 import type { GameState } from "../game/state";
 import { EVAL_WEIGHTS } from "./evaluate";
 import { POLICY_PARAMS } from "./rollout";
+import { SEARCH_DEFAULTS } from "./search";
 
 /** A card's overrides of the bot's defaults (only the keys that differ). */
 export interface BotProfile {
   policy?: Partial<typeof POLICY_PARAMS>;
   eval?: Partial<typeof EVAL_WEIGHTS>;
+  /** Search settings: fewer candidates means more samples for each in the same time. */
+  search?: { shortlist?: number; radioCandidate?: boolean };
 }
 
 /**
@@ -26,4 +29,10 @@ export function policyFor(s: GameState): typeof POLICY_PARAMS {
 export function weightsFor(s: GameState): typeof EVAL_WEIGHTS {
   const w = s.scenario.cardId ? BOT_PROFILES[s.scenario.cardId]?.eval : undefined;
   return w ? { ...EVAL_WEIGHTS, ...w } : EVAL_WEIGHTS;
+}
+
+/** The search's settings for this game: its card's shortlist (else 6) and Radio candidate. */
+export function searchFor(s: GameState): { shortlist: number; radioCandidate: boolean } {
+  const c = s.scenario.cardId ? BOT_PROFILES[s.scenario.cardId]?.search : undefined;
+  return { shortlist: c?.shortlist ?? 6, radioCandidate: c?.radioCandidate ?? SEARCH_DEFAULTS.radioCandidate };
 }
