@@ -7,7 +7,7 @@ import { actorFor } from "./actor";
 import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
 import { quickMove } from "./policy";
-import { planTarget, turnBlocks, turnTarget } from "./plan";
+import { planTarget, turnAhead, turnBlocks, turnTarget } from "./plan";
 import { planFor, policyFor } from "./profiles";
 import { planMove } from "./planPolicy";
 
@@ -91,6 +91,14 @@ export const POLICY_PARAMS = {
    *  otherwise three Flaps of four score like none, and the search never sees
    *  a reason to start them. 0 by default; set per card. */
   switchCredit: 0,
+  /** Keep the tilt within the turn on the space the plane is on, or will reach,
+   *  even in rounds it doesn't fly off it (a drifted tilt can't be pulled back
+   *  in one round). Off by default; set per card. */
+  turnPrepAhead: false,
+  /** Clear an airplane on the plane's own space before completing the Engines. Off by default; set per card. */
+  safeEngines: false,
+  /** Pick the Axis and Engine dice as a pair (both orders), not the Axis's first. Off by default; set per card. */
+  jointPicks: false,
 };
 
 /**
@@ -189,9 +197,14 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // Coffee / a spent Reroll back — worth a little, never a pip of tilt or pace.
   const control = hasAbility(s, "control") && s.coffee < MAX_COFFEE;
   const mastery = hasAbility(s, "mastery") && s.rerollSpent > 0;
+  // Both Engine dice down already: the move is decided, so the tilt our Axis die leaves must fit its turns.
+  const enginesDownNow = s.engines.pilot !== null && s.engines.copilot !== null && s.round < s.scenario.rounds;
+  const enginesAdv = enginesDownNow ? advanceFor(s, s.engines.pilot! + s.engines.copilot! + (s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0)) : 0;
   const axisCost = (v: number) => {
     const theirs = s.axis[partner];
-    if (theirs !== null) return Math.abs(tiltWith(v, theirs) - tiltGoal) * 10 - (control && v === theirs ? P.pairBonus : 0);
+    // jointPicks: a spin (or a turn missed by the final tilt) is as bad as a crash.
+    const fatalTilt = (t: number) => (P.jointPicks && (Math.abs(t) >= s.scenario.axisSpinAt || (enginesDownNow && turnBlocks({ ...s, axis: { ...s.axis, offset: t } }, enginesAdv, true))) ? 1000 : 0);
+    if (theirs !== null) return Math.abs(tiltWith(v, theirs) - tiltGoal) * 10 - (control && v === theirs ? P.pairBonus : 0) + fatalTilt(tiltWith(v, theirs));
     if (partnerDice.length) return Math.min(...partnerDice.map((w) => Math.abs(tiltWith(v, w) - tiltGoal))) * 10;
     return Math.abs(tiltWith(v, 3.5) - tiltGoal);
   };
@@ -203,7 +216,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const planGap = landing ? 0 : planTarget(s) - s.position;
   const want = Math.max(0, Math.min(2, remaining, Math.max(planGap, Math.ceil(remaining / (roundsAfter + 1)))));
   // The tilt to aim for: what the turns flown off this round allow, else level.
-  const tiltGoal = landing ? 0 : turnTarget(s, want) ?? 0;
+  const tiltGoal = landing ? 0 : turnTarget(s, want) ?? (P.turnPrepAhead ? turnAhead(s, want) : null) ?? 0;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const steps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeLimit = s.brakesDeployed > 0 ? steps[s.brakesDeployed - 1] : 0;
@@ -251,7 +264,14 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     };
     const axis = axisOpen ? best(axisByValue) : null;
     const engine = engineOpen ? best(engineByValue, axis?.d.id) ?? best(engineByValue) : null;
-    return { axis, engine, k: (axis?.k ?? 0) + (engine?.k ?? 0) };
+    const axisFirst = { axis, engine, k: (axis?.k ?? 0) + (engine?.k ?? 0) };
+    if (!P.jointPicks || !axisOpen || !engineOpen) return axisFirst;
+    // jointPicks: the Engine's die first, the Axis from the rest — whichever pair costs less
+    // (a level Axis isn't worth a die that flies the plane into traffic).
+    const engine2 = best(engineByValue);
+    const axis2 = best(axisByValue, engine2?.d.id) ?? best(axisByValue);
+    const k2 = (axis2?.k ?? 0) + (engine2?.k ?? 0);
+    return k2 < axisFirst.k ? { axis: axis2, engine: engine2, k: k2 } : axisFirst;
   };
   const kept = picks(hand);
   const axisPick = kept.axis;
@@ -264,7 +284,6 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // now would fly the turn (or stall) on the old tilt.
   const turnFirst = want > 0 && axisOpen && turnBlocks(s, want, true);
   if (axisPick && (s.axis[partner] !== null || turnFirst)) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
-  if (enginePick && s.engines[partner] !== null) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
   // 2–3. Clear airplanes in the way; deploy switches with dice that fit (Coffee
   // may make one fit). When the crew is behind on its switches — as many left
   // as rounds to place them in — switches come before distant airplanes.
@@ -279,6 +298,11 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
       for (const d of ahead <= anyDieAhead ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
     }
   };
+  // (Step 1, continued.) safeEngines: an airplane on our own space is cleared
+  // before the Engines can move the plane; then answer the partner's Engine die.
+  if (P.safeEngines && (s.airplanes[s.position] ?? 0) > 0) clearAirplanes(0, 0);
+  if (enginePick && s.engines[partner] !== null) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
+
   /** The switches a die of value `v` would deploy now. */
   const switchTargets = (v: number): PlacementTarget[] => {
     // Ice Brakes first: eight dice of set values, two each in one round.

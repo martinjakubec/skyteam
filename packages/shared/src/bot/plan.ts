@@ -83,3 +83,17 @@ export function turnBlocks(s: GameState, advance: number, resolvesNow = false): 
   }
   return turnTarget(s, advance) === null; // no tilt satisfies them all
 }
+
+/**
+ * The tilt to hold for a turn coming up: the turn on the space the plane will
+ * be on after `advance` spaces (or is on now), nearest the current tilt. Null
+ * when that space has no turn, or on the landing round.
+ */
+export function turnAhead(s: GameState, advance: number): number | null {
+  if (s.round >= s.scenario.rounds) return null;
+  const plan = flightPlan(s.scenario);
+  const t = plan.turn[s.position + Math.max(0, advance)] ?? plan.turn[s.position];
+  if (!t) return null;
+  const off = s.axis.offset;
+  return t.reduce((best, x) => (Math.abs(x - off) < Math.abs(best - off) ? x : best));
+}
