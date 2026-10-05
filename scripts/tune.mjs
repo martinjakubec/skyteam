@@ -9,7 +9,20 @@
 //   self-play landings instead (each weight tried at ×0.5 and ×2).
 //   CARD=yellow-TGU (env): tune on that card with its printed modules (ability
 //   cards rotate through the abilities), and print the result as its profile.
-import { newGame, rolloutGame, selfPlay, mulberry32, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIO_TEMPLATES, ABILITY_IDS, BOT_PROFILES } from "../packages/shared/src/index.ts";
+//   SCORE=graded (env): score games by how close they come, not only landings —
+//   a landing 10, a failed landing a point per landing condition met, a crash
+//   its round / 7. For cards the policy rarely lands, where landings alone
+//   give the tuner nothing to climb.
+import { newGame, rolloutGame, selfPlay, mulberry32, landingChecks, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIO_TEMPLATES, ABILITY_IDS, BOT_PROFILES } from "../packages/shared/src/index.ts";
+
+const GRADED = process.env.SCORE === "graded";
+/** A finished game's score: 1 a landing (landings only), or graded as above. */
+function score(g) {
+  if (g.outcome?.result === "won") return GRADED ? 10 : 1;
+  if (!GRADED) return 0;
+  if (/^Landing failed/.test(g.outcome?.reason ?? "")) return Object.values(landingChecks(g)).filter(Boolean).length;
+  return g.round / 7;
+}
 
 const CARD = process.env.CARD;
 const card = CARD && SCENARIO_TEMPLATES.find((t) => t.id === CARD);
@@ -42,14 +55,13 @@ const CANDIDATES = EVAL
 
 /** Landings out of N games from seed `from`. */
 function landings(from) {
-  let won = 0;
+  let total = 0;
   for (let i = from; i < from + N; i++) {
-    const won1 = EVAL
-      ? selfPlay(setupFor(i), i, 400, { strategy: "quick" }).outcome === "won"
-      : rolloutGame(newGame(setupFor(i), "P", "C", mulberry32(i), 0), mulberry32(100000 + i)).outcome?.result === "won";
-    if (won1) won++;
+    total += score(EVAL
+      ? selfPlay(setupFor(i), i, 400, { strategy: "quick" }).final
+      : rolloutGame(newGame(setupFor(i), "P", "C", mulberry32(i), 0), mulberry32(100000 + i)));
   }
-  return won;
+  return Math.round(total * 10) / 10;
 }
 
 const start = { ...TARGET };
