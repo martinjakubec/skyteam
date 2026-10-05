@@ -674,6 +674,15 @@ console.log("15) Flight plan and card profiles");
   const tguGames = Array.from({ length: 40 }, (_, i) => rolloutGame(newGame({ scenarioId: "yellow-TGU", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
   const missed = tguGames.filter((g) => /^Missed the turn/.test(g.outcome?.reason ?? "")).length;
   check(`rollout: TGU misses far fewer turns (${missed} of 40; was 37 before turn aiming)`, missed <= 16);
+  // Two turns in a row with no tilt in common: a 2-space advance over both can't be flown.
+  const twoTurns = { ...SCENARIOS.YUL, cardId: undefined, approachTrack: [{ traffic: 0, axisAllowed: [1] }, { traffic: 0, axisAllowed: [-1] }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, airport: true }] };
+  let tt = reduce(createInitialGameState(twoTurns, P, C), { type: "roll", pilot: [6, 6, 1, 1], copilot: [6, 6, 1, 1] }, "").state;
+  // Round 5 at the start: behind, the pace wants 2 spaces — only the turns forbid it.
+  tt = { ...tt, round: 5, axis: { pilot: 4, copilot: 3, offset: 1 }, turn: "copilot" };
+  tt = reduce(tt, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // the Co-Pilot's 6 on the Engine
+  const em = fastMove(tt, "pilot", mulberry32(5));
+  const speed = em.target.kind === "engine" ? 6 + tt.dice.pilot[em.dieId].value : null;
+  check("rollout: never plans a 2-space advance over turns with no common tilt", speed === null || speed <= tt.aeroOrange);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
