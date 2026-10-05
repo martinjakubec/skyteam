@@ -755,7 +755,7 @@ console.log("19) A card's scripted plan (planPolicy)");
   const speed = me?.target.kind === "engine" ? 4 + e.dice.pilot[me.dieId].value : null;
   check("plan: never completes the Engines into an airplane on its own space", me?.target.kind === "radio" ? e.dice.pilot[me.dieId].value === 1 : speed === null || speed <= e.aeroBlue);
   // Modules it doesn't plan for: hands back to the general policy.
-  const kero = { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]), scenario: { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]).scenario, modules: ["kerosene"] } };
+  const kero = { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]), scenario: { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]).scenario, modules: ["iceBrakes"] } };
   check("plan: hands modules it doesn't plan for back (null)", planMove(kero, "pilot") === null);
   // Landing round: the Coffee is kept for a level Axis.
   let l = lhr([5, 2, 2, 2], [3, 5, 6, 6], { round: 7, position: 5, airplanes: Array(6).fill(0), coffee: 1, axis: { pilot: null, copilot: null, offset: 0 }, flapsGreen: [true, true, true, false], turn: "copilot" });
@@ -794,6 +794,20 @@ console.log("20) The plan's move breaks near-ties in the search (searchBias)");
   check("no bias: the better average wins", pickBest([stats]) === a);
   check("a bias on the plan's move wins a near-tie", pickBest([{ ...stats, bias: [0, 20] }]) === b);
   check("…but not a clear gap", pickBest([{ ...stats, bias: [0, 5] }]) === a);
+}
+
+console.log("21) The plan feeds Kerosene");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const osl = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-OSL", modules: ["kerosene"], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5, 5] }, "").state, ...extra });
+  // A spare 1 burns 1 instead of the idle 6.
+  const k = osl([1, 3, 4, 4], [3, 3, 4, 4], { airplanes: Array(8).fill(0), coffee: 0 });
+  const mk = planMove(k, "pilot");
+  check("plan: a low spare die feeds the Kerosene", mk?.target.kind === "kerosene" && k.dice.pilot[mk.dieId].value === 1);
+  // Never the die that would empty the tank.
+  const low = osl([4, 3, 3, 3], [3, 3, 3, 3], { airplanes: Array(8).fill(0), coffee: 0, kerosene: 4 });
+  const ml = planMove(low, "pilot");
+  check("plan: never burns the tank dry", !(ml?.target.kind === "kerosene" && low.dice.pilot[ml.dieId].value >= 4));
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

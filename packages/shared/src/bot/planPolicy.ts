@@ -1,6 +1,6 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { GameRuleError, reduce } from "../game/reducer";
-import { BRAKE_VALUES, FLAPS_VALUES, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
+import { BRAKE_VALUES, FLAPS_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
 import { type GameState } from "../game/state";
 import { playerIdOf } from "./moves";
 import { flightPlan, planTarget, turnBlocks, turnTarget } from "./plan";
@@ -40,6 +40,8 @@ export interface PlanWeights {
   ahead: number;
   /** Per pip the first Engine die is off half the speed the plan wants. */
   engineMid: number;
+  /** Kerosene: per point of fuel a die saves against the idle burn (and per point short of what the rounds left need). */
+  kerosene: number;
   /** Also drive the rollouts (slower: fewer samples). Otherwise the plan's move is a search candidate. */
   rollouts?: boolean;
   /** Points added to the plan's move's rollout average when the search picks (breaks near-ties). */
@@ -61,6 +63,7 @@ export const PLAN_WEIGHTS: PlanWeights = {
   behind: 60,
   ahead: 30,
   engineMid: 15,
+  kerosene: 50,
 };
 
 const FACES = [1, 2, 3, 4, 5, 6];
@@ -72,7 +75,7 @@ function partnerBest(value: (face: number) => number): number {
 }
 type Die = { id: number; value: number };
 /** A free space a die can take: where, and with which value it does something. */
-type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration"; slot: number };
+type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration" | "kerosene"; slot: number };
 
 interface Assignment {
   axis?: { die: Die; delta: number };
@@ -85,7 +88,7 @@ export function planMove(s: GameState, crew: Crew, W: PlanWeights = PLAN_WEIGHTS
   if (s.phase !== "placement" || s.turn !== crew) return null;
   if (s.pendingReroll || s.pendingSwap || s.internHeld || s.trafficHeld || s.trafficPending) return null;
   const mods = s.scenario.modules ?? [];
-  if (mods.some((m) => m !== "wind")) return null; // Kerosene, Ice Brakes, Intern…: not planned for (yet)
+  if (mods.some((m) => m !== "wind" && m !== "kerosene")) return null; // Kerosene Leak, Ice Brakes, Intern…: not planned for (yet)
   const hand: Die[] = s.dice[crew].filter((d) => !d.placed && d.value !== undefined).map((d) => ({ id: d.id, value: d.value! }));
   if (hand.length === 0) return null;
   const best = bestAssignment(s, crew, hand, W);
@@ -163,6 +166,7 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
   // pace that gets them all down — urgent once the crew falls behind it.
   const urgency = () => (switchesLeft() >= roundsToPlace - W.switchSlack ? W.urgent : 1);
   const want = moveWanted(s);
+  let keroOpen = (s.scenario.modules ?? []).includes("kerosene") && s.keroseneSlot == null;
   const left = [...dice];
   // Greedy by worth: each step places the die-and-space pair worth the most now
   // (so a 2 that clears the next space beats a 5 that clears a far one for the
@@ -191,6 +195,14 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
         const f = flaps.findIndex((g) => !g);
         if (f >= 0 && FLAPS_VALUES[f].includes(v as never)) consider(delta, { target: { kind: "flaps", slot: f }, kind: "flaps", slot: f }, W.flaps * urgency());
       }
+      if (keroOpen) {
+        // Kerosene: a die burns its value instead of the idle 6 — never the tank's last drop,
+        // and not so much that the rounds left (about 2 each) run dry.
+        const after = s.kerosene - v;
+        const need = 2 * (roundsToPlace - 1) + 1;
+        const gain = after <= 0 ? -W.fatal : (KEROSENE_IDLE_BURN - v) * W.kerosene - Math.max(0, need - after) * W.kerosene;
+        consider(delta, { target: { kind: "kerosene" }, kind: "kerosene", slot: 0 }, gain);
+      }
       if (delta === 0 && conc > 0) consider(0, { target: { kind: "concentration", slot: concSlot(s, list) }, kind: "concentration", slot: 0 }, coffee < MAX_COFFEE ? W.coffeeGain : 0);
     }
     }
@@ -211,6 +223,7 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
     else if (p.extra.kind === "flaps") flaps[p.extra.slot] = true;
     else if (p.extra.kind === "brakes") brakes += 1;
     else if (p.extra.kind === "concentration") { conc -= 1; coffee = Math.min(MAX_COFFEE, coffee + 1); }
+    else if (p.extra.kind === "kerosene") keroOpen = false;
   }
   return { list, score };
 }
