@@ -145,6 +145,8 @@ export interface SearchStats {
   counts: number[];
   /** Samples skipped because the rules refused a move in them (should stay 0). */
   errors?: number;
+  /** Added to a candidate's average when picking (a card plan's move breaks near-ties). */
+  bias?: number[];
 }
 
 export interface SearchOptions {
@@ -228,7 +230,11 @@ export function searchStats(
       rung *= 2;
     }
   }
-  return { candidates, totals, counts, errors };
+  // A card's plan: its move gets a small head start in the pick (searchBias).
+  const planW = given ? null : planFor(view);
+  const planned = planW?.searchBias ? JSON.stringify(planMove(view, crew, planW)) : null;
+  const bias = planned ? candidates.map((m) => (JSON.stringify(m) === planned ? planW!.searchBias! : 0)) : undefined;
+  return { candidates, totals, counts, errors, ...(bias ? { bias } : {}) };
 }
 
 /**
@@ -240,6 +246,7 @@ export function searchStats(
 export function pickBest(stats: SearchStats[]): GameCommand | null {
   const first = stats.find((st) => st.candidates.length > 0);
   if (!first) return null;
+  const bias = first.bias ?? first.candidates.map(() => 0);
   const key = JSON.stringify(first.candidates);
   const same = stats.filter((st) => JSON.stringify(st.candidates) === key);
   const totals = first.candidates.map((_, i) => same.reduce((a, st) => a + st.totals[i], 0));
@@ -250,7 +257,7 @@ export function pickBest(stats: SearchStats[]): GameCommand | null {
   let best = -1;
   for (let i = 0; i < counts.length; i++) {
     if (counts[i] < enough) continue;
-    if (best < 0 || totals[i] / counts[i] > totals[best] / counts[best]) best = i;
+    if (best < 0 || totals[i] / counts[i] + bias[i] > totals[best] / counts[best] + bias[best]) best = i;
   }
   return first.candidates[best];
 }

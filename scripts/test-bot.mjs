@@ -779,5 +779,15 @@ console.log("19) A card's scripted plan (planPolicy)");
   delete BOT_PROFILES["green-LHR"];
 }
 
+console.log("20) The plan's move breaks near-ties in the search (searchBias)");
+{
+  const { pickBest } = await import("../packages/shared/src/index.ts");
+  const a = { type: "placeDie", dieId: 0, target: { kind: "axis" } }, b = { type: "placeDie", dieId: 1, target: { kind: "axis" } };
+  const stats = { candidates: [a, b], totals: [1000, 900], counts: [10, 10] };
+  check("no bias: the better average wins", pickBest([stats]) === a);
+  check("a bias on the plan's move wins a near-tie", pickBest([{ ...stats, bias: [0, 20] }]) === b);
+  check("…but not a clear gap", pickBest([{ ...stats, bias: [0, 5] }]) === a);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

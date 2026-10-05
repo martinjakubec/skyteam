@@ -42,6 +42,8 @@ export interface PlanWeights {
   engineMid: number;
   /** Also drive the rollouts (slower: fewer samples). Otherwise the plan's move is a search candidate. */
   rollouts?: boolean;
+  /** Points added to the plan's move's rollout average when the search picks (breaks near-ties). */
+  searchBias?: number;
 }
 
 export const PLAN_WEIGHTS: PlanWeights = {
