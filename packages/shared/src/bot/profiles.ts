@@ -28,6 +28,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true },
   },
+  // green HND (2026-10-06): 26.8% of 400 seeds at 600 ms (compiled), was 13.5% — below
+  // the 50% fallback after 4 attempts. Turns: rollouts pick Axis and Engine dice as a pair.
+  "green-HND": {
+    plan: { engineMid: 40, searchBias: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
