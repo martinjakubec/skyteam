@@ -810,5 +810,31 @@ console.log("21) The plan feeds Kerosene");
   check("plan: never burns the tank dry", !(ml?.target.kind === "kerosene" && low.dice.pilot[ml.dieId].value >= 4));
 }
 
+console.log("22) The plan counts its own Gear / Flaps this round in the Engine's speed");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // HND round 1: the Co-Pilot's 1 is on the Engines; the Pilot holds 4, 4, 2 and 1 (the 1/2 fit the first Gear).
+  let h = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-HND", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [4, 4, 2, 1], copilot: [1, 3, 3, 3], traffic: [5, 5] }, "").state;
+  h = { ...h, airplanes: Array(8).fill(0), coffee: 0, turn: "copilot" };
+  h = reduce(h, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  h = reduce(h, { type: "placeDie", dieId: 1, target: { kind: "axis" } }, P).state; // the Pilot's first 4 (keeps the order simple)
+  // Now: a 4 on the Engine makes 5 > blue 4 and moves — unless a Gear goes down first (blue 5).
+  const m = planMove(h, "pilot");
+  check("plan: doesn't lower a Gear that stops this round's move", !(m?.target.kind === "landingGear"));
+}
+
+console.log("23) The plan prepares the tilt for the turn it's flying into");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // HND: space 4 lets the plane leave only tilted 2 or 1 toward the Pilot. Round 4 on space 3
+  // (no turn), level; the Co-Pilot's 3 is on the Axis. Pilot 4 makes +1 (ready for space 4), 3 stays level.
+  let h = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-HND", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [4, 3, 6, 6], copilot: [3, 3, 3, 3], traffic: [5, 5] }, "").state;
+  h = { ...h, round: 4, position: 3, airplanes: Array(8).fill(0), coffee: 0, axis: { pilot: null, copilot: null, offset: 0 }, turn: "copilot" };
+  h = reduce(h, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const m = planMove(h, "pilot");
+  const tilt = m?.target.kind === "axis" ? h.axis.offset + h.dice.pilot[m.dieId].value - 3 : null;
+  check(`plan: tilts toward the coming turn's tilt (tilt ${tilt})`, tilt === 1);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
