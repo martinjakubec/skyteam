@@ -4,6 +4,7 @@ import { BRAKE_VALUES, FLAPS_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MA
 import { type GameState } from "../game/state";
 import { playerIdOf } from "./moves";
 import { flightPlan, planTarget, turnBlocks, turnTarget } from "./plan";
+import { placementCheck } from "./rollout";
 
 /**
  * A card's scripted plan: the crew decides where all its dice go this round
@@ -101,56 +102,71 @@ const other = (c: Crew): Crew => (c === "pilot" ? "copilot" : "pilot");
 function bestAssignment(s: GameState, crew: Crew, hand: Die[], W: PlanWeights): Assignment | null {
   const axisOpen = s.axis[crew] === null;
   const engineOpen = s.engines[crew] === null;
-  let best: Assignment | null = null;
   // Each die: Axis, Engine, or a free space. Hands are at most 4 dice: try every split.
   const roles = (axisOpen ? 1 : 0) + (engineOpen ? 1 : 0);
   if (hand.length < roles) return null;
   const n = hand.length;
+  const want = moveWanted(s);
+  const landing = s.round >= s.scenario.rounds;
+  const coffee = s.coffee;
+  // Within one decision the same pieces recur across splits: work each out once.
+  const axisCache = new Map<number, number>();
+  const engineCache = new Map<string, number>();
+  const extrasCache = new Map<string, Extras>();
+  const deltasOf = (d: Die): number[] => {
+    const out: number[] = [];
+    for (let x = -coffee; x <= coffee; x++) if (d.value + x >= 1 && d.value + x <= 6) out.push(x);
+    return out;
+  };
+  const deltas = hand.map(deltasOf);
+  let best: { score: number; ai: number; ei: number; da: number; de: number; extras: Extras } | null = null;
   for (let ai = axisOpen ? 0 : -1; ai < (axisOpen ? n : 0); ai++) {
     for (let ei = engineOpen ? 0 : -1; ei < (engineOpen ? n : 0); ei++) {
       if (ai >= 0 && ai === ei) continue;
       const rest = hand.filter((_, i) => i !== ai && i !== ei);
-      for (const a of choose(s, crew, ai >= 0 ? hand[ai] : undefined, ei >= 0 ? hand[ei] : undefined, rest, W)) {
-        if (!best || a.score > best.score) best = a;
+      const das = ai >= 0 ? deltas[ai] : [0];
+      const des = ei >= 0 ? deltas[ei] : [0];
+      for (const da of das) {
+        for (const de of des) {
+          const spent = Math.abs(da) + Math.abs(de);
+          if (spent > coffee) continue;
+          // On the landing round the Coffee left is kept for the Axis (it has to end level).
+          const coffeeForExtras = landing && axisOpen ? 0 : coffee - spent;
+          const extrasKey = `${ai},${ei}|${coffeeForExtras}`;
+          let extras = extrasCache.get(extrasKey);
+          if (!extras) extrasCache.set(extrasKey, (extras = assignExtras(s, crew, rest, coffeeForExtras, W, want)));
+          let score = extras.score - spent * W.coffeeSpend;
+          if (ai >= 0) {
+            const av = hand[ai].value + da;
+            let c = axisCache.get(av);
+            if (c === undefined) axisCache.set(av, (c = axisScore(s, crew, av, W, want)));
+            score += c;
+          }
+          if (ei >= 0) {
+            const ev = hand[ei].value + de;
+            const key = `${ev}|${extrasKey}|${ai >= 0 ? 1 : 0}`;
+            let c = engineCache.get(key);
+            if (c === undefined) engineCache.set(key, (c = engineScore(s, crew, ev, extras.cleared, extras.brakesAfter, ai >= 0 ? hand[ai].value + da : null, W, want)));
+            score += c;
+          }
+          if (!best || score > best.score) best = { score, ai, ei, da, de, extras };
+        }
       }
     }
   }
-  return best;
+  if (!best) return null;
+  return {
+    axis: best.ai >= 0 ? { die: hand[best.ai], delta: best.da } : undefined,
+    engine: best.ei >= 0 ? { die: hand[best.ei], delta: best.de } : undefined,
+    extras: best.extras.list,
+    score: best.score,
+  };
 }
 
-/** The best ways to use Axis die `ax`, Engine die `en` and the rest: Coffee on the Axis/Engine tried, extras greedy. */
-function* choose(s: GameState, crew: Crew, ax: Die | undefined, en: Die | undefined, rest: Die[], W: PlanWeights): Generator<Assignment> {
-  const coffee = s.coffee;
-  const deltas = (d: Die | undefined) => (d ? FACES.map((_, i) => i - coffee).filter((x) => Math.abs(x) <= coffee && d.value + x >= 1 && d.value + x <= 6) : [0]);
-  for (const da of deltas(ax)) {
-    for (const de of deltas(en)) {
-      const spent = Math.abs(da) + Math.abs(de);
-      if (spent > coffee) continue;
-      // On the landing round the Coffee left is kept for the Axis (it has to end level).
-      const landing = s.round >= s.scenario.rounds;
-      const extras = assignExtras(s, crew, rest, landing && s.axis[crew] === null ? 0 : coffee - spent, W);
-      const plannedClears = new Map<number, number>();
-      for (const x of extras.list) if (x.extra.kind === "radio") {
-        const at = s.position + (x.die.value + x.delta) - 1;
-        if ((s.airplanes[at] ?? 0) > 0) plannedClears.set(at, (plannedClears.get(at) ?? 0) + 1);
-      }
-      const brakesAfter = s.brakesDeployed + extras.list.filter((x) => x.extra.kind === "brakes").length;
-      const score =
-        extras.score - spent * W.coffeeSpend +
-        (ax ? axisScore(s, crew, ax.value + da, W) : 0) +
-        (en ? engineScore(s, crew, en.value + de, plannedClears, brakesAfter, ax ? ax.value + da : null, W) : 0);
-      yield {
-        axis: ax ? { die: ax, delta: da } : undefined,
-        engine: en ? { die: en, delta: de } : undefined,
-        extras: extras.list,
-        score,
-      };
-    }
-  }
-}
+type Extras = { list: Assignment["extras"]; score: number; cleared: Map<number, number>; brakesAfter: number };
 
 /** Free spaces for the extra dice, chosen greedily (highest value first), with Coffee left over. */
-function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number, W: PlanWeights) {
+function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number, W: PlanWeights, want: number): Extras {
   const list: Assignment["extras"] = [];
   let score = 0;
   const planes = [...s.airplanes];
@@ -165,7 +181,6 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
   // Switches need set values, in order for the Flaps: about one a round is the
   // pace that gets them all down — urgent once the crew falls behind it.
   const urgency = () => (switchesLeft() >= roundsToPlace - W.switchSlack ? W.urgent : 1);
-  const want = moveWanted(s);
   let keroOpen = (s.scenario.modules ?? []).includes("kerosene") && s.keroseneSlot == null;
   const left = [...dice];
   // Greedy by worth: each step places the die-and-space pair worth the most now
@@ -225,7 +240,14 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
     else if (p.extra.kind === "concentration") { conc -= 1; coffee = Math.min(MAX_COFFEE, coffee + 1); }
     else if (p.extra.kind === "kerosene") keroOpen = false;
   }
-  return { list, score };
+  // What these dice clear (before the Engines resolve) and the Brakes they set, for the Engine's score.
+  const cleared = new Map<number, number>();
+  for (const x of list) if (x.extra.kind === "radio") {
+    const at = s.position + (x.die.value + x.delta) - 1;
+    if ((s.airplanes[at] ?? 0) > 0) cleared.set(at, (cleared.get(at) ?? 0) + 1);
+  }
+  const brakesAfter = s.brakesDeployed + list.filter((x) => x.extra.kind === "brakes").length;
+  return { list, score, cleared, brakesAfter };
 }
 
 const radioSlot = (s: GameState, crew: Crew, used: Assignment["extras"]) => {
@@ -250,10 +272,10 @@ function moveWanted(s: GameState): number {
 }
 
 /** The Axis die `v` for this crew: expected tilt against the partner's die (known, or any face). */
-function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights): number {
+function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights, want: number): number {
   const theirs = s.axis[other(crew)];
   const landing = s.round >= s.scenario.rounds;
-  const goal = landing ? 0 : turnTarget(s, moveWanted(s)) ?? 0;
+  const goal = landing ? 0 : turnTarget(s, want) ?? 0;
   const tiltWith = (t: number) => s.axis.offset + (crew === "pilot" ? v - t : t - v);
   const cost = (tilt: number) =>
     (Math.abs(tilt) >= s.scenario.axisSpinAt || (landing && tilt !== 0) ? W.fatal : 0) + Math.abs(tilt - goal) * W.tilt;
@@ -267,11 +289,10 @@ function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights): number 
  * clears), an overshoot or a missed turn is fatal; on the landing round the
  * speed must stay within the Brakes this crew will have.
  */
-function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, number>, brakesAfter: number, axisV: number | null, W: PlanWeights): number {
+function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, number>, brakesAfter: number, axisV: number | null, W: PlanWeights, want: number): number {
   const theirs = s.engines[other(crew)];
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const landing = s.round >= s.scenario.rounds;
-  const want = moveWanted(s);
   const plan = flightPlan(s.scenario);
   const outcome = (t: number, now: boolean) => {
     const speed = v + t + wind;
@@ -310,6 +331,9 @@ function firstPlacement(s: GameState, crew: Crew, a: Assignment): GameCommand | 
   if (a.axis) tries.push(place(a.axis.die, { kind: "axis" }, a.axis.delta));
   if (a.engine) tries.push(place(a.engine.die, { kind: "engine" }, a.engine.delta));
   for (const cmd of tries) {
+    const sure = placementCheck(s, crew, cmd);
+    if (sure === false) continue;
+    if (sure) return cmd;
     try {
       reduce(s, cmd, playerIdOf(s, crew));
       return cmd;
