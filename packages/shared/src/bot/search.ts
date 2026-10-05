@@ -104,6 +104,12 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
     const best = all.find((m) => m.type === "placeDie" && m.target.kind === kind);
     if (best) ranked.push(best);
   }
+  // Experiment (off by default): the best Radio move is always searched —
+  // clearing an airplane further ahead scores low one step ahead.
+  if (SEARCH_DEFAULTS.radioCandidate && !ranked.some((m) => m.type === "placeDie" && m.target.kind === "radio")) {
+    const best = all.find((m) => m.type === "placeDie" && m.target.kind === "radio");
+    if (best) ranked.push(best);
+  }
   // Special Abilities: the one-step score can't see what they're worth (an
   // Anticipation reroll scores as "no change", so it never made the shortlist),
   // so they're searched too — every Anticipation die (once a round, at most
@@ -156,7 +162,7 @@ export interface SearchOptions {
  * de-duplication cut landings from 54% to 19% — dropping candidates after a
  * few noisy samples (or merging away the policy's own move) loses good moves.
  */
-export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean } = { halving: false, dedupe: false };
+export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean; radioCandidate: boolean } = { halving: false, dedupe: false, radioCandidate: false };
 
 /**
  * Aviator's search, without the final pick: determinized Monte Carlo over the

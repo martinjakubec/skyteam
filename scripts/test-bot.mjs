@@ -685,5 +685,27 @@ console.log("15) Flight plan and card profiles");
   check("rollout: never plans a 2-space advance over turns with no common tilt", speed === null || speed <= tt.aeroOrange);
 }
 
+console.log("16) Experiment switches (off by default; measured, not adopted)");
+{
+  const { SEARCH_DEFAULTS, POLICY_PARAMS, searchCandidates, fastMove, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc) => reduce(createInitialGameState(scenarioForSetup(DEFAULT_SETUP), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const radio = (cands) => cands.some((m) => m.type === "placeDie" && m.target.kind === "radio");
+  const v = redactGameStateFor(fresh([6, 6, 6, 6], [1, 1, 1, 1]), P);
+  const off = radio(searchCandidates(v, "pilot", mulberry32(1), 2));
+  SEARCH_DEFAULTS.radioCandidate = true;
+  const on = radio(searchCandidates(v, "pilot", mulberry32(1), 2));
+  SEARCH_DEFAULTS.radioCandidate = false;
+  check("radioCandidate: the best Radio move joins the search's candidates", !off && on);
+  // clearPlannedAny: an airplane two spaces ahead, the 3 to clear it kept for the Engine.
+  // (Gear and Brakes already set, so no switch comes first.)
+  const st = { ...fresh([3, 6, 6, 1], [1, 1, 1, 1]), round: 5, position: 0, airplanes: [0, 0, 1, 0, 0, 0, 0], gearGreen: [true, true, true], brakesDeployed: 3, brakeSlots: [true, true, true] };
+  const kind = () => { const m = fastMove(st, "pilot", mulberry32(2)); return m.target.kind === "radio" && st.dice.pilot[m.dieId].value === 3; };
+  const before = kind();
+  POLICY_PARAMS.clearPlannedAny = true;
+  const after = kind();
+  POLICY_PARAMS.clearPlannedAny = false;
+  check("clearPlannedAny: clears an airplane in the next moves' path with a kept die", !before && after);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

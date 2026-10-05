@@ -124,12 +124,28 @@ Ice Brakes steps are started by the Pilot and always finished; with
 Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
 20 s are left, the crew's own Axis and Engine come first.
 
-Measured on YUL's former placeholder track, before the real strip was
-entered (80 games each, 120 samples a candidate, seeds 0–79), the
-share of games that land: no module 70%; Intern 86%; Kerosene Leak 63%;
-Wind 59%; Real-Time 70%; Kerosene 8% (19% with the Intern); Ice Brakes about 0% (the
-eight dice it needs leave too few for the Flaps and the pace). Real-Time
-is measured on a still clock: it tests the plan, not the time pressure.
+Measured per scenario card with `scripts/bench-cards.mjs` at the live
+600 ms budget (80 seeds per setup; each card with its printed modules; a
+card with ★ abilities over four random ability picks), the share of games
+that land:
+
+| Card | Landed | | Card | Landed |
+|---|---|---|---|---|
+| green YUL | 76% | | yellow LHR | 10% |
+| green LHR | 40% | | yellow TGU | 5% |
+| green OSL | 26% | | yellow GIG | 4% |
+| green PRG | 20% | | yellow KUL | 3% |
+| green ATL | 16% | | yellow KEF | 2% |
+| green HND | 14% | | yellow PRG | 2% |
+| | | | yellow ATL | 1% |
+
+Off YUL, most lost games end short of the airport with traffic still on
+the approach: the bot can't clear airplanes fast enough to keep its pace.
+Per-card tuning (`CARD=… npm run tune`, `SCORE=graded`) and two clearing
+experiments (`SEARCH_DEFAULTS.radioCandidate`, `POLICY_PARAMS.clearPlannedAny`,
+off by default) were measured and didn't help, so `BOT_PROFILES` is empty.
+Runs at a time budget vary with the machine's load (about ±15 landings in
+300 games); compare experiments at a fixed `SAMPLES` first.
 
 ### Development (hot reload)
 
@@ -208,10 +224,8 @@ landing checks).
   with `axisAllowed` only lets the plane advance off it — from it, or through
   it on a 2-space advance — with the Axis in one of those positions; any other
   tilt loses ("Missed the turn"). Not advancing needs no particular tilt. The
-  track draws the permitted positions as green ▼ on a small arc. *Temporary:*
-  the lobby's "YUL Montréal — Turns test" airport (`YUL_TURNS_TEST`) exists to
-  try it until a real board with turns is entered; `AIRPORT=YUL_TURNS
-  scripts/simulate.sh` plays it.
+  track draws the permitted positions as green ▼ on a small arc. The rules
+  check a turn when the Engines resolve, against the tilt at that moment.
 - **Scenario cards** (`game/catalog.ts`). `SCENARIO_TEMPLATES` lists the
   rulebook's 21 cards by difficulty (green Routine Landing, yellow Exceptional
   Conditions, red Elite Pilots Only, black Heroic Landing) with each card's

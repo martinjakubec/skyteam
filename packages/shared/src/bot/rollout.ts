@@ -83,6 +83,9 @@ export const POLICY_PARAMS = {
   /** …or up to 5 ahead (a 6 on the Radio) while the traffic left is more than
    *  this many airplanes per round still to place dice in. */
   trafficPressure: 1.5,
+  /** Experiment (off by default): airplanes on the spaces this round's planned
+   *  move and the next one fly off are cleared with any die, not only spare ones. */
+  clearPlannedAny: false,
 };
 
 /**
@@ -256,10 +259,11 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // Free placements only use spare dice — the ones kept for the Axis and Engine
   // stay put (the rules force them onto those once nothing else is left).
   // (An airplane on our space or the next blocks the approach outright: any die may clear it.)
+  const anyDieAhead = P.clearPlannedAny ? Math.max(P.clearAnyDieAhead, want + 1) : P.clearAnyDieAhead;
   const clearAirplanes = (from: number, to: number) => {
     for (let ahead = from; ahead <= to; ahead++) {
       if ((s.airplanes[s.position + ahead] ?? 0) === 0) continue;
-      for (const d of ahead <= P.clearAnyDieAhead ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
+      for (const d of ahead <= anyDieAhead ? [...spare, ...hand] : spare) if (d.value === ahead + 1) for (const t of radioSlots) at(d.id, t);
     }
   };
   /** The switches a die of value `v` would deploy now. */

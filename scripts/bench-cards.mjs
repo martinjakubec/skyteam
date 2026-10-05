@@ -23,10 +23,14 @@ import { fork } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ABILITY_IDS, BOT_PROFILES, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } from "../packages/shared/src/index.ts";
+import { ABILITY_IDS, BOT_PROFILES, EVAL_WEIGHTS, POLICY_PARAMS, SEARCH_DEFAULTS, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } from "../packages/shared/src/index.ts";
 
 const env = process.env;
 if (env.PROFILES) Object.assign(BOT_PROFILES, JSON.parse(env.PROFILES));
+// SEARCH / POLICY / EVAL='{…}' override the defaults for every card (experiments).
+if (env.SEARCH) Object.assign(SEARCH_DEFAULTS, JSON.parse(env.SEARCH));
+if (env.POLICY) Object.assign(POLICY_PARAMS, JSON.parse(env.POLICY));
+if (env.EVAL) Object.assign(EVAL_WEIGHTS, JSON.parse(env.EVAL));
 
 // ---- Worker: plays the games it's sent, one at a time --------------------------
 if (process.argv.includes("--worker")) {
