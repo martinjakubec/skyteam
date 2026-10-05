@@ -45,6 +45,19 @@ each Special Ability; `ALL` plays every module combination × every ability set
 containing all those ids (scenario id, module or ability). Games are seeded, so
 a run is reproducible.
 
+`scripts/bench-cards.mjs` measures Aviator on the scenario cards as printed:
+each card with its own modules, and a card with ★ Special Abilities with
+four random picks of as many abilities. Games run in a pool of child
+processes (`CONCURRENCY=16` at once), at a fixed `SAMPLES=120` per candidate
+so results don't depend on the machine's load. Each finished game is a line
+in `OUT` (default `sim-output/bench-cards.jsonl`); a rerun skips games
+already there, so a stopped run resumes. `DIFFICULTY=green,yellow` (default),
+`CARDS=…`, `GAMES=80`, `ONLY=…`; `SUMMARY=1` prints the table from `OUT`.
+
+```bash
+docker run --rm -v "$PWD":/app -w /app node:22-alpine node_modules/.bin/tsx scripts/bench-cards.mjs
+```
+
 `scripts/validate.mjs` is an end-to-end check against a running server
 (`BASE=http://server:3001` on the compose network).
 

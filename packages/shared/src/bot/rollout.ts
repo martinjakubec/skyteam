@@ -1,8 +1,8 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { applyIntentInPlace, type Rand } from "../game/entropy";
 import { GameRuleError, landingChecks, reduce } from "../game/reducer";
-import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, WIND_RING, type Crew, type DieValue } from "../game/scenario";
-import { airportIndex, nextInternToken, type GameState } from "../game/state";
+import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew, type DieValue } from "../game/scenario";
+import { airportIndex, hasAbility, nextInternToken, type GameState } from "../game/state";
 import { actorFor } from "./actor";
 import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
@@ -74,6 +74,8 @@ export const POLICY_PARAMS = {
    *  dice already down, else any face — as real partners can't see each other's
    *  dice. Measured: off lands more (59% vs 54% of 160 YUL games, far fewer crashes). */
   peek: false,
+  /** Control / Mastery: what a matching Axis / Engine die is worth (a pip of tilt is 10). */
+  pairBonus: 3,
 };
 
 /**
@@ -160,9 +162,13 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const partnerDice = P.peek ? s.dice[partner].filter((d) => !d.placed && d.value !== undefined).map((d) => d.value!) : [];
   // Axis: the tilt our die would leave against the partner's.
   const tiltWith = (v: number, theirs: number) => s.axis.offset + (crew === "pilot" ? v - theirs : theirs - v);
+  // Control / Mastery: a die matching the partner's Axis / Engine die earns a
+  // Coffee / a spent Reroll back — worth a little, never a pip of tilt or pace.
+  const control = hasAbility(s, "control") && s.coffee < MAX_COFFEE;
+  const mastery = hasAbility(s, "mastery") && s.rerollSpent > 0;
   const axisCost = (v: number) => {
     const theirs = s.axis[partner];
-    if (theirs !== null) return Math.abs(tiltWith(v, theirs)) * 10;
+    if (theirs !== null) return Math.abs(tiltWith(v, theirs)) * 10 - (control && v === theirs ? P.pairBonus : 0);
     if (partnerDice.length) return Math.min(...partnerDice.map((w) => Math.abs(tiltWith(v, w)))) * 10;
     return Math.abs(tiltWith(v, 3.5));
   };
@@ -189,7 +195,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const pairCost = (v: number, w: number) => speedCost(v + w + wind) + (leakOn ? (Math.abs(v - w) + 1) * P.leakWeight : 0);
   const engineCost = (v: number) => {
     const theirs = s.engines[partner];
-    if (theirs !== null) return pairCost(v, theirs);
+    if (theirs !== null) return pairCost(v, theirs) - (mastery && v === theirs ? P.pairBonus : 0);
     if (partnerDice.length) return Math.min(...partnerDice.map((w) => pairCost(v, w)));
     return [1, 2, 3, 4, 5, 6].reduce((a, f) => a + pairCost(v, f), 0) / 6;
   };

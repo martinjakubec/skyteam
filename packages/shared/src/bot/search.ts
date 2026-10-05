@@ -10,6 +10,8 @@ import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
 import { mulberry32 } from "./rng";
 
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
+/** Ability moves always searched (one of each), besides every Anticipation die. */
+const ABILITY_MOVES = ["adapt", "swap"] as const;
 
 /** Real-Time: with this little time left in the round, the crew's own Axis and Engine come first. */
 export const REAL_TIME_URGENT_MS = 20_000;
@@ -100,6 +102,16 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
   for (const kind of MODULE_SPACES) {
     if (ranked.some((m) => m.type === "placeDie" && m.target.kind === kind)) continue;
     const best = all.find((m) => m.type === "placeDie" && m.target.kind === kind);
+    if (best) ranked.push(best);
+  }
+  // Special Abilities: the one-step score can't see what they're worth (an
+  // Anticipation reroll scores as "no change", so it never made the shortlist),
+  // so they're searched too — every Anticipation die (once a round, at most
+  // four), and the best Adaptation and Working Together offer.
+  for (const m of all) if (m.type === "anticipate" && !ranked.includes(m)) ranked.push(m);
+  for (const type of ABILITY_MOVES) {
+    if (ranked.some((m) => m.type === type)) continue;
+    const best = all.find((m) => m.type === type);
     if (best) ranked.push(best);
   }
   const own = fastMove(view, crew, rand);

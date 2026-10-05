@@ -601,5 +601,28 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   check("Intern: games land (≥ 25 of 200)", count(intern, (g) => g.outcome?.result === "won") >= 25);
 }
 
+console.log("14) Aviator searches the Special Abilities");
+{
+  const { searchCandidates, fastMove, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // Round 1, the Pilot (First Player) before their first die: every Anticipation
+  // die is searched, though the one-step score sees a reroll as "no change".
+  const setup = (abilities) => ({ scenarioId: "green-PRG", modules: [], abilities });
+  const g = newGame(setup(["anticipation", "adaptation"]), P, C, mulberry32(1), 0);
+  const v = redactGameStateFor(g, P);
+  const cands = searchCandidates(v, "pilot", mulberry32(2), 6);
+  check("every Anticipation die is a candidate", cands.filter((m) => m.type === "anticipate").length === 4);
+  check("…and an Adaptation", cands.some((m) => m.type === "adapt"));
+  // Control: the Co-Pilot's 4 is down on a +1 tilt; the Pilot's 2 and 4 leave it
+  // equally off (−1 / +1), but the matching 4 earns a Coffee.
+  const fresh = (abilities, dp, dc) => reduce(createInitialGameState(scenarioForSetup(setup(abilities)), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state;
+  const answer = (abilities) => {
+    let s = fresh(abilities, [2, 4, 6, 6], [4, 1, 1, 1]);
+    s = reduce({ ...s, turn: "copilot", axis: { ...s.axis, offset: 1 } }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+    const m = fastMove(s, "pilot", mulberry32(3));
+    return m.target.kind === "axis" ? s.dice.pilot[m.dieId].value : null;
+  };
+  check("Control: a tie on the Axis goes to the die matching the partner's", answer(["control"]) === 4 && answer([]) === 2);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
