@@ -9,6 +9,7 @@
 //   CARDS=green-PRG,yellow-KUL   only these cards
 //   GAMES=80                  games per setup (seeds 0..GAMES-1)
 //   SAMPLES=120               Aviator samples per candidate (fixed: reproducible, load-independent)
+//   BUDGET_MS=600             instead: a time budget per decision, as live (load-dependent)
 //   CONCURRENCY=16            games running at once (one child process each)
 //   ABILITY_SETS=4            ability combinations per card with ★
 //   ABILITY_SEED=1            seed for picking them (same seed, same picks)
@@ -26,11 +27,11 @@ const env = process.env;
 
 // ---- Worker: plays the games it's sent, one at a time --------------------------
 if (process.argv.includes("--worker")) {
-  process.on("message", ({ setup, seed, samples }) => {
+  process.on("message", ({ setup, seed, samples, budgetMs }) => {
     const used = {};
     const t0 = Date.now();
     const r = selfPlay(setup, seed, 400, {
-      samples,
+      ...(budgetMs ? { budgetMs } : { samples }),
       onMove: (m, crew, before) => {
         // Rerolls: started (a token spent) vs answered; ability moves by type.
         const k = m.type === "reroll" ? (before.pendingReroll === crew ? "rerollAnswer" : "reroll") : m.type;
@@ -88,17 +89,19 @@ function keyOf({ card, setup }) {
 async function main() {
   const GAMES = Number(env.GAMES ?? 80);
   const SAMPLES = Number(env.SAMPLES ?? 120);
+  const BUDGET_MS = Number(env.BUDGET_MS) || undefined;
+  const MODE = modeName(BUDGET_MS, SAMPLES);
   const CONCURRENCY = Number(env.CONCURRENCY ?? 16);
   const OUT = env.OUT ?? "sim-output/bench-cards.jsonl";
   const list = setups();
   mkdirSync(dirname(OUT), { recursive: true });
   const done = new Set(
-    existsSync(OUT) ? readFileSync(OUT, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.samples === SAMPLES).map((r) => `${r.key}#${r.seed}`) : [],
+    existsSync(OUT) ? readFileSync(OUT, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => modeOf(r) === MODE).map((r) => `${r.key}#${r.seed}`) : [],
   );
 
-  console.log(`${list.length} setups × ${GAMES} games, Aviator at ${SAMPLES} samples, ${CONCURRENCY} at once → ${OUT}`);
+  console.log(`${list.length} setups × ${GAMES} games, Aviator at ${MODE}, ${CONCURRENCY} at once → ${OUT}`);
   for (const s of list) console.log(`  ${keyOf(s)}`);
-  if (env.SUMMARY) return summary(OUT, list, SAMPLES);
+  if (env.SUMMARY) return summary(OUT, list, MODE);
 
   // Interleave the setups (seed-major), so partial results cover every setup.
   const queue = [];
@@ -120,11 +123,11 @@ async function main() {
       const next = () => {
         job = queue.shift() ?? null;
         if (!job) return child.disconnect();
-        child.send({ setup: job.setup, seed: job.seed, samples: SAMPLES });
+        child.send({ setup: job.setup, seed: job.seed, samples: SAMPLES, budgetMs: BUDGET_MS });
       };
       child.on("message", (msg) => {
         if (msg.ready) return next();
-        appendFileSync(OUT, JSON.stringify({ key: keyOf(job), card: job.card, setup: job.setup, samples: SAMPLES, ...msg }) + "\n");
+        appendFileSync(OUT, JSON.stringify({ key: keyOf(job), card: job.card, setup: job.setup, mode: MODE, ...msg }) + "\n");
         finished++;
         const mins = (Date.now() - t0) / 60000;
         const eta = (mins / finished) * (total - finished);
@@ -140,12 +143,20 @@ async function main() {
       });
     });
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, runWorker));
-  summary(OUT, list, SAMPLES);
+  summary(OUT, list, MODE);
+}
+
+/** A run's mode: a time budget or a fixed sample count; results of different modes never mix. */
+function modeName(budgetMs, samples) {
+  return budgetMs ? `${budgetMs}ms` : `${samples} samples`;
+}
+function modeOf(r) {
+  return r.mode ?? modeName(r.budgetMs, r.samples);
 }
 
 // ---- Summary ---------------------------------------------------------------------
-function summary(OUT, list, SAMPLES) {
-  const rows = readFileSync(OUT, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.samples === SAMPLES);
+function summary(OUT, list, MODE) {
+  const rows = readFileSync(OUT, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => modeOf(r) === MODE);
   const top = (counts, n = 3) => Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${v}× ${k}`).join("; ");
   console.log(`\n${"setup".padEnd(58)} landed      avg rnd  other moves / game        top losses`);
   const byCard = new Map();

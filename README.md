@@ -49,7 +49,8 @@ a run is reproducible.
 each card with its own modules, and a card with ★ Special Abilities with
 four random picks of as many abilities. Games run in a pool of child
 processes (`CONCURRENCY=16` at once), at a fixed `SAMPLES=120` per candidate
-so results don't depend on the machine's load. Each finished game is a line
+so results don't depend on the machine's load (`BUDGET_MS=600` plays at
+the live time budget instead). Each finished game is a line
 in `OUT` (default `sim-output/bench-cards.jsonl`); a rerun skips games
 already there, so a stopped run resumes. `DIFFICULTY=green,yellow` (default),
 `CARDS=…`, `GAMES=80`, `ONLY=…`; `SUMMARY=1` prints the table from `OUT`.
