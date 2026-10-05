@@ -513,7 +513,7 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   const count = (games, f) => games.filter(f).length;
   const failed = (g, check) => /^Landing failed/.test(g.outcome?.reason ?? "") && !landingChecks(g)[check];
   const yul = play([]);
-  check("plain YUL is unchanged by the module play (19 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 19);
+  check("plain YUL is unchanged by the module play (21 of 200 land; 19 before the flight plan)", count(yul, (g) => g.outcome?.result === "won") === 21);
   const kero = play(["kerosene"]);
   // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
   check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
@@ -617,7 +617,8 @@ console.log("14) Aviator searches the Special Abilities");
   check("…and an Adaptation", cands.some((m) => m.type === "adapt"));
   // Control: the Co-Pilot's 4 is down on a +1 tilt; the Pilot's 2 and 4 leave it
   // equally off (−1 / +1), but the matching 4 earns a Coffee.
-  const fresh = (abilities, dp, dc) => reduce(createInitialGameState(scenarioForSetup(setup(abilities)), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state;
+  // (yellow-PRG: no turn near the start, so the tie is only the tilt's.)
+  const fresh = (abilities, dp, dc) => reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-PRG", modules: [], abilities }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [] }, "").state;
   const answer = (abilities) => {
     let s = fresh(abilities, [2, 4, 6, 6], [4, 1, 1, 1]);
     s = reduce({ ...s, turn: "copilot", axis: { ...s.axis, offset: 1 } }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
@@ -661,6 +662,18 @@ console.log("15) Flight plan and card profiles");
   check("turns: off a turn space, level still beats a tilt", evaluate(level(0), "pilot") > evaluate(tilted(0), "pilot"));
   check("turnTarget: none on the landing round", turnTarget({ ...tilted(1), round: 7 }, 1) === null);
   check("turnTarget: a 2-space advance over turns with no common tilt can't be flown", turnTarget({ ...tilted(0), scenario: { ...SCENARIOS.YUL, approachTrack: [{ traffic: 0, axisAllowed: [1] }, { traffic: 0, axisAllowed: [-1] }, { traffic: 0, airport: true }] } }, 2) === null);
+  const { fastMove, rolloutGame } = await import("../packages/shared/src/index.ts");
+  // Answer the partner's Axis die on a turn space: TGU space 1 needs a tilt it allows (2 or 1, not 0).
+  const allowed1 = SCENARIOS["yellow-TGU"].approachTrack[1].axisAllowed;
+  let ts = at("yellow-TGU", [1, 2, 3, 4], [3, 6, 6, 6], { round: 2, position: 1, airplanes: Array(5).fill(0), turn: "copilot" });
+  ts = reduce(ts, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const am = fastMove({ ...ts, coffee: 0 }, "pilot", mulberry32(4));
+  const tiltAfter = am.target.kind === "axis" ? ts.axis.offset + (ts.dice.pilot[am.dieId].value - 3) : null;
+  check(`rollout: on a turn space the Axis answer makes an allowed tilt (${allowed1})`, tiltAfter !== null && allowed1.includes(tiltAfter));
+  // Whole rollouts on TGU: was 37 of 40 "Missed the turn".
+  const tguGames = Array.from({ length: 40 }, (_, i) => rolloutGame(newGame({ scenarioId: "yellow-TGU", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
+  const missed = tguGames.filter((g) => /^Missed the turn/.test(g.outcome?.reason ?? "")).length;
+  check(`rollout: TGU misses far fewer turns (${missed} of 40; was 37 before turn aiming)`, missed <= 16);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

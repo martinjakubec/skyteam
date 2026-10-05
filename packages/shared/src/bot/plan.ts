@@ -62,14 +62,19 @@ export function turnTarget(s: GameState, advance: number): number | null {
   return allowed.reduce((best, x) => (Math.abs(x - off) < Math.abs(best - off) ? x : best));
 }
 
-/** True when flying `advance` spaces this round can't satisfy the turns on the way. */
-export function turnBlocks(s: GameState, advance: number): boolean {
+/**
+ * True when flying `advance` spaces this round can't satisfy the turns on the
+ * way. The rules check a turn when the Engines resolve, against the tilt at
+ * that moment: `resolvesNow` (this die completes the Engines) or a final Axis
+ * means the current tilt is what counts.
+ */
+export function turnBlocks(s: GameState, advance: number, resolvesNow = false): boolean {
   const plan = flightPlan(s.scenario);
   let any = false;
   for (let step = 0; step < advance; step++) if (plan.turn[s.position + step]) any = true;
   if (!any) return false;
-  if (s.axis.pilot !== null && s.axis.copilot !== null) {
-    // The tilt is final: every turn flown off must allow it.
+  if (resolvesNow || (s.axis.pilot !== null && s.axis.copilot !== null)) {
+    // The tilt is what it is now: every turn flown off must allow it.
     for (let step = 0; step < advance; step++) {
       const t = plan.turn[s.position + step];
       if (t && !t.includes(s.axis.offset)) return true;

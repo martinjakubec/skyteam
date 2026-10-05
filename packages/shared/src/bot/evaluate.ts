@@ -229,15 +229,17 @@ function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: numbe
   const after = roundsLeft - 1;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const tiltFinal = s.axis.pilot !== null && s.axis.copilot !== null;
-  const afterMove = (speed: number) => {
+  // `now`: this die completes the Engines, so the move (and any turn) happens
+  // with the tilt as it stands, final or not.
+  const afterMove = (speed: number, now = false) => {
     const adv = speed <= s.aeroBlue ? 0 : speed > s.aeroOrange ? 2 : 1;
     for (let step = 0; step < adv; step++) {
       const from = s.position + step;
       if ((s.airplanes[from] ?? 0) > 0 || step >= remaining) return 5000; // collision / overshoot
       // Every space flown off (incl. the one flown through) must allow the
-      // tilt — known once this round's Axis dice are both down.
+      // tilt — the current one, checked when the Engines resolve.
       const turn = s.scenario.approachTrack[from]?.axisAllowed;
-      if (tiltFinal && turn && !turn.includes(s.axis.offset)) return 5000;
+      if ((tiltFinal || now) && turn && !turn.includes(s.axis.offset)) return 5000;
     }
     return paceCost(s, s.position + adv, after, W);
   };
@@ -247,7 +249,7 @@ function paceRisk(s: GameState, crew: Crew, remaining: number, roundsLeft: numbe
   if (s.engines[crew] === null) {
     const values = reachableValues(s, crew);
     if (!values.length) return paceCost(s, s.position, roundsLeft, W);
-    return Math.min(...values.map((v) => (theirs !== null ? afterMove(v + theirs + wind) : hidden(v))));
+    return Math.min(...values.map((v) => (theirs !== null ? afterMove(v + theirs + wind, true) : hidden(v))));
   }
   return hidden(s.engines[crew]!);
 }

@@ -7,6 +7,8 @@ import { actorFor } from "./actor";
 import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
 import { quickMove } from "./policy";
+import { planTarget, turnBlocks, turnTarget } from "./plan";
+import { policyFor } from "./profiles";
 
 /** Give every hidden die a random value — one plausible world consistent with the view. */
 export function determinize(view: GameState, rand: Rand): GameState {
@@ -76,6 +78,11 @@ export const POLICY_PARAMS = {
   peek: false,
   /** Control / Mastery: what a matching Axis / Engine die is worth (a pip of tilt is 10). */
   pairBonus: 3,
+  /** Spare dice clear airplanes up to this many spaces ahead… */
+  clearAheadMax: 2,
+  /** …or up to 5 ahead (a 6 on the Radio) while the traffic left is more than
+   *  this many airplanes per round still to place dice in. */
+  trafficPressure: 1.5,
 };
 
 /**
@@ -141,7 +148,7 @@ const advanceFor = (s: GameState, speed: number) => (speed <= s.aeroBlue ? 0 : s
  * anything legal. Prompts (held extras, reroll/swap answers) go to the quick strategy.
  */
 export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | null {
-  const P = POLICY_PARAMS;
+  const P = policyFor(s);
   const held = s.internHeld?.crew === crew ? s.internHeld.value : null;
   if ((s.internHeld && held === null) || s.trafficHeld || s.pendingSwap) return quickMove(s, crew, rand);
   if (s.pendingReroll) return { type: "reroll", dieIds: [] }; // keep our dice
@@ -168,22 +175,29 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const mastery = hasAbility(s, "mastery") && s.rerollSpent > 0;
   const axisCost = (v: number) => {
     const theirs = s.axis[partner];
-    if (theirs !== null) return Math.abs(tiltWith(v, theirs)) * 10 - (control && v === theirs ? P.pairBonus : 0);
-    if (partnerDice.length) return Math.min(...partnerDice.map((w) => Math.abs(tiltWith(v, w)))) * 10;
-    return Math.abs(tiltWith(v, 3.5));
+    if (theirs !== null) return Math.abs(tiltWith(v, theirs) - tiltGoal) * 10 - (control && v === theirs ? P.pairBonus : 0);
+    if (partnerDice.length) return Math.min(...partnerDice.map((w) => Math.abs(tiltWith(v, w) - tiltGoal))) * 10;
+    return Math.abs(tiltWith(v, 3.5) - tiltGoal);
   };
   // Engines: how far the speed lands from what the approach needs this round.
   const remaining = airportIndex(s.scenario) - s.position;
   const roundsAfter = Math.max(0, s.scenario.rounds - s.round - 1);
-  // Pace: spread the spaces left over this round and the moving rounds after it.
-  const want = Math.max(0, Math.min(2, remaining, Math.ceil(remaining / (roundsAfter + 1))));
+  // Pace: the flight plan's target for this round, but never slower than the
+  // rounds left allow.
+  const planGap = landing ? 0 : planTarget(s) - s.position;
+  const want = Math.max(0, Math.min(2, remaining, Math.max(planGap, Math.ceil(remaining / (roundsAfter + 1)))));
+  // The tilt to aim for: what the turns flown off this round allow, else level.
+  const tiltGoal = landing ? 0 : turnTarget(s, want) ?? 0;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const steps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeLimit = s.brakesDeployed > 0 ? steps[s.brakesDeployed - 1] : 0;
   // Flying off (or through) a space with an airplane, or past the airport, loses.
+  // An Engine die that completes the pair moves the plane at once, with the tilt as it stands.
+  const enginesResolveNow = s.engines[partner] !== null;
   const crashes = (adv: number) => {
     for (let step = 0; step < adv; step++) if ((s.airplanes[s.position + step] ?? 0) > 0 || step >= remaining) return true;
-    return false;
+    // A turn flown off with a tilt it doesn't allow (or turns with no tilt in common).
+    return adv > 0 && turnBlocks(s, adv, enginesResolveNow);
   };
   const speedCost = (speed: number) => {
     if (landing) return speed > brakeLimit ? 10 + speed : speed / 10;
@@ -229,8 +243,11 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // A die is spare if the Axis and Engine are served nearly as well without it.
   const spare = hand.filter((d) => picks(hand.filter((x) => x.id !== d.id)).k <= kept.k + P.spareSlack);
 
-  // 1. Answer the partner's Axis / Engine die while it's known.
-  if (axisPick && s.axis[partner] !== null) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
+  // 1. Answer the partner's Axis / Engine die while it's known. On a turn the
+  // current tilt doesn't allow, the Axis goes first: completing the Engines
+  // now would fly the turn (or stall) on the old tilt.
+  const turnFirst = want > 0 && axisOpen && turnBlocks(s, want, true);
+  if (axisPick && (s.axis[partner] !== null || turnFirst)) at(axisPick.d.id, { kind: "axis" }, axisPick.c);
   if (enginePick && s.engines[partner] !== null) at(enginePick.d.id, { kind: "engine" }, enginePick.c);
   // 2–3. Clear airplanes in the way; deploy switches with dice that fit (Coffee
   // may make one fit). When the crew is behind on its switches — as many left
@@ -333,7 +350,8 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   // (Early on, not a die a switch could use: the low dice are also the first Flaps and Gear.)
   kerosene(freeDice <= 1 ? KEROSENE_IDLE_BURN - 1 : P.keroseneEarly === "share" ? keroShare : P.keroseneEarly, freeDice > 1);
   if (behind) switches(true); // Coffee only when behind: it's also what levels the Axis
-  clearAirplanes(2, 2);
+  const trafficAhead = s.airplanes.slice(s.position, airportIndex(s.scenario) + 1).reduce((a, n) => a + n, 0);
+  clearAirplanes(2, trafficAhead > P.trafficPressure * roundsToPlace ? 5 : P.clearAheadMax);
   if (!behind) switches(false);
   train();
   // 4. Our own Axis and Engine with the dice kept for them.
