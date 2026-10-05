@@ -15,6 +15,7 @@
 //   ABILITY_SEED=1            seed for picking them (same seed, same picks)
 //   ONLY="green-PRG,mastery"  keep setups containing all these ids (card, module or ability)
 //   PROFILES='{"yellow-TGU":{"policy":{…}}}'   try these card profiles over the ones in profiles.ts
+//   BOT_DIST=1                play the compiled bot, as the server does
 //   TAG=iter1                 kept apart in OUT from runs with another tag (e.g. other profiles)
 //   OUT=sim-output/bench-cards.jsonl   one line per finished game; a rerun skips
 //                             games already in it (resume after a stop)
@@ -23,7 +24,10 @@ import { fork } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ABILITY_IDS, BOT_PROFILES, EVAL_WEIGHTS, POLICY_PARAMS, SEARCH_DEFAULTS, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } from "../packages/shared/src/index.ts";
+// BOT_DIST=1: play the compiled packages/shared/dist (what the server runs — about
+// 1.5× faster than the TypeScript source through tsx, so more samples in a time
+// budget); build it first (npm run build -w @skyteam/shared).
+const { ABILITY_IDS, BOT_PROFILES, EVAL_WEIGHTS, POLICY_PARAMS, SEARCH_DEFAULTS, SCENARIO_TEMPLATES, SetSetupPayload, landingChecks, mulberry32, selfPlay } = await import(process.env.BOT_DIST ? "../packages/shared/dist/index.js" : "../packages/shared/src/index.ts");
 
 const env = process.env;
 if (env.PROFILES) Object.assign(BOT_PROFILES, JSON.parse(env.PROFILES));
@@ -157,7 +161,7 @@ async function main() {
 
 /** A run's mode: a time budget or a fixed sample count; results of different modes never mix. */
 function modeName(budgetMs, samples) {
-  return (budgetMs ? `${budgetMs}ms` : `${samples} samples`) + (env.TAG ? ` ${env.TAG}` : "");
+  return (budgetMs ? `${budgetMs}ms` : `${samples} samples`) + (env.BOT_DIST ? " dist" : "") + (env.TAG ? ` ${env.TAG}` : "");
 }
 function modeOf(r) {
   return r.mode ?? modeName(r.budgetMs, r.samples);
