@@ -7,7 +7,17 @@
 // Usage: npm run tune -- [games=200] [passes=2] [eval]
 //   eval: tune the evaluator's weights (EVAL_WEIGHTS) on the quick strategy's own
 //   self-play landings instead (each weight tried at ×0.5 and ×2).
-import { newGame, rolloutGame, selfPlay, mulberry32, DEFAULT_SETUP, POLICY_PARAMS, EVAL_WEIGHTS } from "../packages/shared/src/index.ts";
+//   CARD=yellow-TGU (env): tune on that card with its printed modules (ability
+//   cards rotate through the abilities), and print the result as its profile.
+import { newGame, rolloutGame, selfPlay, mulberry32, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIO_TEMPLATES, ABILITY_IDS, BOT_PROFILES } from "../packages/shared/src/index.ts";
+
+const CARD = process.env.CARD;
+const card = CARD && SCENARIO_TEMPLATES.find((t) => t.id === CARD);
+if (CARD && !card) throw new Error(`no card ${CARD}`);
+if (card) delete BOT_PROFILES[card.id]; // tune from the defaults, not an older profile
+const setupFor = (i) => card
+  ? { scenarioId: card.id === "green-YUL" ? "YUL" : card.id, modules: [...card.modules], abilities: Array.from({ length: card.abilityCount }, (_, k) => ABILITY_IDS[(i + k) % ABILITY_IDS.length]) }
+  : { scenarioId: "YUL", modules: [], abilities: [] };
 
 const N = Number(process.argv[2] ?? 200);
 const PASSES = Number(process.argv[3] ?? 2);
@@ -22,6 +32,8 @@ const POLICY_CANDIDATES = {
   coffeeCost: [0.25, 0.5, 1, 2],
   paceWeight: [5, 10, 20],
   clearAnyDieAhead: [0, 1, 2],
+  clearAheadMax: [1, 2, 3, 5],
+  trafficPressure: [1, 1.5, 2, 3],
 };
 
 const CANDIDATES = EVAL
@@ -33,8 +45,8 @@ function landings(from) {
   let won = 0;
   for (let i = from; i < from + N; i++) {
     const won1 = EVAL
-      ? selfPlay({ scenarioId: "YUL", modules: [], abilities: [] }, i, 400, { strategy: "quick" }).outcome === "won"
-      : rolloutGame(newGame(DEFAULT_SETUP, "P", "C", mulberry32(i), 0), mulberry32(100000 + i)).outcome?.result === "won";
+      ? selfPlay(setupFor(i), i, 400, { strategy: "quick" }).outcome === "won"
+      : rolloutGame(newGame(setupFor(i), "P", "C", mulberry32(i), 0), mulberry32(100000 + i)).outcome?.result === "won";
     if (won1) won++;
   }
   return won;
@@ -65,3 +77,7 @@ Object.assign(TARGET, start);
 const heldStart = landings(N);
 console.log(`\ntuned: ${JSON.stringify(tuned)}`);
 console.log(`held-out seeds: start ${heldStart}/${N} → tuned ${heldTuned}/${N}`);
+if (card) {
+  const diff = Object.fromEntries(Object.entries(tuned).filter(([k, v]) => start[k] !== v));
+  console.log(`\nBOT_PROFILES["${card.id}"] = { ${EVAL ? "eval" : "policy"}: ${JSON.stringify(diff)} };`);
+}
