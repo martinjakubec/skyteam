@@ -8,7 +8,8 @@ import { evaluate, WIN } from "./evaluate";
 import { playerIdOf } from "./moves";
 import { quickMove } from "./policy";
 import { planTarget, turnBlocks, turnTarget } from "./plan";
-import { policyFor } from "./profiles";
+import { planFor, policyFor } from "./profiles";
+import { planMove } from "./planPolicy";
 
 /** Give every hidden die a random value — one plausible world consistent with the view. */
 export function determinize(view: GameState, rand: Rand): GameState {
@@ -159,6 +160,14 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const held = s.internHeld?.crew === crew ? s.internHeld.value : null;
   if ((s.internHeld && held === null) || s.trafficHeld || s.pendingSwap) return quickMove(s, crew, rand);
   if (s.pendingReroll) return { type: "reroll", dieIds: [] }; // keep our dice
+  // A card whose plan is set to drive the rollouts plays it (it hands back what
+  // it doesn't plan for). Off by default: the plan is slower than this policy,
+  // and fewer samples cost more than its better moves gain.
+  const planW = planFor(s);
+  if (planW?.rollouts) {
+    const planned = planMove(s, crew, planW);
+    if (planned) return planned;
+  }
   const hand = s.dice[crew].filter((d) => !d.placed && d.value !== undefined);
   if (!hand.length && held === null) return null;
   const mods = s.scenario.modules ?? [];

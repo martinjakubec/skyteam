@@ -734,5 +734,50 @@ console.log("18) Search settings per card (shortlist, radioCandidate)");
   check("radioCandidate: a card's profile adds the best Radio move", !radio(narrow) && radio(withRadio));
 }
 
+console.log("19) A card's scripted plan (planPolicy)");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const lhr = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-LHR", modules: [], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state, ...extra });
+  // The Pilot's single Radio: a 2 clears the next space (the plane flies off it next), not a 5 for a far one.
+  const r = lhr([2, 5, 3, 3], [1, 1, 1, 1], { airplanes: [0, 1, 0, 0, 1, 0], coffee: 0 });
+  const mr = planMove(r, "pilot");
+  check("plan: the single Radio clears the space the plane flies next", mr?.target.kind === "radio" && r.dice.pilot[mr.dieId].value === 2);
+  // Not before its own space is clear: with the Co-Pilot's Engine down, an airplane on the current space means no move.
+  let e = lhr([3, 3, 1, 4], [4, 1, 1, 1], { airplanes: [1, 0, 0, 0, 0, 0], coffee: 0, turn: "copilot" });
+  e = reduce(e, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  const me = planMove(e, "pilot");
+  const speed = me?.target.kind === "engine" ? 4 + e.dice.pilot[me.dieId].value : null;
+  check("plan: never completes the Engines into an airplane on its own space", me?.target.kind === "radio" ? e.dice.pilot[me.dieId].value === 1 : speed === null || speed <= e.aeroBlue);
+  // Modules it doesn't plan for: hands back to the general policy.
+  const kero = { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]), scenario: { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]).scenario, modules: ["kerosene"] } };
+  check("plan: hands modules it doesn't plan for back (null)", planMove(kero, "pilot") === null);
+  // Landing round: the Coffee is kept for a level Axis.
+  let l = lhr([5, 2, 2, 2], [3, 5, 6, 6], { round: 7, position: 5, airplanes: Array(6).fill(0), coffee: 1, axis: { pilot: null, copilot: null, offset: 0 }, flapsGreen: [true, true, true, false], turn: "copilot" });
+  l = reduce(l, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state; // Co-Pilot's 3
+  const ml = planMove(l, "pilot");
+  const tilt = ml?.target.kind === "axis" ? l.axis.offset + (l.dice.pilot[ml.dieId].value + (ml.coffeeDelta ?? 0)) - 3 : "not axis";
+  check(`plan: on the landing round the Axis ends level (tilt ${tilt})`, ml?.target.kind !== "axis" || tilt === 0);
+  // A card with a plan: the search always weighs the plan's move; the rollouts stay fast (unless rollouts: true).
+  const { BOT_PROFILES, searchCandidates, redactGameStateFor, fastMove } = await import("../packages/shared/src/index.ts");
+  const key = (m) => JSON.stringify(m);
+  // (seed 0's opening: the plan and the general policy pick different dice for the Gear.)
+  const g0 = newGame({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(0), 0);
+  const general = key(fastMove(g0, "pilot", mulberry32(2)));
+  BOT_PROFILES["green-LHR"] = { plan: true };
+  const v = redactGameStateFor(g0, P);
+  const planned = planMove(v, "pilot");
+  const inCands = key(planned) !== general && searchCandidates(v, "pilot", mulberry32(1), 1).some((m) => key(m) === key(planned));
+  const policyUnchanged = key(fastMove(g0, "pilot", mulberry32(2))) === general;
+  check("plan: its move is always one of the search's candidates", inCands);
+  check("plan: the rollouts keep the fast policy unless asked", policyUnchanged);
+  // …a Radio move too (per-crew spaces are spelled with a side in the legal-move list).
+  // (seed 50's opening: the plan's Radio die is one the general policy wouldn't pick.)
+  const vr = redactGameStateFor(newGame({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(50), 0), P);
+  const pr = planMove(vr, "pilot");
+  BOT_PROFILES["green-LHR"] = { plan: true };
+  check("plan: a planned Radio move is a candidate too", pr?.target.kind === "radio" && searchCandidates(vr, "pilot", mulberry32(1), 1).some((m) => key(m) === key(pr)));
+  delete BOT_PROFILES["green-LHR"];
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

@@ -7,7 +7,8 @@ import { evaluate } from "./evaluate";
 import { legalMoves, playerIdOf } from "./moves";
 import { rankMoves } from "./policy";
 import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
-import { searchFor } from "./profiles";
+import { planFor, searchFor } from "./profiles";
+import { planMove } from "./planPolicy";
 import { mulberry32 } from "./rng";
 
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
@@ -110,6 +111,14 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
   if (searchFor(view).radioCandidate && !ranked.some((m) => m.type === "placeDie" && m.target.kind === "radio")) {
     const best = all.find((m) => m.type === "placeDie" && m.target.kind === "radio");
     if (best) ranked.push(best);
+  }
+  // A card's scripted plan: its move is always weighed (the rollouts stay fast).
+  const planW = planFor(view);
+  if (planW && !planW.rollouts) {
+    const planned = planMove(view, crew, planW);
+    // (Legal: the plan checks its move on the rules. Not compared against `moves`,
+    // whose per-crew targets carry a `side` the plan's don't.)
+    if (planned && !ranked.some((m) => JSON.stringify(m) === JSON.stringify(planned))) ranked.push(planned);
   }
   // Special Abilities: the one-step score can't see what they're worth (an
   // Anticipation reroll scores as "no change", so it never made the shortlist),
