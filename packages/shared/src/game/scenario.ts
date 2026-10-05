@@ -6,10 +6,10 @@
  * reducer means a new airport is a new `Scenario` object — the rules engine
  * doesn't change.
  *
- * ⚠ CONFIRM AGAINST PHYSICAL BOARD: the Approach Track's per-space traffic is
- * printed on the slide-in strip, not in the rulebook text, and is still a
- * placeholder (marked below). The Altitude Track's reroll rounds and the Axis
- * spin threshold have been confirmed.
+ * The Approach Track's per-space traffic is printed on the slide-in strip, not
+ * in the rulebook text; every card's track was read off the physical strips.
+ * The Altitude Track's reroll rounds and the Axis spin threshold have been
+ * confirmed.
  */
 
 import type { AbilityId } from "./abilities";
@@ -117,8 +117,6 @@ export interface Scenario {
   /**
    * The Approach Track, index 0 = the plane's starting Current Position.
    * The plane advances toward higher indices; the airport is the final space.
-   *
-   * ⚠ CONFIRM AGAINST PHYSICAL BOARD: exact length and per-space traffic.
    */
   approachTrack: ApproachSpace[];
 
@@ -211,23 +209,18 @@ export const DICE_PER_PLAYER = 4;
 export const AIRPLANE_TOKENS = 12;
 
 /**
- * The default base-game scenario.
- *
- * ⚠ The approach-track traffic distribution below is a placeholder consistent
- * with the 12-token supply; replace with the real YUL values once read off the
- * board. The engine treats it as pure data.
+ * The default base-game scenario, read off the green YUL strip.
  */
 export const YUL_MONTREAL: Scenario = {
   name: "YUL Montréal-Trudeau",
   approachTrack: [
-    { traffic: 0 }, // 0: starting Current Position
-    { traffic: 1 }, // 1
-    { traffic: 2 }, // 2
-    { traffic: 1 }, // 3
-    { traffic: 2 }, // 4
-    { traffic: 1 }, // 5
-    { traffic: 1 }, // 6
-    { traffic: 0, airport: true }, // 7: airport
+    { traffic: 0 }, // 0: starting Current Position (clouds)
+    { traffic: 0 }, // 1
+    { traffic: 1 }, // 2
+    { traffic: 2 }, // 3
+    { traffic: 1 }, // 4
+    { traffic: 3 }, // 5
+    { traffic: 2, airport: true }, // 6: airport
   ],
   rounds: 7,
   startAltitudeFeet: 6000,

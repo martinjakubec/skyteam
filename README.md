@@ -110,7 +110,8 @@ Ice Brakes steps are started by the Pilot and always finished; with
 Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
 20 s are left, the crew's own Axis and Engine come first.
 
-Measured on YUL (80 games each, 120 samples a candidate, seeds 0–79), the
+Measured on YUL's former placeholder track, before the real strip was
+entered (80 games each, 120 samples a candidate, seeds 0–79), the
 share of games that land: no module 70%; Intern 86%; Kerosene Leak 63%;
 Wind 59%; Real-Time 70%; Kerosene 8% (19% with the Intern); Ice Brakes about 0% (the
 eight dice it needs leave too few for the Flaps and the pace). Real-Time
@@ -159,9 +160,9 @@ landing checks).
 
 - **`scenario.ts`** is pure data: the approach track (length + per-space
   traffic), altitude/reroll layout, axis spin threshold and speed-gauge starts.
-  A new airport is a new `Scenario` — the rules engine doesn't change. A few
-  board-geometry numbers aren't printed in the rulebook text and are marked
-  `CONFIRM AGAINST PHYSICAL BOARD`.
+  A new airport is a new `Scenario` — the rules engine doesn't change. The
+  approach tracks aren't in the rulebook text; every card's track was read
+  off the physical strips.
 - **`reducer.ts`** is the pure `reduce(state, command) => state`. It is the only
   place the rules live, and it is **module-ready**: the advanced "Flight Log"
   modules (Kerosene, Wind, Intern, Ice Brakes, Traffic die, Turns…) slot into the
@@ -200,8 +201,10 @@ landing checks).
 - **Scenario cards** (`game/catalog.ts`). `SCENARIO_TEMPLATES` lists the
   rulebook's 21 cards by difficulty (green Routine Landing, yellow Exceptional
   Conditions, red Elite Pilots Only, black Heroic Landing) with each card's
-  modules and ★ ability count. A card's `board` (traffic, turns, Traffic die,
-  length) is null until it's entered; only green YUL has one so far.
+  modules and ★ ability count. Each card's `board` takes its approach track
+  (traffic, turns, Traffic dice, length) from `APPROACH_TRACKS` and the rest
+  (rounds, Axis spin limit, speed gauges) from YUL; the reroll rounds depend
+  on the card's difficulty.
 - **Special Abilities** (`game/abilities.ts`), up to the scenario's limit
   (`maxAbilities`; YUL has none, so they're unavailable until a ★ card is
   playable):

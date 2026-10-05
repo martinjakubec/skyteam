@@ -94,14 +94,15 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const first = quickMove(redactGameStateFor(r, P), "pilot", mulberry32(5));
   check("keeps its safest Axis die rather than spending it elsewhere", !(first.type === "placeDie" && r.dice.pilot[first.dieId].value === 3 && first.target.kind !== "axis"));
 
-  // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6.
-  const paced = (position) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), engines: { pilot: 3, copilot: 3 }, position, airplanes: Array(8).fill(0) });
-  check("pace counts the rounds left after this round's move", evaluate(paced(2), "pilot") > evaluate(paced(1), "pilot"));
+  // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6, so YUL's
+  // 6 spaces need the plane on space 1 already.
+  const paced = (position) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), engines: { pilot: 3, copilot: 3 }, position, airplanes: Array(7).fill(0) });
+  check("pace counts the rounds left after this round's move", evaluate(paced(1), "pilot") > evaluate(paced(0), "pilot"));
   // Behind schedule (round 5, 3 spaces left, 1 moving round after this one): a
   // hand that can reach speed 9+ for a double move beats one that can't.
-  const behind = (hand) => ({ ...fresh(hand, [1, 1, 1, 1]), round: 5, position: 4, airplanes: Array(8).fill(0) });
+  const behind = (hand) => ({ ...fresh(hand, [1, 1, 1, 1]), round: 5, position: 3, airplanes: Array(7).fill(0) });
   check("pace: keeps the fast Engine dice it needs to catch up", evaluate(behind([6, 6, 6, 6]), "pilot") - evaluate(behind([1, 1, 1, 1]), "pilot") > 500);
-  check("pace: leaving a space with an airplane on it is fatal", evaluate({ ...behind([6, 6, 6, 6]), airplanes: [0, 0, 0, 0, 1, 0, 0, 0] }, "pilot") < evaluate(behind([6, 6, 6, 6]), "pilot") - 2000);
+  check("pace: leaving a space with an airplane on it is fatal", evaluate({ ...behind([6, 6, 6, 6]), airplanes: [0, 0, 0, 1, 0, 0, 0] }, "pilot") < evaluate(behind([6, 6, 6, 6]), "pilot") - 2000);
 
   // Landing round: the Axis must end level, and the speed must fit the last Brakes.
   const landing = (hand, extra = {}) => ({ ...fresh([1, 1, 1, 1], hand), round: 7, axis: { pilot: 3, copilot: null, offset: 0 }, ...extra });
@@ -180,7 +181,7 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   check("tunable evaluator: a weight changes the score", changed < base && evaluate(probe, "pilot") === base);
 
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
-  check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
+  check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 2 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
   // Turns: on a space whose Turn forbids the current tilt the plane can't fly on.
   const turn = { ...t, scenario: { ...t.scenario, approachTrack: t.scenario.approachTrack.map((sp, i) => (i === 0 ? { ...sp, axisAllowed: [1, 0] } : sp)) } };
@@ -261,9 +262,9 @@ console.log("7) Measurement: landing checklist; dice independent of the bots");
 {
   const { landingChecks, selfPlay } = await import("../packages/shared/src/index.ts");
   const g = newGame(DEFAULT_SETUP, P, C, mulberry32(3), 0);
-  const ready = { ...g, round: 7, position: 7, airplanes: Array(8).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
+  const ready = { ...g, round: 7, position: 6, airplanes: Array(7).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
   check("landingChecks: a ready plane passes every condition", Object.values(landingChecks(ready)).every(Boolean));
-  const late = landingChecks({ ...ready, position: 6, flapsGreen: [true, true, true, false], lastSpeed: 9 });
+  const late = landingChecks({ ...ready, position: 5, flapsGreen: [true, true, true, false], lastSpeed: 9 });
   check("…and names each one that fails", !late.airport && !late.flaps && !late.brakes && late.gear && late.level && late.clear);
   const setup = { scenarioId: "YUL", modules: [], abilities: [] };
   const a = selfPlay(setup, 77, 400, { strategy: "quick" });
@@ -282,10 +283,10 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   a = reduce({ ...a, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
   const ma = fastMove(a, "pilot", mulberry32(1));
   check("fast policy: answers the partner's Axis die with the levelling die", ma.target.kind === "axis" && die(a, "pilot", ma) === 4);
-  // Clear the airplane right ahead (YUL space 1 holds one): a 2 on the Radio.
-  const r = fresh([2, 3, 3, 5], [1, 1, 1, 1]);
+  // Clear the first airplane ahead (YUL space 2 holds one): a 3 on the Radio.
+  const r = fresh([3, 2, 2, 5], [1, 1, 1, 1]);
   const mr = fastMove(r, "pilot", mulberry32(2));
-  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 2);
+  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 3);
   // Deploy the next Flaps when the value is in hand.
   const f = { ...fresh([3, 3, 3, 3], [1, 5, 5, 5]), turn: "copilot", airplanes: Array(8).fill(0) };
   const mf = fastMove(f, "copilot", mulberry32(3));
@@ -509,14 +510,14 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   const count = (games, f) => games.filter(f).length;
   const failed = (g, check) => /^Landing failed/.test(g.outcome?.reason ?? "") && !landingChecks(g)[check];
   const yul = play([]);
-  check("plain YUL is unchanged by the module play (27 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 27);
+  check("plain YUL is unchanged by the module play (19 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 19);
   const kero = play(["kerosene"]);
   // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
   check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
   check("Kerosene: games reach the landing (≥ 50 of 200)", count(kero, (g) => /^Landing/.test(g.outcome?.reason ?? "")) >= 50);
   const leak = play(["keroseneLeak"]);
   check("Kerosene Leak: the tank seldom runs dry (≤ 40 of 200; 77 before the Engines minded the leak)", count(leak, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
-  check("Kerosene Leak: games land (≥ 17 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 17);
+  check("Kerosene Leak: games land (≥ 9 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 9);
   const intern = play(["intern"]);
   check("Intern: rarely lands untrained (≤ 15 of 200)", count(intern, (g) => failed(g, "intern")) <= 15);
   const ice = play(["iceBrakes"]);
