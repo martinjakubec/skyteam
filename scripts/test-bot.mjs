@@ -872,5 +872,20 @@ console.log("26) The plan plans the Special Abilities");
   check("Synchronisation: places the Traffic die where it counts", ms?.type === "placeTraffic" && ["flaps", "radio", "landingGear", "brakes"].includes(ms.target.kind));
 }
 
+console.log("27) The plan reads the Wind after the Axis turns it");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, WIND_RING } = await import("../packages/shared/src/index.ts");
+  // GIG with Wind, ring on +3 (start). The Co-Pilot's 1 is on the Axis; the Pilot's Axis die will
+  // tilt the plane and turn the ring. Whatever the plan answers, its Engine die must be judged by the
+  // Wind after the turn: with the Axis die down, the Wind it scored is the reducer's.
+  let g = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-GIG", modules: ["wind"], abilities: [] }), P, C), { type: "roll", pilot: [3, 1, 1, 1], copilot: [1, 1, 1, 1], traffic: [5, 5] }, "").state;
+  g = { ...g, airplanes: Array(7).fill(0), coffee: 0, turn: "copilot" };
+  g = reduce(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  // Pilot's 3 vs Co-Pilot's 1: tilt +2, the ring turns 2 left: wind WIND_RING[(0-2+20)%20].
+  const after = WIND_RING[(g.windPosition - 2 + 20) % 20];
+  const { engineWindFor } = await import("../packages/shared/src/index.ts");
+  check(`plan: predicts the Wind after this round's Axis (${after})`, engineWindFor(g, "pilot", 3) === after);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

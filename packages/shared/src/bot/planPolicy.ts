@@ -255,7 +255,8 @@ function bestAssignment(s: GameState, crew: Crew, hand: Die[], W: PlanWeights): 
           }
           if (ei >= 0) {
             const ev = hand[ei].value + de;
-            const key = `${ev}|${extrasKey}|${ai >= 0 ? 1 : 0}`;
+            // (The Axis value matters: with Wind, it turns the ring before the Engines.)
+            const key = `${ev}|${extrasKey}|${ai >= 0 ? hand[ai].value + da : "-"}`;
             let c = engineCache.get(key);
             if (c === undefined) engineCache.set(key, (c = engineScore(s, crew, ev, extras.cleared, extras.brakesAfter, ai >= 0 ? hand[ai].value + da : null, W, want)));
             score += c;
@@ -416,9 +417,23 @@ function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights, want: nu
  * clears), an overshoot or a missed turn is fatal; on the landing round the
  * speed must stay within the Brakes this crew will have.
  */
+/**
+ * The Wind the Engines will meet when this crew's Axis die `axisV` (placed
+ * before its Engine die) completes the Axis: the ring turns one space per pip
+ * of the new tilt first. Otherwise the Wind as it stands.
+ */
+export function engineWindFor(s: GameState, crew: Crew, axisV: number | null): number {
+  if (!s.scenario.modules?.includes("wind")) return 0;
+  const theirs = s.axis[other(crew)];
+  if (axisV === null || theirs === null || s.axis[crew] !== null) return WIND_RING[s.windPosition];
+  const tilt = s.axis.offset + (crew === "pilot" ? axisV - theirs : theirs - axisV);
+  const n = WIND_RING.length;
+  return WIND_RING[(((s.windPosition - tilt) % n) + n) % n];
+}
+
 function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, number>, brakesAfter: number, axisV: number | null, W: PlanWeights, want: number): number {
   const theirs = s.engines[other(crew)];
-  const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
+  const wind = engineWindFor(s, crew, axisV);
   const landing = s.round >= s.scenario.rounds;
   const plan = flightPlan(s.scenario);
   const outcome = (t: number, now: boolean) => {
