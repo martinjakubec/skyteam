@@ -758,8 +758,6 @@ console.log("19) A card's scripted plan (planPolicy)");
   const speed = me?.target.kind === "engine" ? 4 + e.dice.pilot[me.dieId].value : null;
   check("plan: never completes the Engines into an airplane on its own space", me?.target.kind === "radio" ? e.dice.pilot[me.dieId].value === 1 : speed === null || speed <= e.aeroBlue);
   // Modules it doesn't plan for: hands back to the general policy.
-  const kero = { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]), scenario: { ...lhr([1, 2, 3, 4], [1, 2, 3, 4]).scenario, modules: ["iceBrakes"] } };
-  check("plan: hands modules it doesn't plan for back (null)", planMove(kero, "pilot") === null);
   // Landing round: the Coffee is kept for a level Axis.
   let l = lhr([5, 2, 2, 2], [3, 5, 6, 6], { round: 7, position: 5, airplanes: Array(6).fill(0), coffee: 1, axis: { pilot: null, copilot: null, offset: 0 }, flapsGreen: [true, true, true, false], turn: "copilot" });
   l = reduce(l, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state; // Co-Pilot's 3
@@ -906,6 +904,24 @@ console.log("28) A card can hold one tilt through its turns (tiltHold)");
   const tilt = (m) => (m?.target?.kind === "axis" ? t.dice.pilot[m.dieId].value - 3 : null);
   check(`tiltHold: the rollouts hold +1 from the start (${tilt(f)})`, tilt(f) === 1);
   check(`tiltHold: the plan holds +1 from the start (${tilt(p)})`, tilt(p) === 1);
+}
+
+console.log("29) The plan handles the Kerosene Leak and the Ice Brakes");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, ICE_BRAKE_VALUES } = await import("../packages/shared/src/index.ts");
+  // Kerosene Leak (yellow ATL board): the Co-Pilot's 3 is on the Engines; Pilot 3 (speed 6) and 4 (speed 7) both move
+  // one space — the 3 leaks 1, the 4 leaks 2: answer with the 3.
+  let lk = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-ATL", modules: ["keroseneLeak"], abilities: [] }), P, C), { type: "roll", pilot: [4, 3, 3, 6], copilot: [3, 3, 1, 1], traffic: [5] }, "").state;
+  lk = { ...lk, airplanes: Array(8).fill(0), coffee: 0, turn: "copilot" };
+  lk = reduce(lk, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // Co-Pilot's 3 on the Engines
+  lk = reduce(lk, { type: "placeDie", dieId: 2, target: { kind: "axis" } }, P).state; // level Axis: 3 vs 3
+  lk = reduce(lk, { type: "placeDie", dieId: 1, target: { kind: "axis" } }, C).state;
+  const ml = planMove(lk, "pilot");
+  check("Kerosene Leak: the Engine die that leaks less", ml?.target?.kind === "engine" && lk.dice.pilot[ml.dieId].value === 3);
+  // Ice Brakes (KEF board): the Pilot holds the next step's value: it goes on the top space.
+  const ib = { ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-KEF", modules: ["iceBrakes"], abilities: [] }), P, C), { type: "roll", pilot: [ICE_BRAKE_VALUES[0], 3, 4, 4], copilot: [ICE_BRAKE_VALUES[0], 3, 4, 4], traffic: [5, 5] }, "").state, airplanes: Array(6).fill(0), coffee: 0, round: 3, gearGreen: [true, true, true] }; // (all Gear down: the switch left is the Ice Brakes)
+  const mi = planMove(ib, "pilot");
+  check("Ice Brakes: the next step's die goes on the Ice Brakes", mi?.target?.kind === "iceBrakes");
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

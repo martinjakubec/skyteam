@@ -1,6 +1,6 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { GameRuleError, reduce } from "../game/reducer";
-import { BRAKE_VALUES, FLAPS_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
+import { BRAKE_VALUES, FLAPS_VALUES, ICE_BRAKE_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
 import { firstPlayerForRound, hasAbility, nextInternToken, type GameState } from "../game/state";
 import { playerIdOf } from "./moves";
 import { flightPlan, planTarget, turnBlocks, turnTarget } from "./plan";
@@ -43,6 +43,8 @@ export interface PlanWeights {
   engineMid: number;
   /** Kerosene: per point of fuel a die saves against the idle burn (and per point short of what the rounds left need). */
   kerosene: number;
+  /** Kerosene Leak: per point the Engine dice will leak (their difference + 1). */
+  leak: number;
   /** Intern: training once (×urgent when the tokens left are more than the rounds to train them). */
   intern: number;
   /** Special Abilities: how much better the hand must get to turn a die over (Adaptation, once a
@@ -78,6 +80,7 @@ export const PLAN_WEIGHTS: PlanWeights = {
   ahead: 30,
   engineMid: 15,
   kerosene: 50,
+  leak: 30,
   intern: 90,
   adaptGain: 150,
   anticipateGain: 60,
@@ -94,7 +97,7 @@ function partnerBest(value: (face: number) => number): number {
 }
 type Die = { id: number; value: number };
 /** A free space a die can take: where, and with which value it does something. */
-type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration" | "kerosene" | "intern"; slot: number };
+type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration" | "kerosene" | "intern" | "iceBrakes"; slot: number };
 
 interface Assignment {
   axis?: { die: Die; delta: number };
@@ -111,8 +114,7 @@ export function planMove(s: GameState, crew: Crew, W: PlanWeights = PLAN_WEIGHTS
   if (s.pendingSwap) return s.pendingSwap.from !== crew ? answerSwap(s, crew, W) : null;
   if (s.turn !== crew) return null;
   if (s.pendingReroll || s.internHeld || s.trafficPending) return null;
-  const mods = s.scenario.modules ?? [];
-  if (mods.some((m) => m !== "wind" && m !== "kerosene" && m !== "intern")) return null; // Kerosene Leak, Ice Brakes: not planned for (yet)
+  // (Every module of the base Flight Log is planned for: Real-Time only adds a clock.)
   const hand: Die[] = s.dice[crew].filter((d) => !d.placed && d.value !== undefined).map((d) => ({ id: d.id, value: d.value! }));
   if (hand.length === 0) return null;
   const best = bestAssignment(s, crew, hand, W);
@@ -296,6 +298,10 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
   // pace that gets them all down — urgent once the crew falls behind it.
   const urgency = () => (switchesLeft() >= roundsToPlace - W.switchSlack ? W.urgent : 1);
   let keroOpen = (s.scenario.modules ?? []).includes("kerosene") && s.keroseneSlot == null;
+  const ice = (s.scenario.modules ?? []).includes("iceBrakes");
+  let iceStep = s.brakesDeployed;
+  let iceTop: number | null = s.iceBrakeSlots[iceStep]?.top ?? null;
+  let iceBottom: number | null = s.iceBrakeSlots[iceStep]?.bottom?.value ?? null;
   const internNext = (s.scenario.modules ?? []).includes("intern") && s.internSlots[crew] === null ? nextInternToken(s, crew) : -1;
   let internOpen = internNext >= 0;
   const internToken = internNext >= 0 ? s.internTokens[internNext]! : 0;
@@ -324,7 +330,7 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
         // gearOnPace: a Gear while behind the plan costs every later move (blue + 1).
         const gearW = W.gearOnPace && s.position < planTarget(s) - 1 && urgency() === 1 ? W.gear * 0.2 : W.gear * urgency();
         if (g >= 0) consider(delta, { target: { kind: "landingGear", slot: g }, kind: "gear", slot: g }, gearW);
-        if (brakes < BRAKE_VALUES.length && BRAKE_VALUES[brakes] === v) consider(delta, { target: { kind: "brakes", slot: brakes }, kind: "brakes", slot: brakes }, W.brakes * urgency());
+        if (!ice && brakes < BRAKE_VALUES.length && BRAKE_VALUES[brakes] === v) consider(delta, { target: { kind: "brakes", slot: brakes }, kind: "brakes", slot: brakes }, W.brakes * urgency());
       } else {
         const f = flaps.findIndex((g) => !g);
         if (f >= 0 && FLAPS_VALUES[f].includes(v as never)) consider(delta, { target: { kind: "flaps", slot: f }, kind: "flaps", slot: f }, W.flaps * urgency());
@@ -336,6 +342,14 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
         const need = 2 * (roundsToPlace - 1) + 1;
         const gain = after <= 0 ? -W.fatal : (KEROSENE_IDLE_BURN - v) * W.kerosene - Math.max(0, need - after) * W.kerosene;
         consider(delta, { target: { kind: "kerosene" }, kind: "kerosene", slot: 0 }, gain);
+      }
+      if (ice && iceStep < ICE_BRAKE_VALUES.length && ICE_BRAKE_VALUES[iceStep] === v) {
+        // Ice Brakes: two dice of the step's value in one round (Pilot on top). Finishing a
+        // started step is worth a whole step; starting one, part of it (the other half may not come).
+        const half = (iceTop === null) !== (iceBottom === null);
+        const gain = W.brakes * urgency() * (half ? 2 : 0.6);
+        if (crew === "pilot" && iceTop === null) consider(delta, { target: { kind: "iceBrakes", slot: iceStep, space: "top" }, kind: "iceBrakes", slot: iceStep }, gain);
+        if (iceBottom === null) consider(delta, { target: { kind: "iceBrakes", slot: iceStep, space: "bottom" }, kind: "iceBrakes", slot: iceStep }, gain);
       }
       if (internOpen && v !== internToken) {
         // Intern: training hands over the next token, placed at once like a die of
@@ -368,6 +382,10 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
     else if (p.extra.kind === "concentration") { conc -= 1; coffee = Math.min(MAX_COFFEE, coffee + 1); }
     else if (p.extra.kind === "kerosene") keroOpen = false;
     else if (p.extra.kind === "intern") internOpen = false;
+    else if (p.extra.kind === "iceBrakes") {
+      if ((p.extra.target as { space: string }).space === "top") iceTop = v; else iceBottom = v;
+      if (iceTop !== null && iceBottom !== null) { brakes += 1; iceStep += 1; iceTop = s.iceBrakeSlots[iceStep]?.top ?? null; iceBottom = s.iceBrakeSlots[iceStep]?.bottom?.value ?? null; }
+    }
   }
   // What these dice clear (before the Engines resolve) and the Brakes they set, for the Engine's score.
   const cleared = new Map<number, number>();
@@ -375,7 +393,7 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
     const at = s.position + (x.die.value + x.delta) - 1;
     if ((s.airplanes[at] ?? 0) > 0) cleared.set(at, (cleared.get(at) ?? 0) + 1);
   }
-  const brakesAfter = s.brakesDeployed + list.filter((x) => x.extra.kind === "brakes").length;
+  const brakesAfter = brakes;
   return { list, score, cleared, brakesAfter };
 }
 
@@ -440,7 +458,12 @@ function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, n
   const plan = flightPlan(s.scenario);
   const outcome = (t: number, now: boolean) => {
     const speed = v + t + wind;
-    if (landing) return speed <= (brakesAfter > 0 ? BRAKE_VALUES[brakesAfter - 1] : 0) ? 0 : -W.fatal;
+    const steps = (s.scenario.modules ?? []).includes("iceBrakes") ? ICE_BRAKE_VALUES : BRAKE_VALUES;
+    // Kerosene Leak: the Engine dice drain their difference + 1 as soon as both are down.
+    const leak = (s.scenario.modules ?? []).includes("keroseneLeak") ? Math.abs(v - t) + 1 : 0;
+    if (leak && leak >= s.kerosene) return -W.fatal;
+    const leakCost = leak * W.leak;
+    if (landing) return (speed <= (brakesAfter > 0 ? steps[brakesAfter - 1] : 0) ? 0 : -W.fatal) - leakCost;
     const adv = speed <= s.aeroBlue ? 0 : speed > s.aeroOrange ? 2 : 1;
     for (let step = 0; step < adv; step++) {
       const at = s.position + step;
@@ -448,7 +471,7 @@ function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, n
       if (left > 0 || at >= plan.airport) return -W.fatal;
     }
     if (adv > 0 && turnBlocks(s, adv, now && axisV === null)) return -W.fatal;
-    return adv < want ? -(want - adv) * W.behind : -(adv - want) * W.ahead;
+    return (adv < want ? -(want - adv) * W.behind : -(adv - want) * W.ahead) - leakCost;
   };
   // Mastery: a matching Engine die wins back a spent Reroll.
   if (theirs !== null) return outcome(theirs, true) + (hasAbility(s, "mastery") && s.rerollSpent > 0 && v === theirs ? W.pairBonus : 0);
