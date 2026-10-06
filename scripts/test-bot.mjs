@@ -671,8 +671,11 @@ console.log("15) Flight plan and card profiles");
   const am = fastMove({ ...ts, coffee: 0 }, "pilot", mulberry32(4));
   const tiltAfter = am.target.kind === "axis" ? ts.axis.offset + (ts.dice.pilot[am.dieId].value - 3) : null;
   check(`rollout: on a turn space the Axis answer makes an allowed tilt (${allowed1})`, tiltAfter !== null && allowed1.includes(tiltAfter));
-  // Whole rollouts on TGU: was 37 of 40 "Missed the turn".
+  // Whole rollouts on TGU with the default policy (TGU's own profile set aside): was 37 of 40 "Missed the turn".
+  const tguProfile = BOT_PROFILES_ALL["yellow-TGU"];
+  delete BOT_PROFILES_ALL["yellow-TGU"];
   const tguGames = Array.from({ length: 40 }, (_, i) => rolloutGame(newGame({ scenarioId: "yellow-TGU", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
+  BOT_PROFILES_ALL["yellow-TGU"] = tguProfile;
   const missed = tguGames.filter((g) => /^Missed the turn/.test(g.outcome?.reason ?? "")).length;
   check(`rollout: TGU misses far fewer turns (${missed} of 40; was 37 before turn aiming)`, missed <= 16);
   // Two turns in a row with no tilt in common: a 2-space advance over both can't be flown.
