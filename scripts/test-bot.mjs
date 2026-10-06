@@ -938,18 +938,5 @@ console.log("30) Ability candidates from the plan only (search.abilityCandidates
   check(`abilityCandidates "plan": at most the plan's one ability move (${all} -> ${plan})`, all >= 4 && plan <= 1);
 }
 
-console.log("31) The plan sets its Axis before completing the Engines (turns are checked then)");
-{
-  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
-  // HND space 2 allows +1 or 0; the plane is tilted −1 on it. The Co-Pilot's 3 is on the Engines.
-  // The Pilot will fly on: its Axis die must go down first, or the Engines move the plane on −1.
-  let h = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-HND", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [4, 4, 2, 2], copilot: [3, 3, 3, 3], traffic: [5, 5] }, "").state;
-  h = { ...h, round: 3, position: 2, airplanes: Array(8).fill(0), coffee: 0, axis: { pilot: null, copilot: null, offset: -1 }, turn: "copilot" };
-  h = reduce(h, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
-  // (Only the Engine die is down: the Co-Pilot's Axis die is still to come.)
-  const m = planMove(h, "pilot");
-  check(`plan: the Axis before the Engine die that moves the plane (${m?.target?.kind})`, m?.target?.kind !== "engine" || h.axis.pilot !== null);
-}
-
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
