@@ -84,6 +84,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1 },
   },
+  // yellow KEF (2026-10-06): 7.1% of 420 games (all 6 abilities) at 600 ms, was 2.4% —
+  // well under the 30% fallback after 4 attempts. Ice Brakes take eight dice in pairs.
+  "yellow-KEF": {
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, brakes: 300, flaps: 150, switchSlack: 2 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
