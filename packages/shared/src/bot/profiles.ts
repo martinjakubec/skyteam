@@ -35,6 +35,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
   },
+  // green OSL (2026-10-06): 49.0% of 400 seeds at 600 ms (compiled), was 34.3% —
+  // just under the 50% fallback after 4 attempts. The plan feeds the Kerosene.
+  "green-OSL": {
+    plan: { engineMid: 40, searchBias: 400 },
+    search: { radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
