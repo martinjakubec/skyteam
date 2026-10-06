@@ -56,6 +56,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
   },
+  // yellow LHR (2026-10-06): 34.3% of 400 seeds at 600 ms (compiled), was 8.5% —
+  // above the 30% fallback. Heavy traffic: the plan weighs clearing high.
+  "yellow-LHR": {
+    plan: { engineMid: 40, searchBias: 400, clear: 250, clearHere: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
