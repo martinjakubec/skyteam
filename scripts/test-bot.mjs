@@ -604,8 +604,10 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   check("Intern: games land (≥ 25 of 200)", count(intern, (g) => g.outcome?.result === "won") >= 25);
 }
 
+const { BOT_PROFILES: BOT_PROFILES_ALL } = await import("../packages/shared/src/index.ts");
 console.log("14) Aviator searches the Special Abilities");
 {
+  const savedPRG = BOT_PROFILES_ALL["green-PRG"]; delete BOT_PROFILES_ALL["green-PRG"]; // the default search
   const { searchCandidates, fastMove, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
   // Round 1, the Pilot (First Player) before their first die: every Anticipation
   // die is searched, though the one-step score sees a reroll as "no change".
@@ -626,9 +628,9 @@ console.log("14) Aviator searches the Special Abilities");
     return m.target.kind === "axis" ? s.dice.pilot[m.dieId].value : null;
   };
   check("Control: a tie on the Axis goes to the die matching the partner's", answer(["control"]) === 4 && answer([]) === 2);
+  BOT_PROFILES_ALL["green-PRG"] = savedPRG;
 }
 
-const { BOT_PROFILES: BOT_PROFILES_ALL } = await import("../packages/shared/src/index.ts");
 console.log("15) Flight plan and card profiles");
 {
   const { flightPlan, turnTarget, policyFor, weightsFor, BOT_PROFILES, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIOS, scenarioForSetup } = await import("../packages/shared/src/index.ts");

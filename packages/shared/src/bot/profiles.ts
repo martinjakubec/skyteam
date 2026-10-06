@@ -28,12 +28,12 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true },
   },
-  // green HND (2026-10-06): 26.8% of 400 seeds at 600 ms (compiled), was 13.5% — below
-  // the 50% fallback after 4 attempts. Turns: rollouts pick Axis and Engine dice as a pair.
+  // green HND (2026-10-06, second pass): 32.3% of 400 seeds at 600 ms with 12 at once
+  // (live-like), was 23.0%. Its three turns all allow +1: hold it; clear traffic early.
   "green-HND": {
-    plan: { engineMid: 40, searchBias: 400 },
+    plan: { engineMid: 40, searchBias: 400, tiltHold: 1, gearOnPace: true },
     search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, tiltHold: 1, safeEngines: true, gearOnPace: true, trafficPressure: 1, clearAheadMax: 5 },
   },
   // green OSL (2026-10-06): 49.0% of 400 seeds at 600 ms (compiled), was 34.3% —
   // just under the 50% fallback after 4 attempts. The plan feeds the Kerosene.
@@ -49,12 +49,12 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
   },
-  // green PRG (2026-10-06): 29.3% of 420 games (all 15 ability pairs) at 600 ms, was 19.3% —
-  // under the 50% fallback after 4 attempts.
+  // green PRG (2026-10-06, second pass): 42.4% of 420 games (all 15 ability pairs) at 600 ms
+  // with 12 at once (live-like), was 40.5%. Only the plan's ability move is weighed.
   "green-PRG": {
-    plan: { engineMid: 40, searchBias: 400 },
-    search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true },
+    search: { shortlist: 3, radioCandidate: true, abilityCandidates: "plan" },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, turnPrepAhead: true, gearOnPace: true, clearAheadMax: 5, trafficPressure: 1 },
   },
   // yellow LHR (2026-10-06): 34.3% of 400 seeds at 600 ms (compiled), was 8.5% —
   // above the 30% fallback. Heavy traffic: the plan weighs clearing high.
