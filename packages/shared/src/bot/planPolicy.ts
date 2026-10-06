@@ -1,7 +1,7 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { GameRuleError, reduce } from "../game/reducer";
 import { BRAKE_VALUES, FLAPS_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
-import { nextInternToken, type GameState } from "../game/state";
+import { firstPlayerForRound, hasAbility, nextInternToken, type GameState } from "../game/state";
 import { playerIdOf } from "./moves";
 import { flightPlan, planTarget, turnBlocks, turnTarget } from "./plan";
 import { placementCheck } from "./rollout";
@@ -45,6 +45,13 @@ export interface PlanWeights {
   kerosene: number;
   /** Intern: training once (×urgent when the tokens left are more than the rounds to train them). */
   intern: number;
+  /** Special Abilities: how much better the hand must get to turn a die over (Adaptation, once a
+   *  game), reroll one (Anticipation), or offer one (Working Together). */
+  adaptGain: number;
+  anticipateGain: number;
+  swapGain: number;
+  /** Control / Mastery: a die matching the partner's Axis / Engine die (a Coffee / a Reroll back). */
+  pairBonus: number;
   /** Also drive the rollouts (slower: fewer samples). Otherwise the plan's move is a search candidate. */
   rollouts?: boolean;
   /** Points added to the plan's move's rollout average when the search picks (breaks near-ties). */
@@ -70,6 +77,10 @@ export const PLAN_WEIGHTS: PlanWeights = {
   engineMid: 15,
   kerosene: 50,
   intern: 90,
+  adaptGain: 150,
+  anticipateGain: 60,
+  swapGain: 120,
+  pairBonus: 40,
 };
 
 const FACES = [1, 2, 3, 4, 5, 6];
@@ -91,15 +102,110 @@ interface Assignment {
 }
 
 export function planMove(s: GameState, crew: Crew, W: PlanWeights = PLAN_WEIGHTS): GameCommand | null {
-  if (s.phase !== "placement" || s.turn !== crew) return null;
-  if (s.pendingReroll || s.pendingSwap || s.internHeld || s.trafficHeld || s.trafficPending) return null;
+  if (s.phase !== "placement") return null;
+  // Synchronisation: the Co-Pilot places the held Traffic die where it counts most.
+  if (s.trafficHeld) return crew === "copilot" ? placeTraffic(s, W) : null;
+  // Working Together: answer the partner's offer with the die we'll miss least.
+  if (s.pendingSwap) return s.pendingSwap.from !== crew ? answerSwap(s, crew, W) : null;
+  if (s.turn !== crew) return null;
+  if (s.pendingReroll || s.internHeld || s.trafficPending) return null;
   const mods = s.scenario.modules ?? [];
   if (mods.some((m) => m !== "wind" && m !== "kerosene" && m !== "intern")) return null; // Kerosene Leak, Ice Brakes: not planned for (yet)
   const hand: Die[] = s.dice[crew].filter((d) => !d.placed && d.value !== undefined).map((d) => ({ id: d.id, value: d.value! }));
   if (hand.length === 0) return null;
   const best = bestAssignment(s, crew, hand, W);
   if (!best) return null;
-  return firstPlacement(s, crew, best);
+  return abilityMove(s, crew, hand, best.score, W) ?? firstPlacement(s, crew, best);
+}
+
+/** A hand's worth: its best assignment's score (−∞ when nothing fits). */
+const handScore = (s: GameState, crew: Crew, hand: Die[], W: PlanWeights) => bestAssignment(s, crew, hand, W)?.score ?? -Infinity;
+const withValue = (hand: Die[], i: number, value: number): Die[] => hand.map((d, j) => (j === i ? { id: d.id, value } : d));
+/** The expected worth of the hand with die i rerolled (any face). */
+const rerolled = (s: GameState, crew: Crew, hand: Die[], i: number, W: PlanWeights) =>
+  FACES.reduce((a, f) => a + handScore(s, crew, withValue(hand, i, f), W), 0) / 6;
+
+/**
+ * Special Abilities the crew can play before placing a die: Adaptation turns a
+ * die over when that makes the hand clearly better (once a game: worth saving),
+ * Anticipation rerolls the die whose expected replacement beats keeping it,
+ * Working Together offers a die likewise (the partner's answer is any face).
+ */
+function abilityMove(s: GameState, crew: Crew, hand: Die[], now: number, W: PlanWeights): GameCommand | null {
+  const legal = (cmd: GameCommand) => {
+    try {
+      reduce(s, cmd.type === "anticipate" ? { ...cmd, value: 1 } : (cmd as never), playerIdOf(s, crew));
+      return true;
+    } catch (e) {
+      if (!(e instanceof GameRuleError)) throw e;
+      return false;
+    }
+  };
+  const bestDie = (gainOf: (i: number) => number) => {
+    let bi = -1, bg = -Infinity;
+    for (let i = 0; i < hand.length; i++) {
+      const g = gainOf(i);
+      if (g > bg) [bi, bg] = [i, g];
+    }
+    return { i: bi, gain: bg };
+  };
+  if (hasAbility(s, "adaptation") && !s.adaptationUsed[crew]) {
+    const b = bestDie((i) => handScore(s, crew, withValue(hand, i, 7 - hand[i].value), W) - now);
+    const cmd: GameCommand = { type: "adapt", dieId: hand[b.i]?.id ?? -1 };
+    if (b.gain > W.adaptGain && legal(cmd)) return cmd;
+  }
+  if (hasAbility(s, "anticipation") && !s.anticipated && crew === firstPlayerForRound(s.round) && !s.dice[crew].some((d) => d.placed)) {
+    const b = bestDie((i) => rerolled(s, crew, hand, i, W) - now);
+    const cmd = { type: "anticipate", dieId: hand[b.i]?.id ?? -1 } as GameCommand;
+    if (b.gain > W.anticipateGain && legal(cmd)) return cmd;
+  }
+  if (hasAbility(s, "workingTogether") && !s.swappedThisRound && s.dice[other(crew)].some((d) => !d.placed)) {
+    const b = bestDie((i) => rerolled(s, crew, hand, i, W) - now);
+    const cmd: GameCommand = { type: "swap", dieId: hand[b.i]?.id ?? -1 };
+    if (b.gain > W.swapGain && legal(cmd)) return cmd;
+  }
+  return null;
+}
+
+/** Working Together, answering: give the die whose loss (for the offered value) hurts least. */
+function answerSwap(s: GameState, crew: Crew, W: PlanWeights): GameCommand | null {
+  const offer = s.pendingSwap!;
+  const offered = s.dice[offer.from].find((d) => d.id === offer.dieId)?.value;
+  const hand: Die[] = s.dice[crew].filter((d) => !d.placed && d.value !== undefined).map((d) => ({ id: d.id, value: d.value! }));
+  if (hand.length === 0) return null;
+  let best: Die | null = null, bestScore = -Infinity;
+  for (let i = 0; i < hand.length; i++) {
+    const score = offered !== undefined ? handScore(s, crew, withValue(hand, i, offered), W) : rerolled(s, crew, hand, i, W);
+    if (score > bestScore) [best, bestScore] = [hand[i], score];
+  }
+  return best ? { type: "swap", dieId: best.id } : null;
+}
+
+/** Synchronisation: the held Traffic die goes on the empty space (either colour) where it does most. */
+function placeTraffic(s: GameState, W: PlanWeights): GameCommand | null {
+  const v = s.trafficHeld!.value;
+  const want = moveWanted(s);
+  const options: { target: PlacementTarget; gain: number }[] = [];
+  const at = s.position + v - 1;
+  const clears = (s.airplanes[at] ?? 0) > 0 ? W.clear + (at - s.position <= want ? W.clearHere : 0) : -2;
+  for (const side of ["pilot", "copilot"] as const) for (const slot of side === "pilot" ? [0] : [0, 1]) options.push({ target: { kind: "radio", slot, side }, gain: clears });
+  LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as never) && options.push({ target: { kind: "landingGear", slot }, gain: W.gear }));
+  const f = s.flapsGreen.findIndex((g) => !g);
+  if (f >= 0 && FLAPS_VALUES[f].includes(v as never)) options.push({ target: { kind: "flaps", slot: f }, gain: W.flaps });
+  if (s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === v) options.push({ target: { kind: "brakes", slot: s.brakesDeployed }, gain: W.brakes });
+  if ((s.scenario.modules ?? []).includes("kerosene") && s.keroseneSlot == null && v < s.kerosene) options.push({ target: { kind: "kerosene" }, gain: (KEROSENE_IDLE_BURN - v) * W.kerosene });
+  for (const slot of [0, 1]) options.push({ target: { kind: "concentration", slot }, gain: s.coffee < MAX_COFFEE ? W.coffeeGain : 0 });
+  options.sort((a, b) => b.gain - a.gain);
+  for (const o of options) {
+    const cmd: GameCommand = { type: "placeTraffic", target: o.target };
+    try {
+      reduce(s, cmd, playerIdOf(s, "copilot"));
+      return cmd;
+    } catch (e) {
+      if (!(e instanceof GameRuleError)) throw e;
+    }
+  }
+  return null;
 }
 
 const other = (c: Crew): Crew => (c === "pilot" ? "copilot" : "pilot");
@@ -299,7 +405,8 @@ function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights, want: nu
   const tiltWith = (t: number) => s.axis.offset + (crew === "pilot" ? v - t : t - v);
   const cost = (tilt: number) =>
     (Math.abs(tilt) >= s.scenario.axisSpinAt || (landing && tilt !== 0) ? W.fatal : 0) + Math.abs(tilt - goal) * W.tilt;
-  if (theirs !== null) return -cost(tiltWith(theirs));
+  // Control: a matching Axis die gains a Coffee.
+  if (theirs !== null) return -cost(tiltWith(theirs)) + (hasAbility(s, "control") && s.coffee < MAX_COFFEE && v === theirs ? W.pairBonus : 0);
   return partnerBest((f) => -cost(tiltWith(f)));
 }
 
@@ -326,7 +433,8 @@ function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, n
     if (adv > 0 && turnBlocks(s, adv, now && axisV === null)) return -W.fatal;
     return adv < want ? -(want - adv) * W.behind : -(adv - want) * W.ahead;
   };
-  if (theirs !== null) return outcome(theirs, true);
+  // Mastery: a matching Engine die wins back a spent Reroll.
+  if (theirs !== null) return outcome(theirs, true) + (hasAbility(s, "mastery") && s.rerollSpent > 0 && v === theirs ? W.pairBonus : 0);
   // First Engine die: about half the speed the plan wants, so the partner can
   // complete it (each crew assuming the other will cover leaves the plane stalled).
   const target = landing ? Math.min(brakesAfter > 0 ? BRAKE_VALUES[brakesAfter - 1] : 2, s.aeroBlue) : want === 0 ? s.aeroBlue : want === 1 ? (s.aeroBlue + 1 + s.aeroOrange) / 2 : s.aeroOrange + 2;

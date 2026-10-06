@@ -847,5 +847,30 @@ console.log("24) The plan trains the Intern");
   check(`plan: trains the Intern when it's behind (next token ${token})`, m?.target.kind === "intern" && a.dice.pilot[m.dieId].value !== token);
 }
 
+console.log("26) The plan plans the Special Abilities");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const prg = (abilities, dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-PRG", modules: [], abilities }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state, airplanes: Array(8).fill(0), coffee: 0, ...extra });
+  // Adaptation: the Pilot's 6 turned to a 1 fits the first Gear and an open Radio... a hand of all 6s is poor: flip one.
+  const ad = prg(["adaptation"], [6, 6, 6, 6], [3, 3, 4, 4], { round: 3 });
+  const ma = planMove(ad, "pilot");
+  check("Adaptation: a hand of 6s gets a die turned over", ma?.type === "adapt");
+  // …but not a hand that already fits.
+  const ok = prg(["adaptation"], [1, 2, 3, 4], [3, 3, 4, 4], { round: 3 });
+  check("Adaptation: kept for later when the hand fits", planMove(ok, "pilot")?.type !== "adapt");
+  // Anticipation: the First Player (Pilot, round 1) rerolls a die before the first one is placed when the hand is poor.
+  const an = prg(["anticipation"], [6, 6, 6, 6], [3, 3, 4, 4]);
+  check("Anticipation: a poor opening hand rerolls a die", planMove(an, "pilot")?.type === "anticipate");
+  // Control: with the Co-Pilot's 4 on the Axis, a matching 4 (Coffee) beats an equally level 4… and the 4 levels: choose it.
+  let co = prg(["control"], [4, 2, 6, 6], [4, 1, 1, 1], { turn: "copilot", round: 2 });
+  co = reduce(co, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const mc = planMove(co, "pilot");
+  check("Control: answers the partner's Axis die with a match", mc?.target?.kind === "axis" && co.dice.pilot[mc.dieId].value === 4);
+  // Synchronisation: the Co-Pilot places a held Traffic die of 2 where it does something (the first Flaps).
+  const sy = prg(["synchronisation"], [3, 3, 4, 4], [3, 3, 4, 4], { round: 2, trafficHeld: { value: 2 }, turn: "copilot" });
+  const ms = planMove(sy, "copilot");
+  check("Synchronisation: places the Traffic die where it counts", ms?.type === "placeTraffic" && ["flaps", "radio", "landingGear", "brakes"].includes(ms.target.kind));
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
