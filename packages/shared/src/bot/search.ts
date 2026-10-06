@@ -124,8 +124,11 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
   // Anticipation reroll scores as "no change", so it never made the shortlist),
   // so they're searched too — every Anticipation die (once a round, at most
   // four), and the best Adaptation and Working Together offer.
-  for (const m of all) if (m.type === "anticipate" && !ranked.includes(m)) ranked.push(m);
-  for (const type of ABILITY_MOVES) {
+  // (A card set to abilityCandidates "plan" skips these: its plan's ability move, added
+  // above, is the one weighed — every extra candidate costs the others samples.)
+  const everyAbility = searchFor(view).abilityCandidates !== "plan";
+  if (everyAbility) for (const m of all) if (m.type === "anticipate" && !ranked.includes(m)) ranked.push(m);
+  if (everyAbility) for (const type of ABILITY_MOVES) {
     if (ranked.some((m) => m.type === type)) continue;
     const best = all.find((m) => m.type === type);
     if (best) ranked.push(best);

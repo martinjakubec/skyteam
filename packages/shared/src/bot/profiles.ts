@@ -9,7 +9,7 @@ export interface BotProfile {
   policy?: Partial<typeof POLICY_PARAMS>;
   eval?: Partial<typeof EVAL_WEIGHTS>;
   /** Search settings: fewer candidates means more samples for each in the same time. */
-  search?: { shortlist?: number; radioCandidate?: boolean };
+  search?: { shortlist?: number; radioCandidate?: boolean; abilityCandidates?: "all" | "plan" };
   /** Play the card's scripted plan (planPolicy.ts) in the rollouts, with these weights over the defaults. */
   plan?: Partial<PlanWeights> | true;
 }
@@ -120,9 +120,9 @@ export function weightsFor(s: GameState): typeof EVAL_WEIGHTS {
 }
 
 /** The search's settings for this game: its card's shortlist (else 6) and Radio candidate. */
-export function searchFor(s: GameState): { shortlist: number; radioCandidate: boolean } {
+export function searchFor(s: GameState): { shortlist: number; radioCandidate: boolean; abilityCandidates: "all" | "plan" } {
   const c = s.scenario.cardId ? BOT_PROFILES[s.scenario.cardId]?.search : undefined;
-  return { shortlist: c?.shortlist ?? 6, radioCandidate: c?.radioCandidate ?? SEARCH_DEFAULTS.radioCandidate };
+  return { shortlist: c?.shortlist ?? 6, radioCandidate: c?.radioCandidate ?? SEARCH_DEFAULTS.radioCandidate, abilityCandidates: c?.abilityCandidates ?? "all" };
 }
 
 /** The card's scripted-plan weights, or null when the card has no plan. */

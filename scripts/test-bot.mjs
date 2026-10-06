@@ -924,5 +924,19 @@ console.log("29) The plan handles the Kerosene Leak and the Ice Brakes");
   check("Ice Brakes: the next step's die goes on the Ice Brakes", mi?.target?.kind === "iceBrakes");
 }
 
+console.log("30) Ability candidates from the plan only (search.abilityCandidates)");
+{
+  const { searchCandidates, redactGameStateFor, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const setup = { scenarioId: "green-PRG", modules: [], abilities: ["anticipation", "adaptation"] };
+  const v = redactGameStateFor(ng(setup, P, C, mulberry32(1), 0), P);
+  const saved = BOT_PROFILES_ALL["green-PRG"];
+  BOT_PROFILES_ALL["green-PRG"] = { ...saved, search: { ...saved?.search, abilityCandidates: "all" } };
+  const all = searchCandidates(v, "pilot", mulberry32(2), 3).filter((m) => m.type === "anticipate" || m.type === "adapt").length;
+  BOT_PROFILES_ALL["green-PRG"] = { ...saved, search: { ...saved?.search, abilityCandidates: "plan" } };
+  const plan = searchCandidates(v, "pilot", mulberry32(2), 3).filter((m) => m.type === "anticipate" || m.type === "adapt").length;
+  BOT_PROFILES_ALL["green-PRG"] = saved;
+  check(`abilityCandidates "plan": at most the plan's one ability move (${all} -> ${plan})`, all >= 4 && plan <= 1);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
