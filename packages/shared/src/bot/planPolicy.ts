@@ -47,6 +47,8 @@ export interface PlanWeights {
   rollouts?: boolean;
   /** Points added to the plan's move's rollout average when the search picks (breaks near-ties). */
   searchBias?: number;
+  /** A Landing Gear is worth a fifth while the plane is behind its plan. */
+  gearOnPace?: boolean;
 }
 
 export const PLAN_WEIGHTS: PlanWeights = {
@@ -204,7 +206,9 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
       }
       if (crew === "pilot") {
         const g = LANDING_GEAR_VALUES.findIndex((vals, i) => !gear[i] && vals.includes(v as never));
-        if (g >= 0) consider(delta, { target: { kind: "landingGear", slot: g }, kind: "gear", slot: g }, W.gear * urgency());
+        // gearOnPace: a Gear while behind the plan costs every later move (blue + 1).
+        const gearW = W.gearOnPace && s.position < planTarget(s) - 1 && urgency() === 1 ? W.gear * 0.2 : W.gear * urgency();
+        if (g >= 0) consider(delta, { target: { kind: "landingGear", slot: g }, kind: "gear", slot: g }, gearW);
         if (brakes < BRAKE_VALUES.length && BRAKE_VALUES[brakes] === v) consider(delta, { target: { kind: "brakes", slot: brakes }, kind: "brakes", slot: brakes }, W.brakes * urgency());
       } else {
         const f = flaps.findIndex((g) => !g);

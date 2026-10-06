@@ -99,6 +99,8 @@ export const POLICY_PARAMS = {
   safeEngines: false,
   /** Pick the Axis and Engine dice as a pair (both orders), not the Axis's first. Off by default; set per card. */
   jointPicks: false,
+  /** No Landing Gear while the plane is behind its flight plan (unless it can't wait). Off by default; set per card. */
+  gearOnPace: false,
 };
 
 /**
@@ -310,7 +312,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
     if (crew === "pilot") {
       // Each Landing Gear raises the speed needed to fly on: lower them once
       // the approach is on schedule, or when they can't wait any longer.
-      if (gearNow) LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as DieValue) && out.push({ kind: "landingGear", slot }));
+      if (gearAllowed) LANDING_GEAR_VALUES.forEach((vals, slot) => !s.gearGreen[slot] && vals.includes(v as DieValue) && out.push({ kind: "landingGear", slot }));
       if (!ice && s.brakesDeployed < BRAKE_VALUES.length && BRAKE_VALUES[s.brakesDeployed] === v) out.push({ kind: "brakes", slot: s.brakesDeployed });
     } else {
       const next = s.flapsGreen.findIndex((g) => !g);
@@ -359,6 +361,8 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const behind = switchesLeft >= roundsToPlace - P.behindSlack;
   const gearLeft = s.gearGreen.filter((g) => !g).length;
   const gearNow = gearLeft >= roundsToPlace - P.gearSlack || remaining <= roundsAfter + P.paceSlack;
+  // gearOnPace: each Gear raises the speed needed to move — none while the plane is behind its plan.
+  const gearAllowed = gearNow && (!P.gearOnPace || s.position >= planTarget(s) - 1 || gearLeft >= roundsToPlace - P.gearSlack);
   // Kerosene: one die a round burns its value; an empty space burns 6 at the
   // round's end. A low spare die goes there early; late in the round any die
   // under 6 beats the idle burn — never one that would empty the tank.
