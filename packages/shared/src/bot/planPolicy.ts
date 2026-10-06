@@ -470,7 +470,8 @@ function engineScore(s: GameState, crew: Crew, v: number, cleared: Map<number, n
       const left = (s.airplanes[at] ?? 0) - (cleared.get(at) ?? 0);
       if (left > 0 || at >= plan.airport) return -W.fatal;
     }
-    if (adv > 0 && turnBlocks(s, adv, now && axisV === null)) return -W.fatal;
+    // Our Axis die fixes the tilt before the move only if the partner's is already down.
+    if (adv > 0 && turnBlocks(s, adv, now && !(axisV !== null && s.axis[other(crew)] !== null))) return -W.fatal;
     return (adv < want ? -(want - adv) * W.behind : -(adv - want) * W.ahead) - leakCost;
   };
   // Mastery: a matching Engine die wins back a spent Reroll.
@@ -494,7 +495,12 @@ function firstPlacement(s: GameState, crew: Crew, a: Assignment): GameCommand | 
   if (a.axis && s.axis[partner] !== null) tries.push(place(a.axis.die, { kind: "axis" }, a.axis.delta));
   const here = a.extras.filter((x) => x.extra.kind === "radio" && x.die.value + x.delta === 1);
   for (const x of here) tries.push(place(x.die, x.extra.target, x.delta));
-  if (a.engine && s.engines[partner] !== null && here.length === 0) tries.push(place(a.engine.die, { kind: "engine" }, a.engine.delta));
+  // Completing the Engines moves the plane now, and a turn is checked against the tilt at that
+  // moment: while a turn is in play and the Axis isn't final, that die waits until last.
+  const turnInPlay = flightPlan(s.scenario).turn.slice(s.position, s.position + 2).some(Boolean);
+  const axisFinal = s.axis.pilot !== null && s.axis.copilot !== null;
+  const engineNow = a.engine && s.engines[partner] !== null && here.length === 0 && (!turnInPlay || axisFinal);
+  if (engineNow) tries.push(place(a.engine!.die, { kind: "engine" }, a.engine!.delta));
   for (const x of a.extras) if (!here.includes(x)) tries.push(place(x.die, x.extra.target, x.delta));
   if (a.axis) tries.push(place(a.axis.die, { kind: "axis" }, a.axis.delta));
   if (a.engine) tries.push(place(a.engine.die, { kind: "engine" }, a.engine.delta));
