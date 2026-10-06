@@ -63,6 +63,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
   },
+  // yellow GIG (2026-10-06): 19.8% of 420 games (all 6 abilities) at 600 ms, was 5.7% —
+  // under the 30% fallback after 4 attempts. Wind: the plan reads it after the Axis turns it.
+  "yellow-GIG": {
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
