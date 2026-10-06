@@ -49,6 +49,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
   },
+  // green PRG (2026-10-06): 29.3% of 420 games (all 15 ability pairs) at 600 ms, was 19.3% —
+  // under the 50% fallback after 4 attempts.
+  "green-PRG": {
+    plan: { engineMid: 40, searchBias: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
