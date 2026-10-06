@@ -1,7 +1,7 @@
 import type { GameCommand, PlacementTarget } from "../protocol";
 import { GameRuleError, reduce } from "../game/reducer";
 import { BRAKE_VALUES, FLAPS_VALUES, KEROSENE_IDLE_BURN, LANDING_GEAR_VALUES, MAX_COFFEE, WIND_RING, type Crew } from "../game/scenario";
-import { type GameState } from "../game/state";
+import { nextInternToken, type GameState } from "../game/state";
 import { playerIdOf } from "./moves";
 import { flightPlan, planTarget, turnBlocks, turnTarget } from "./plan";
 import { placementCheck } from "./rollout";
@@ -43,6 +43,8 @@ export interface PlanWeights {
   engineMid: number;
   /** Kerosene: per point of fuel a die saves against the idle burn (and per point short of what the rounds left need). */
   kerosene: number;
+  /** Intern: training once (×urgent when the tokens left are more than the rounds to train them). */
+  intern: number;
   /** Also drive the rollouts (slower: fewer samples). Otherwise the plan's move is a search candidate. */
   rollouts?: boolean;
   /** Points added to the plan's move's rollout average when the search picks (breaks near-ties). */
@@ -67,6 +69,7 @@ export const PLAN_WEIGHTS: PlanWeights = {
   ahead: 30,
   engineMid: 15,
   kerosene: 50,
+  intern: 90,
 };
 
 const FACES = [1, 2, 3, 4, 5, 6];
@@ -78,7 +81,7 @@ function partnerBest(value: (face: number) => number): number {
 }
 type Die = { id: number; value: number };
 /** A free space a die can take: where, and with which value it does something. */
-type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration" | "kerosene"; slot: number };
+type Extra = { target: PlacementTarget; kind: "radio" | "gear" | "flaps" | "brakes" | "concentration" | "kerosene" | "intern"; slot: number };
 
 interface Assignment {
   axis?: { die: Die; delta: number };
@@ -91,7 +94,7 @@ export function planMove(s: GameState, crew: Crew, W: PlanWeights = PLAN_WEIGHTS
   if (s.phase !== "placement" || s.turn !== crew) return null;
   if (s.pendingReroll || s.pendingSwap || s.internHeld || s.trafficHeld || s.trafficPending) return null;
   const mods = s.scenario.modules ?? [];
-  if (mods.some((m) => m !== "wind" && m !== "kerosene")) return null; // Kerosene Leak, Ice Brakes, Intern…: not planned for (yet)
+  if (mods.some((m) => m !== "wind" && m !== "kerosene" && m !== "intern")) return null; // Kerosene Leak, Ice Brakes: not planned for (yet)
   const hand: Die[] = s.dice[crew].filter((d) => !d.placed && d.value !== undefined).map((d) => ({ id: d.id, value: d.value! }));
   if (hand.length === 0) return null;
   const best = bestAssignment(s, crew, hand, W);
@@ -184,6 +187,9 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
   // pace that gets them all down — urgent once the crew falls behind it.
   const urgency = () => (switchesLeft() >= roundsToPlace - W.switchSlack ? W.urgent : 1);
   let keroOpen = (s.scenario.modules ?? []).includes("kerosene") && s.keroseneSlot == null;
+  const internNext = (s.scenario.modules ?? []).includes("intern") && s.internSlots[crew] === null ? nextInternToken(s, crew) : -1;
+  let internOpen = internNext >= 0;
+  const internToken = internNext >= 0 ? s.internTokens[internNext]! : 0;
   const left = [...dice];
   // Greedy by worth: each step places the die-and-space pair worth the most now
   // (so a 2 that clears the next space beats a 5 that clears a far one for the
@@ -222,6 +228,15 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
         const gain = after <= 0 ? -W.fatal : (KEROSENE_IDLE_BURN - v) * W.kerosene - Math.max(0, need - after) * W.kerosene;
         consider(delta, { target: { kind: "kerosene" }, kind: "kerosene", slot: 0 }, gain);
       }
+      if (internOpen && v !== internToken) {
+        // Intern: training hands over the next token, placed at once like a die of
+        // its number — worth the training, plus an airplane it would then clear.
+        const tokenAt = s.position + internToken - 1;
+        const tokenClears = (planes[tokenAt] ?? 0) > 0 ? W.clear : 0;
+        const tokensLeft = s.internTokens.filter((t) => t !== null).length;
+        const internUrgent = tokensLeft >= roundsToPlace ? W.urgent : 1;
+        consider(delta, { target: { kind: "intern", side: crew }, kind: "intern", slot: 0 }, W.intern * internUrgent + tokenClears);
+      }
       if (delta === 0 && conc > 0) consider(0, { target: { kind: "concentration", slot: concSlot(s, list) }, kind: "concentration", slot: 0 }, coffee < MAX_COFFEE ? W.coffeeGain : 0);
     }
     }
@@ -243,6 +258,7 @@ function assignExtras(s: GameState, crew: Crew, dice: Die[], coffeeLeft: number,
     else if (p.extra.kind === "brakes") brakes += 1;
     else if (p.extra.kind === "concentration") { conc -= 1; coffee = Math.min(MAX_COFFEE, coffee + 1); }
     else if (p.extra.kind === "kerosene") keroOpen = false;
+    else if (p.extra.kind === "intern") internOpen = false;
   }
   // What these dice clear (before the Engines resolve) and the Brakes they set, for the Engine's score.
   const cleared = new Map<number, number>();

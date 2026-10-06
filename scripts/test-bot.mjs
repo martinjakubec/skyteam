@@ -836,5 +836,16 @@ console.log("23) The plan prepares the tilt for the turn it's flying into");
   check(`plan: tilts toward the coming turn's tilt (tilt ${tilt})`, tilt === 1);
 }
 
+console.log("24) The plan trains the Intern");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, nextInternToken } = await import("../packages/shared/src/index.ts");
+  const atl = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-ATL", modules: ["intern"], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5, 5, 5, 5] }, "").state, ...extra });
+  // Late (round 5), all six tokens untrained: training is urgent — a spare die goes to the Intern.
+  const a = atl([3, 3, 4, 4], [3, 3, 4, 4], { round: 5, airplanes: Array(8).fill(0), coffee: 0 });
+  const token = a.internTokens[nextInternToken(a, "pilot")];
+  const m = planMove(a, "pilot");
+  check(`plan: trains the Intern when it's behind (next token ${token})`, m?.target.kind === "intern" && a.dice.pilot[m.dieId].value !== token);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);
