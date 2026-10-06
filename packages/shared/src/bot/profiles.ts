@@ -42,6 +42,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true },
   },
+  // green ATL (2026-10-06): 46.3% of 400 seeds at 600 ms (compiled), was 19.8% —
+  // under the 50% fallback after 4 attempts. The plan trains the Intern.
+  "green-ATL": {
+    plan: { engineMid: 40, searchBias: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
