@@ -77,6 +77,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: 1 },
   },
+  // yellow KUL (2026-10-06): 13.6% of 420 games (all 6 abilities) at 600 ms, was 3.3% —
+  // under the 30% fallback after 4 attempts. Its four turns all allow −1: hold it.
+  "yellow-KUL": {
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: -1, clear: 250, clearHere: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1 },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
