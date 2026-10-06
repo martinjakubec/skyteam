@@ -70,19 +70,21 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true },
   },
-  // yellow TGU (2026-10-06): 9.5% of 420 games (all 15 ability pairs) at 600 ms, was 4.8% —
-  // well under the 30% fallback after 4 attempts. Its three turns all allow +1: hold it.
+  // yellow TGU (2026-10-06, second pass): 19.0% of 420 games (all 15 ability pairs) at 600 ms
+  // with 12 at once (live-like), was 13.8%. Hold +1 through its three turns; peek rollouts.
   "yellow-TGU": {
     plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: 1 },
     search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: 1 },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: 1, peek: true },
   },
-  // yellow KUL (2026-10-06): 13.6% of 420 games (all 6 abilities) at 600 ms, was 3.3% —
-  // under the 30% fallback after 4 attempts. Its four turns all allow −1: hold it.
+  // yellow KUL (2026-10-06, second pass): 20.0% of 420 games (all 6 abilities) at 600 ms with
+  // 12 at once (live-like), was 14.8%. Hold −1 through its four turns; the rollouts plan
+  // against the partner's sampled dice (peek), which coordinates the tilt.
   "yellow-KUL": {
     plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: -1, clear: 250, clearHere: 400 },
-    search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1 },
+    search: { shortlist: 4, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1, peek: true },
+    eval: { turnPrep: 300, turn: 1200, tilt: 160 },
   },
   // yellow KEF (2026-10-06): 7.1% of 420 games (all 6 abilities) at 600 ms, was 2.4% —
   // well under the 30% fallback after 4 attempts. Ice Brakes take eight dice in pairs.
