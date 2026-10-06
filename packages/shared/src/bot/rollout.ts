@@ -101,6 +101,8 @@ export const POLICY_PARAMS = {
   jointPicks: false,
   /** No Landing Gear while the plane is behind its flight plan (unless it can't wait). Off by default; set per card. */
   gearOnPace: false,
+  /** A card whose turns all allow one tilt holds it the whole approach (level for the landing). Null: off. */
+  tiltHold: null as number | null,
 };
 
 /**
@@ -218,7 +220,7 @@ export function fastMove(s: GameState, crew: Crew, rand: Rand): GameCommand | nu
   const planGap = landing ? 0 : planTarget(s) - s.position;
   const want = Math.max(0, Math.min(2, remaining, Math.max(planGap, Math.ceil(remaining / (roundsAfter + 1)))));
   // The tilt to aim for: what the turns flown off this round allow, else level.
-  const tiltGoal = landing ? 0 : turnTarget(s, want) ?? (P.turnPrepAhead ? turnAhead(s, want) : null) ?? 0;
+  const tiltGoal = landing ? 0 : P.tiltHold ?? turnTarget(s, want) ?? (P.turnPrepAhead ? turnAhead(s, want) : null) ?? 0;
   const wind = s.scenario.modules?.includes("wind") ? WIND_RING[s.windPosition] : 0;
   const steps = ice ? ICE_BRAKE_VALUES : BRAKE_VALUES;
   const brakeLimit = s.brakesDeployed > 0 ? steps[s.brakesDeployed - 1] : 0;

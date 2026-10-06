@@ -887,5 +887,23 @@ console.log("27) The plan reads the Wind after the Axis turns it");
   check(`plan: predicts the Wind after this round's Axis (${after})`, engineWindFor(g, "pilot", 3) === after);
 }
 
+console.log("28) A card can hold one tilt through its turns (tiltHold)");
+{
+  const { fastMove, planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // TGU round 1 on the start space (no turn there): level, the Co-Pilot's 3 on the Axis. Pilot 4 → +1, 3 → 0.
+  let t = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-TGU", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [3, 4, 6, 6], copilot: [3, 1, 1, 1], traffic: [5, 5, 5] }, "").state;
+  t = { ...t, airplanes: Array(5).fill(0), coffee: 0, turn: "copilot" };
+  t = reduce(t, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const saved = BOT_PROFILES_ALL["yellow-TGU"];
+  BOT_PROFILES_ALL["yellow-TGU"] = { policy: { tiltHold: 1 }, plan: { tiltHold: 1 } };
+  const f = fastMove(t, "pilot", mulberry32(1));
+  const { planFor } = await import("../packages/shared/src/index.ts");
+  const p = planMove(t, "pilot", planFor(t)); // as the search calls it: with the card's weights
+  BOT_PROFILES_ALL["yellow-TGU"] = saved;
+  const tilt = (m) => (m?.target?.kind === "axis" ? t.dice.pilot[m.dieId].value - 3 : null);
+  check(`tiltHold: the rollouts hold +1 from the start (${tilt(f)})`, tilt(f) === 1);
+  check(`tiltHold: the plan holds +1 from the start (${tilt(p)})`, tilt(p) === 1);
+}
+
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

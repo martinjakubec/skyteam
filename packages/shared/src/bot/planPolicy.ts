@@ -58,6 +58,8 @@ export interface PlanWeights {
   searchBias?: number;
   /** A Landing Gear is worth a fifth while the plane is behind its plan. */
   gearOnPace?: boolean;
+  /** Hold this tilt the whole approach (a card whose turns all allow it); level for the landing. */
+  tiltHold?: number;
 }
 
 export const PLAN_WEIGHTS: PlanWeights = {
@@ -402,10 +404,10 @@ function moveWanted(s: GameState): number {
 function axisScore(s: GameState, crew: Crew, v: number, W: PlanWeights, want: number): number {
   const theirs = s.axis[other(crew)];
   const landing = s.round >= s.scenario.rounds;
-  const goal = landing ? 0 : turnTarget(s, want) ?? 0;
+  const goal = landing ? 0 : W.tiltHold ?? turnTarget(s, want) ?? 0;
   const tiltWith = (t: number) => s.axis.offset + (crew === "pilot" ? v - t : t - v);
   const cost = (tilt: number) =>
-    (Math.abs(tilt) >= s.scenario.axisSpinAt || (landing && tilt !== 0) ? W.fatal : 0) + Math.abs(tilt - goal) * W.tilt;
+    (Math.abs(tilt) >= s.scenario.axisSpinAt || (landing && tilt !== 0) ? W.fatal : 0) + Math.abs(tilt - goal) * (W.tiltHold !== undefined && !landing ? 3 * W.tilt : W.tilt);
   // Control: a matching Axis die gains a Coffee.
   if (theirs !== null) return -cost(tiltWith(theirs)) + (hasAbility(s, "control") && s.coffee < MAX_COFFEE && v === theirs ? W.pairBonus : 0);
   return partnerBest((f) => -cost(tiltWith(f)));
