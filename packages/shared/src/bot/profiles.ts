@@ -98,6 +98,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, trafficPressure: 1 },
   },
+  // yellow ATL (2026-10-06): 7.4% of 420 games (all 6 abilities) at 600 ms, was 0.0%. Heaviest traffic of
+  // all (10 airplanes, 5 Traffic dice); its two turns both allow −1: hold it.
+  "yellow-ATL": {
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: -1, clear: 250, clearHere: 400 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1 },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
