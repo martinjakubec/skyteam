@@ -70,6 +70,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true },
   },
+  // yellow TGU (2026-10-06): 9.5% of 420 games (all 15 ability pairs) at 600 ms, was 4.8% —
+  // well under the 30% fallback after 4 attempts. Its three turns all allow +1: hold it.
+  "yellow-TGU": {
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: 1 },
+    search: { shortlist: 3, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: 1 },
+  },
 };
 
 /** The rollout policy's settings for this game: the defaults, with the card's overrides. */
