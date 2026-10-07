@@ -2204,9 +2204,6 @@ ul {
 .debrief-crew li.copilot {
   border-left-color: var(--orange);
 }
-.debrief-crew li.is-ready {
-  background: rgba(111, 224, 111, 0.35);
-}
 .debrief-count {
   align-self: center;
   margin: 0;
