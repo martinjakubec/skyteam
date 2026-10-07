@@ -94,14 +94,15 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const first = quickMove(redactGameStateFor(r, P), "pilot", mulberry32(5));
   check("keeps its safest Axis die rather than spending it elsewhere", !(first.type === "placeDie" && r.dice.pilot[first.dieId].value === 3 && first.target.kind !== "axis"));
 
-  // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6.
-  const paced = (position) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), engines: { pilot: 3, copilot: 3 }, position, airplanes: Array(8).fill(0) });
-  check("pace counts the rounds left after this round's move", evaluate(paced(2), "pilot") > evaluate(paced(1), "pilot"));
+  // Pace: after round 1's move, 5 moving rounds remain (2–6), not 6, so YUL's
+  // 6 spaces need the plane on space 1 already.
+  const paced = (position) => ({ ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), engines: { pilot: 3, copilot: 3 }, position, airplanes: Array(7).fill(0) });
+  check("pace counts the rounds left after this round's move", evaluate(paced(1), "pilot") > evaluate(paced(0), "pilot"));
   // Behind schedule (round 5, 3 spaces left, 1 moving round after this one): a
   // hand that can reach speed 9+ for a double move beats one that can't.
-  const behind = (hand) => ({ ...fresh(hand, [1, 1, 1, 1]), round: 5, position: 4, airplanes: Array(8).fill(0) });
+  const behind = (hand) => ({ ...fresh(hand, [1, 1, 1, 1]), round: 5, position: 3, airplanes: Array(7).fill(0) });
   check("pace: keeps the fast Engine dice it needs to catch up", evaluate(behind([6, 6, 6, 6]), "pilot") - evaluate(behind([1, 1, 1, 1]), "pilot") > 500);
-  check("pace: leaving a space with an airplane on it is fatal", evaluate({ ...behind([6, 6, 6, 6]), airplanes: [0, 0, 0, 0, 1, 0, 0, 0] }, "pilot") < evaluate(behind([6, 6, 6, 6]), "pilot") - 2000);
+  check("pace: leaving a space with an airplane on it is fatal", evaluate({ ...behind([6, 6, 6, 6]), airplanes: [0, 0, 0, 1, 0, 0, 0] }, "pilot") < evaluate(behind([6, 6, 6, 6]), "pilot") - 2000);
 
   // Landing round: the Axis must end level, and the speed must fit the last Brakes.
   const landing = (hand, extra = {}) => ({ ...fresh([1, 1, 1, 1], hand), round: 7, axis: { pilot: 3, copilot: null, offset: 0 }, ...extra });
@@ -133,7 +134,10 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   const tilted7 = land7({ flapsGreen: [true, true, true, true], axis: { pilot: 4, copilot: 3, offset: -1 } });
   check("landing round: no Turn penalty (the plane doesn't move)", evaluate(turnAt(0, [0])(tilted7), "copilot") === evaluate(tilted7, "copilot"));
   const before = { ...fresh([1, 1, 1, 1], [1, 1, 1, 1]), round: 2, axis: { pilot: null, copilot: null, offset: -1 } };
-  check("no Turn penalty before this round's Axis dice are down (the tilt isn't final)", evaluate(turnAt(0, [0])(before), "pilot") === evaluate(before, "pilot"));
+  // Before the tilt is final only the aim toward the turn's tilt counts (turnPrep), never the full penalty.
+  const { EVAL_WEIGHTS: EW } = await import("../packages/shared/src/index.ts");
+  const aimCost = evaluate(before, "pilot") - evaluate(turnAt(0, [0])(before), "pilot");
+  check("no Turn penalty before this round's Axis dice are down (only the aim toward its tilt)", aimCost >= 0 && aimCost < EW.turn);
   const double = { ...fresh([6, 6, 6, 6], [1, 1, 1, 1]), round: 3, position: 2, airplanes: Array(8).fill(0), axis: { pilot: 3, copilot: 3, offset: 0 }, engines: { pilot: null, copilot: 6 } };
   check("pace: a double move through a space whose Turn forbids the tilt is fatal", evaluate(turnAt(3, [1])(double), "pilot") < evaluate(double, "pilot") - 2000);
 
@@ -180,7 +184,7 @@ console.log("3) actorFor, evaluate, quickMove (the one-step strategy)");
   check("tunable evaluator: a weight changes the score", changed < base && evaluate(probe, "pilot") === base);
 
   const t = fresh([2, 1, 1, 1], [1, 1, 1, 1]);
-  check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 1 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
+  check("evaluate prefers fewer airplanes", evaluate({ ...t, airplanes: t.airplanes.map((a, i) => (i === 2 ? 0 : a)) }, "pilot") > evaluate(t, "pilot"));
 
   // Turns: on a space whose Turn forbids the current tilt the plane can't fly on.
   const turn = { ...t, scenario: { ...t.scenario, approachTrack: t.scenario.approachTrack.map((sp, i) => (i === 0 ? { ...sp, axisAllowed: [1, 0] } : sp)) } };
@@ -261,9 +265,9 @@ console.log("7) Measurement: landing checklist; dice independent of the bots");
 {
   const { landingChecks, selfPlay } = await import("../packages/shared/src/index.ts");
   const g = newGame(DEFAULT_SETUP, P, C, mulberry32(3), 0);
-  const ready = { ...g, round: 7, position: 7, airplanes: Array(8).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
+  const ready = { ...g, round: 7, position: 6, airplanes: Array(7).fill(0), gearGreen: [true, true, true], flapsGreen: [true, true, true, true], brakesDeployed: 3, axis: { pilot: 3, copilot: 3, offset: 0 }, lastSpeed: 6 };
   check("landingChecks: a ready plane passes every condition", Object.values(landingChecks(ready)).every(Boolean));
-  const late = landingChecks({ ...ready, position: 6, flapsGreen: [true, true, true, false], lastSpeed: 9 });
+  const late = landingChecks({ ...ready, position: 5, flapsGreen: [true, true, true, false], lastSpeed: 9 });
   check("…and names each one that fails", !late.airport && !late.flaps && !late.brakes && late.gear && late.level && late.clear);
   const setup = { scenarioId: "YUL", modules: [], abilities: [] };
   const a = selfPlay(setup, 77, 400, { strategy: "quick" });
@@ -282,10 +286,10 @@ console.log("8) Rollouts: a plan-aware fast policy, played to the end of the gam
   a = reduce({ ...a, turn: "copilot" }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
   const ma = fastMove(a, "pilot", mulberry32(1));
   check("fast policy: answers the partner's Axis die with the levelling die", ma.target.kind === "axis" && die(a, "pilot", ma) === 4);
-  // Clear the airplane right ahead (YUL space 1 holds one): a 2 on the Radio.
-  const r = fresh([2, 3, 3, 5], [1, 1, 1, 1]);
+  // Clear the first airplane ahead (YUL space 2 holds one): a 3 on the Radio.
+  const r = fresh([3, 2, 2, 5], [1, 1, 1, 1]);
   const mr = fastMove(r, "pilot", mulberry32(2));
-  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 2);
+  check("fast policy: clears the airplane in the way", mr.target.kind === "radio" && die(r, "pilot", mr) === 3);
   // Deploy the next Flaps when the value is in hand.
   const f = { ...fresh([3, 3, 3, 3], [1, 5, 5, 5]), turn: "copilot", airplanes: Array(8).fill(0) };
   const mf = fastMove(f, "copilot", mulberry32(3));
@@ -509,14 +513,14 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   const count = (games, f) => games.filter(f).length;
   const failed = (g, check) => /^Landing failed/.test(g.outcome?.reason ?? "") && !landingChecks(g)[check];
   const yul = play([]);
-  check("plain YUL is unchanged by the module play (27 of 200 land)", count(yul, (g) => g.outcome?.result === "won") === 27);
+  check("plain YUL is unchanged by the module play (21 of 200 land; 19 before the flight plan)", count(yul, (g) => g.outcome?.result === "won") === 21);
   const kero = play(["kerosene"]);
   // (Before the policy knew the modules: 155 dry, 141 untrained, 154 without Ice Brakes.)
   check("Kerosene: the tank seldom runs dry (≤ 40 of 200)", count(kero, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
   check("Kerosene: games reach the landing (≥ 50 of 200)", count(kero, (g) => /^Landing/.test(g.outcome?.reason ?? "")) >= 50);
   const leak = play(["keroseneLeak"]);
   check("Kerosene Leak: the tank seldom runs dry (≤ 40 of 200; 77 before the Engines minded the leak)", count(leak, (g) => g.outcome?.reason === "Ran out of kerosene!") <= 40);
-  check("Kerosene Leak: games land (≥ 17 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 17);
+  check("Kerosene Leak: games land (≥ 9 of 200)", count(leak, (g) => g.outcome?.result === "won") >= 9);
   const intern = play(["intern"]);
   check("Intern: rarely lands untrained (≤ 15 of 200)", count(intern, (g) => failed(g, "intern")) <= 15);
   const ice = play(["iceBrakes"]);
@@ -598,6 +602,342 @@ console.log("13) The rollout policy plays the modules (full information, 200 gam
   const elsewhere = red(ig, { type: "placeDie", dieId: ig.dice.pilot[2].id, target: { kind: "concentration", slot: 0 } }, P).state;
   check("evaluate: a started Ice Brakes step beats a Coffee", evaluate(half, "pilot") > evaluate(elsewhere, "pilot"));
   check("Intern: games land (≥ 25 of 200)", count(intern, (g) => g.outcome?.result === "won") >= 25);
+}
+
+const { BOT_PROFILES: BOT_PROFILES_ALL } = await import("../packages/shared/src/index.ts");
+console.log("14) Aviator searches the Special Abilities");
+{
+  const savedPRG = BOT_PROFILES_ALL["green-PRG"]; delete BOT_PROFILES_ALL["green-PRG"]; // the default search
+  const { searchCandidates, fastMove, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // Round 1, the Pilot (First Player) before their first die: every Anticipation
+  // die is searched, though the one-step score sees a reroll as "no change".
+  const setup = (abilities) => ({ scenarioId: "green-PRG", modules: [], abilities });
+  const g = newGame(setup(["anticipation", "adaptation"]), P, C, mulberry32(1), 0);
+  const v = redactGameStateFor(g, P);
+  const cands = searchCandidates(v, "pilot", mulberry32(2), 6);
+  check("every Anticipation die is a candidate", cands.filter((m) => m.type === "anticipate").length === 4);
+  check("…and an Adaptation", cands.some((m) => m.type === "adapt"));
+  // Control: the Co-Pilot's 4 is down on a +1 tilt; the Pilot's 2 and 4 leave it
+  // equally off (−1 / +1), but the matching 4 earns a Coffee.
+  // (yellow-PRG: no turn near the start, so the tie is only the tilt's.)
+  const fresh = (abilities, dp, dc) => reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-PRG", modules: [], abilities }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [] }, "").state;
+  const answer = (abilities) => {
+    let s = fresh(abilities, [2, 4, 6, 6], [4, 1, 1, 1]);
+    s = reduce({ ...s, turn: "copilot", axis: { ...s.axis, offset: 1 } }, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+    const m = fastMove(s, "pilot", mulberry32(3));
+    return m.target.kind === "axis" ? s.dice.pilot[m.dieId].value : null;
+  };
+  check("Control: a tie on the Axis goes to the die matching the partner's", answer(["control"]) === 4 && answer([]) === 2);
+  BOT_PROFILES_ALL["green-PRG"] = savedPRG;
+}
+
+console.log("15) Flight plan and card profiles");
+{
+  const { flightPlan, turnTarget, policyFor, weightsFor, BOT_PROFILES, POLICY_PARAMS, EVAL_WEIGHTS, SCENARIOS, scenarioForSetup } = await import("../packages/shared/src/index.ts");
+  const yul = flightPlan(SCENARIOS.YUL);
+  check("plan: YUL is one space a round", yul.airport === 6 && yul.target.slice(0, 8).join() === "0,1,2,3,4,5,6,6");
+  const tgu = flightPlan(SCENARIOS["yellow-TGU"]);
+  check("plan: a short track is front-loaded (TGU: 4 spaces over 6 moving rounds)", tgu.target.slice(0, 8).join() === "0,1,2,2,3,4,4,4");
+  check("plan: turns and Traffic dice come from the track", tgu.turn[1] !== null && tgu.turn[0] === null && tgu.trafficDice[0] === 3);
+  const custom = flightPlan({ ...SCENARIOS.YUL, cardId: undefined, approachTrack: [{ traffic: 0 }, { traffic: 0, axisAllowed: [1] }, { traffic: 0, airport: true }] });
+  check("plan: a hand-built board without a card gets its own plan", custom.airport === 2 && custom.turn[1].join() === "1");
+  check("cardId: every card's board carries it", SCENARIOS["yellow-TGU"].cardId === "yellow-TGU" && SCENARIOS.YUL.cardId === "green-YUL");
+  // Profiles: no profile, or no cardId -> the defaults themselves; a profile overrides only its keys.
+  const g = newGame(DEFAULT_SETUP, P, C, mulberry32(1), 0);
+  check("profiles: no profile -> the defaults", policyFor(g) === POLICY_PARAMS && weightsFor(g) === EVAL_WEIGHTS);
+  BOT_PROFILES["green-YUL"] = { policy: { paceWeight: 99 }, eval: { tilt: 1 } };
+  const p = policyFor(g), w = weightsFor(g);
+  check("profiles: a card's overrides win, the rest are defaults", p.paceWeight === 99 && p.spareSlack === POLICY_PARAMS.spareSlack && w.tilt === 1 && w.coffee === EVAL_WEIGHTS.coffee);
+  const noCard = { ...g, scenario: { ...g.scenario, cardId: undefined } };
+  check("profiles: a board without a cardId plays the defaults", policyFor(noCard) === POLICY_PARAMS);
+  delete BOT_PROFILES["green-YUL"];
+
+  const { evaluate, createInitialGameState, reduce } = await import("../packages/shared/src/index.ts");
+  const at = (id, dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: id, modules: [], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: Array(flightPlan(SCENARIOS[id]).trafficDice[0]).fill(5) }, "").state, ...extra });
+  // TGU round 3, both Engines down (moved): the plan wants space 2.
+  const moved = { engines: { pilot: 3, copilot: 3 }, airplanes: Array(5).fill(0) };
+  check("pace: ahead of the plan costs less than behind it", evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 3, position: 3 }), "pilot") > evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 3, position: 1 }), "pilot"));
+  check("pace: waiting on Traffic dice past the plan costs extra", evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 2, position: 0 }), "pilot") < evaluate(at("yellow-TGU", [1, 1, 1, 1], [1, 1, 1, 1], { ...moved, round: 2, position: 1 }), "pilot") - 60);
+  // TGU space 1 allows tilts [2, 1]: a plane tilted 1 there isn't penalised like one tilted 1 on a plain space.
+  const tilted = (pos) => at("yellow-TGU", [3, 4, 3, 4], [3, 4, 3, 4], { round: 2, position: pos, axis: { pilot: null, copilot: null, offset: 1 }, airplanes: Array(5).fill(0) });
+  const level = (pos) => at("yellow-TGU", [3, 4, 3, 4], [3, 4, 3, 4], { round: 2, position: pos, axis: { pilot: null, copilot: null, offset: 0 }, airplanes: Array(5).fill(0) });
+  check("turns: on a turn space, the tilt it needs beats level", evaluate(tilted(1), "pilot") > evaluate(level(1), "pilot"));
+  check("turns: off a turn space, level still beats a tilt", evaluate(level(0), "pilot") > evaluate(tilted(0), "pilot"));
+  check("turnTarget: none on the landing round", turnTarget({ ...tilted(1), round: 7 }, 1) === null);
+  check("turnTarget: a 2-space advance over turns with no common tilt can't be flown", turnTarget({ ...tilted(0), scenario: { ...SCENARIOS.YUL, approachTrack: [{ traffic: 0, axisAllowed: [1] }, { traffic: 0, axisAllowed: [-1] }, { traffic: 0, airport: true }] } }, 2) === null);
+  const { fastMove, rolloutGame } = await import("../packages/shared/src/index.ts");
+  // Answer the partner's Axis die on a turn space: TGU space 1 needs a tilt it allows (2 or 1, not 0).
+  const allowed1 = SCENARIOS["yellow-TGU"].approachTrack[1].axisAllowed;
+  let ts = at("yellow-TGU", [1, 2, 3, 4], [3, 6, 6, 6], { round: 2, position: 1, airplanes: Array(5).fill(0), turn: "copilot" });
+  ts = reduce(ts, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const am = fastMove({ ...ts, coffee: 0 }, "pilot", mulberry32(4));
+  const tiltAfter = am.target.kind === "axis" ? ts.axis.offset + (ts.dice.pilot[am.dieId].value - 3) : null;
+  check(`rollout: on a turn space the Axis answer makes an allowed tilt (${allowed1})`, tiltAfter !== null && allowed1.includes(tiltAfter));
+  // Whole rollouts on TGU with the default policy (TGU's own profile set aside): was 37 of 40 "Missed the turn".
+  const tguProfile = BOT_PROFILES_ALL["yellow-TGU"];
+  delete BOT_PROFILES_ALL["yellow-TGU"];
+  const tguGames = Array.from({ length: 40 }, (_, i) => rolloutGame(newGame({ scenarioId: "yellow-TGU", modules: ["kerosene"], abilities: [] }, P, C, mulberry32(i), 0), mulberry32(100000 + i)));
+  BOT_PROFILES_ALL["yellow-TGU"] = tguProfile;
+  const missed = tguGames.filter((g) => /^Missed the turn/.test(g.outcome?.reason ?? "")).length;
+  check(`rollout: TGU misses far fewer turns (${missed} of 40; was 37 before turn aiming)`, missed <= 16);
+  // Two turns in a row with no tilt in common: a 2-space advance over both can't be flown.
+  const twoTurns = { ...SCENARIOS.YUL, cardId: undefined, approachTrack: [{ traffic: 0, axisAllowed: [1] }, { traffic: 0, axisAllowed: [-1] }, { traffic: 0 }, { traffic: 0 }, { traffic: 0, airport: true }] };
+  let tt = reduce(createInitialGameState(twoTurns, P, C), { type: "roll", pilot: [6, 6, 1, 1], copilot: [6, 6, 1, 1] }, "").state;
+  // Round 5 at the start: behind, the pace wants 2 spaces — only the turns forbid it.
+  tt = { ...tt, round: 5, axis: { pilot: 4, copilot: 3, offset: 1 }, turn: "copilot" };
+  tt = reduce(tt, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // the Co-Pilot's 6 on the Engine
+  const em = fastMove(tt, "pilot", mulberry32(5));
+  const speed = em.target.kind === "engine" ? 6 + tt.dice.pilot[em.dieId].value : null;
+  check("rollout: never plans a 2-space advance over turns with no common tilt", speed === null || speed <= tt.aeroOrange);
+}
+
+console.log("16) Experiment switches (off by default; measured, not adopted)");
+{
+  const { SEARCH_DEFAULTS, POLICY_PARAMS, searchCandidates, fastMove, redactGameStateFor, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const fresh = (dp, dc) => reduce(createInitialGameState(scenarioForSetup(DEFAULT_SETUP), P, C), { type: "roll", pilot: dp, copilot: dc }, "").state;
+  const radio = (cands) => cands.some((m) => m.type === "placeDie" && m.target.kind === "radio");
+  const v = redactGameStateFor(fresh([6, 6, 6, 6], [1, 1, 1, 1]), P);
+  const off = radio(searchCandidates(v, "pilot", mulberry32(1), 2));
+  SEARCH_DEFAULTS.radioCandidate = true;
+  const on = radio(searchCandidates(v, "pilot", mulberry32(1), 2));
+  SEARCH_DEFAULTS.radioCandidate = false;
+  check("radioCandidate: the best Radio move joins the search's candidates", !off && on);
+  // clearPlannedAny: an airplane two spaces ahead, the 3 to clear it kept for the Engine.
+  // (Gear and Brakes already set, so no switch comes first.)
+  const st = { ...fresh([3, 6, 6, 1], [1, 1, 1, 1]), round: 5, position: 0, airplanes: [0, 0, 1, 0, 0, 0, 0], gearGreen: [true, true, true], brakesDeployed: 3, brakeSlots: [true, true, true] };
+  const kind = () => { const m = fastMove(st, "pilot", mulberry32(2)); return m.target.kind === "radio" && st.dice.pilot[m.dieId].value === 3; };
+  const before = kind();
+  POLICY_PARAMS.clearPlannedAny = true;
+  const after = kind();
+  POLICY_PARAMS.clearPlannedAny = false;
+  check("clearPlannedAny: clears an airplane in the next moves' path with a kept die", !before && after);
+}
+
+console.log("17) Partial credit for switches in a failed landing (switchCredit, per-card)");
+{
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
+  const { rolloutValue, BOT_PROFILES, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const g = ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(1), 0);
+  const failed = (flaps) => ({ ...g, outcome: { result: "lost", reason: "Landing failed: flaps not fully deployed." }, flapsGreen: [0, 1, 2, 3].map((i) => i < flaps) });
+  check("default: three Flaps of four score like none", rolloutValue(failed(3), "copilot") === rolloutValue(failed(0), "copilot"));
+  BOT_PROFILES["green-LHR"] = { policy: { switchCredit: 100 } };
+  check("switchCredit: each switch down counts in a failed landing", rolloutValue(failed(3), "copilot") - rolloutValue(failed(0), "copilot") === 300);
+  delete BOT_PROFILES["green-LHR"];
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
+}
+
+console.log("18) Search settings per card (shortlist, radioCandidate)");
+{
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
+  const { BOT_PROFILES, searchStats, redactGameStateFor, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const v = redactGameStateFor(ng({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(0), 0), P);
+  const cands = () => searchStats(v, "pilot", mulberry32(3), { budgetMs: Infinity, maxSamples: 1 }).candidates;
+  const radio = (c) => c.some((m) => m.type === "placeDie" && m.target.kind === "radio");
+  const before = cands().length;
+  BOT_PROFILES["green-LHR"] = { search: { shortlist: 2 } };
+  const narrow = cands();
+  BOT_PROFILES["green-LHR"] = { search: { shortlist: 2, radioCandidate: true } };
+  const withRadio = cands();
+  delete BOT_PROFILES["green-LHR"];
+  check(`shortlist: a card's profile narrows the search (${before} -> ${narrow.length} candidates)`, narrow.length < before && narrow.length <= 3);
+  check("radioCandidate: a card's profile adds the best Radio move", !radio(narrow) && radio(withRadio));
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
+}
+
+console.log("19) A card's scripted plan (planPolicy)");
+{
+  const savedLHR = BOT_PROFILES_ALL["green-LHR"]; delete BOT_PROFILES_ALL["green-LHR"]; // tests below assume no profile
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const lhr = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-LHR", modules: [], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state, ...extra });
+  // The Pilot's single Radio: a 2 clears the next space (the plane flies off it next), not a 5 for a far one.
+  const r = lhr([2, 5, 3, 3], [1, 1, 1, 1], { airplanes: [0, 1, 0, 0, 1, 0], coffee: 0 });
+  const mr = planMove(r, "pilot");
+  check("plan: the single Radio clears the space the plane flies next", mr?.target.kind === "radio" && r.dice.pilot[mr.dieId].value === 2);
+  // Not before its own space is clear: with the Co-Pilot's Engine down, an airplane on the current space means no move.
+  let e = lhr([3, 3, 1, 4], [4, 1, 1, 1], { airplanes: [1, 0, 0, 0, 0, 0], coffee: 0, turn: "copilot" });
+  e = reduce(e, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  const me = planMove(e, "pilot");
+  const speed = me?.target.kind === "engine" ? 4 + e.dice.pilot[me.dieId].value : null;
+  check("plan: never completes the Engines into an airplane on its own space", me?.target.kind === "radio" ? e.dice.pilot[me.dieId].value === 1 : speed === null || speed <= e.aeroBlue);
+  // Modules it doesn't plan for: hands back to the general policy.
+  // Landing round: the Coffee is kept for a level Axis.
+  let l = lhr([5, 2, 2, 2], [3, 5, 6, 6], { round: 7, position: 5, airplanes: Array(6).fill(0), coffee: 1, axis: { pilot: null, copilot: null, offset: 0 }, flapsGreen: [true, true, true, false], turn: "copilot" });
+  l = reduce(l, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state; // Co-Pilot's 3
+  const ml = planMove(l, "pilot");
+  const tilt = ml?.target.kind === "axis" ? l.axis.offset + (l.dice.pilot[ml.dieId].value + (ml.coffeeDelta ?? 0)) - 3 : "not axis";
+  check(`plan: on the landing round the Axis ends level (tilt ${tilt})`, ml?.target.kind !== "axis" || tilt === 0);
+  // A card with a plan: the search always weighs the plan's move; the rollouts stay fast (unless rollouts: true).
+  const { BOT_PROFILES, searchCandidates, redactGameStateFor, fastMove } = await import("../packages/shared/src/index.ts");
+  const key = (m) => JSON.stringify(m);
+  // (seed 0's opening: the plan and the general policy pick different dice for the Gear.)
+  const g0 = newGame({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(0), 0);
+  const general = key(fastMove(g0, "pilot", mulberry32(2)));
+  BOT_PROFILES["green-LHR"] = { plan: true };
+  const v = redactGameStateFor(g0, P);
+  const planned = planMove(v, "pilot");
+  const inCands = key(planned) !== general && searchCandidates(v, "pilot", mulberry32(1), 1).some((m) => key(m) === key(planned));
+  const policyUnchanged = key(fastMove(g0, "pilot", mulberry32(2))) === general;
+  check("plan: its move is always one of the search's candidates", inCands);
+  check("plan: the rollouts keep the fast policy unless asked", policyUnchanged);
+  // …a Radio move too (per-crew spaces are spelled with a side in the legal-move list).
+  // (seed 50's opening: the plan's Radio die is one the general policy wouldn't pick.)
+  const vr = redactGameStateFor(newGame({ scenarioId: "green-LHR", modules: [], abilities: [] }, P, C, mulberry32(50), 0), P);
+  const pr = planMove(vr, "pilot");
+  BOT_PROFILES["green-LHR"] = { plan: true };
+  check("plan: a planned Radio move is a candidate too", pr?.target.kind === "radio" && searchCandidates(vr, "pilot", mulberry32(1), 1).some((m) => key(m) === key(pr)));
+  delete BOT_PROFILES["green-LHR"];
+  BOT_PROFILES_ALL["green-LHR"] = savedLHR;
+}
+
+console.log("20) The plan's move breaks near-ties in the search (searchBias)");
+{
+  const { pickBest } = await import("../packages/shared/src/index.ts");
+  const a = { type: "placeDie", dieId: 0, target: { kind: "axis" } }, b = { type: "placeDie", dieId: 1, target: { kind: "axis" } };
+  const stats = { candidates: [a, b], totals: [1000, 900], counts: [10, 10] };
+  check("no bias: the better average wins", pickBest([stats]) === a);
+  check("a bias on the plan's move wins a near-tie", pickBest([{ ...stats, bias: [0, 20] }]) === b);
+  check("…but not a clear gap", pickBest([{ ...stats, bias: [0, 5] }]) === a);
+}
+
+console.log("21) The plan feeds Kerosene");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const osl = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-OSL", modules: ["kerosene"], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5, 5] }, "").state, ...extra });
+  // A spare 1 burns 1 instead of the idle 6.
+  const k = osl([1, 3, 4, 4], [3, 3, 4, 4], { airplanes: Array(8).fill(0), coffee: 0 });
+  const mk = planMove(k, "pilot");
+  check("plan: a low spare die feeds the Kerosene", mk?.target.kind === "kerosene" && k.dice.pilot[mk.dieId].value === 1);
+  // Never the die that would empty the tank.
+  const low = osl([4, 3, 3, 3], [3, 3, 3, 3], { airplanes: Array(8).fill(0), coffee: 0, kerosene: 4 });
+  const ml = planMove(low, "pilot");
+  check("plan: never burns the tank dry", !(ml?.target.kind === "kerosene" && low.dice.pilot[ml.dieId].value >= 4));
+}
+
+console.log("22) The plan counts its own Gear / Flaps this round in the Engine's speed");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // HND round 1: the Co-Pilot's 1 is on the Engines; the Pilot holds 4, 4, 2 and 1 (the 1/2 fit the first Gear).
+  let h = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-HND", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [4, 4, 2, 1], copilot: [1, 3, 3, 3], traffic: [5, 5] }, "").state;
+  h = { ...h, airplanes: Array(8).fill(0), coffee: 0, turn: "copilot" };
+  h = reduce(h, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state;
+  h = reduce(h, { type: "placeDie", dieId: 1, target: { kind: "axis" } }, P).state; // the Pilot's first 4 (keeps the order simple)
+  // Now: a 4 on the Engine makes 5 > blue 4 and moves — unless a Gear goes down first (blue 5).
+  const m = planMove(h, "pilot");
+  check("plan: doesn't lower a Gear that stops this round's move", !(m?.target.kind === "landingGear"));
+}
+
+console.log("23) The plan prepares the tilt for the turn it's flying into");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // HND: space 4 lets the plane leave only tilted 2 or 1 toward the Pilot. Round 4 on space 3
+  // (no turn), level; the Co-Pilot's 3 is on the Axis. Pilot 4 makes +1 (ready for space 4), 3 stays level.
+  let h = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-HND", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [4, 3, 6, 6], copilot: [3, 3, 3, 3], traffic: [5, 5] }, "").state;
+  h = { ...h, round: 4, position: 3, airplanes: Array(8).fill(0), coffee: 0, axis: { pilot: null, copilot: null, offset: 0 }, turn: "copilot" };
+  h = reduce(h, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const m = planMove(h, "pilot");
+  const tilt = m?.target.kind === "axis" ? h.axis.offset + h.dice.pilot[m.dieId].value - 3 : null;
+  check(`plan: tilts toward the coming turn's tilt (tilt ${tilt})`, tilt === 1);
+}
+
+console.log("24) The plan trains the Intern");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, nextInternToken } = await import("../packages/shared/src/index.ts");
+  const atl = (dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-ATL", modules: ["intern"], abilities: [] }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5, 5, 5, 5] }, "").state, ...extra });
+  // Late (round 5), all six tokens untrained: training is urgent — a spare die goes to the Intern.
+  const a = atl([3, 3, 4, 4], [3, 3, 4, 4], { round: 5, airplanes: Array(8).fill(0), coffee: 0 });
+  const token = a.internTokens[nextInternToken(a, "pilot")];
+  const m = planMove(a, "pilot");
+  check(`plan: trains the Intern when it's behind (next token ${token})`, m?.target.kind === "intern" && a.dice.pilot[m.dieId].value !== token);
+}
+
+console.log("26) The plan plans the Special Abilities");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  const prg = (abilities, dp, dc, extra = {}) => ({ ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "green-PRG", modules: [], abilities }), P, C), { type: "roll", pilot: dp, copilot: dc, traffic: [5] }, "").state, airplanes: Array(8).fill(0), coffee: 0, ...extra });
+  // Adaptation: the Pilot's 6 turned to a 1 fits the first Gear and an open Radio... a hand of all 6s is poor: flip one.
+  const ad = prg(["adaptation"], [6, 6, 6, 6], [3, 3, 4, 4], { round: 3 });
+  const ma = planMove(ad, "pilot");
+  check("Adaptation: a hand of 6s gets a die turned over", ma?.type === "adapt");
+  // …but not a hand that already fits.
+  const ok = prg(["adaptation"], [1, 2, 3, 4], [3, 3, 4, 4], { round: 3 });
+  check("Adaptation: kept for later when the hand fits", planMove(ok, "pilot")?.type !== "adapt");
+  // Anticipation: the First Player (Pilot, round 1) rerolls a die before the first one is placed when the hand is poor.
+  const an = prg(["anticipation"], [6, 6, 6, 6], [3, 3, 4, 4]);
+  check("Anticipation: a poor opening hand rerolls a die", planMove(an, "pilot")?.type === "anticipate");
+  // Control: with the Co-Pilot's 4 on the Axis, a matching 4 (Coffee) beats an equally level 4… and the 4 levels: choose it.
+  let co = prg(["control"], [4, 2, 6, 6], [4, 1, 1, 1], { turn: "copilot", round: 2 });
+  co = reduce(co, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const mc = planMove(co, "pilot");
+  check("Control: answers the partner's Axis die with a match", mc?.target?.kind === "axis" && co.dice.pilot[mc.dieId].value === 4);
+  // Synchronisation: the Co-Pilot places a held Traffic die of 2 where it does something (the first Flaps).
+  const sy = prg(["synchronisation"], [3, 3, 4, 4], [3, 3, 4, 4], { round: 2, trafficHeld: { value: 2 }, turn: "copilot" });
+  const ms = planMove(sy, "copilot");
+  check("Synchronisation: places the Traffic die where it counts", ms?.type === "placeTraffic" && ["flaps", "radio", "landingGear", "brakes"].includes(ms.target.kind));
+}
+
+console.log("27) The plan reads the Wind after the Axis turns it");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, WIND_RING } = await import("../packages/shared/src/index.ts");
+  // GIG with Wind, ring on +3 (start). The Co-Pilot's 1 is on the Axis; the Pilot's Axis die will
+  // tilt the plane and turn the ring. Whatever the plan answers, its Engine die must be judged by the
+  // Wind after the turn: with the Axis die down, the Wind it scored is the reducer's.
+  let g = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-GIG", modules: ["wind"], abilities: [] }), P, C), { type: "roll", pilot: [3, 1, 1, 1], copilot: [1, 1, 1, 1], traffic: [5, 5] }, "").state;
+  g = { ...g, airplanes: Array(7).fill(0), coffee: 0, turn: "copilot" };
+  g = reduce(g, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  // Pilot's 3 vs Co-Pilot's 1: tilt +2, the ring turns 2 left: wind WIND_RING[(0-2+20)%20].
+  const after = WIND_RING[(g.windPosition - 2 + 20) % 20];
+  const { engineWindFor } = await import("../packages/shared/src/index.ts");
+  check(`plan: predicts the Wind after this round's Axis (${after})`, engineWindFor(g, "pilot", 3) === after);
+}
+
+console.log("28) A card can hold one tilt through its turns (tiltHold)");
+{
+  const { fastMove, planMove, createInitialGameState, scenarioForSetup, reduce } = await import("../packages/shared/src/index.ts");
+  // TGU round 1 on the start space (no turn there): level, the Co-Pilot's 3 on the Axis. Pilot 4 → +1, 3 → 0.
+  let t = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-TGU", modules: [], abilities: [] }), P, C), { type: "roll", pilot: [3, 4, 6, 6], copilot: [3, 1, 1, 1], traffic: [5, 5, 5] }, "").state;
+  t = { ...t, airplanes: Array(5).fill(0), coffee: 0, turn: "copilot" };
+  t = reduce(t, { type: "placeDie", dieId: 0, target: { kind: "axis" } }, C).state;
+  const saved = BOT_PROFILES_ALL["yellow-TGU"];
+  BOT_PROFILES_ALL["yellow-TGU"] = { policy: { tiltHold: 1 }, plan: { tiltHold: 1 } };
+  const f = fastMove(t, "pilot", mulberry32(1));
+  const { planFor } = await import("../packages/shared/src/index.ts");
+  const p = planMove(t, "pilot", planFor(t)); // as the search calls it: with the card's weights
+  BOT_PROFILES_ALL["yellow-TGU"] = saved;
+  const tilt = (m) => (m?.target?.kind === "axis" ? t.dice.pilot[m.dieId].value - 3 : null);
+  check(`tiltHold: the rollouts hold +1 from the start (${tilt(f)})`, tilt(f) === 1);
+  check(`tiltHold: the plan holds +1 from the start (${tilt(p)})`, tilt(p) === 1);
+}
+
+console.log("29) The plan handles the Kerosene Leak and the Ice Brakes");
+{
+  const { planMove, createInitialGameState, scenarioForSetup, reduce, ICE_BRAKE_VALUES } = await import("../packages/shared/src/index.ts");
+  // Kerosene Leak (yellow ATL board): the Co-Pilot's 3 is on the Engines; Pilot 3 (speed 6) and 4 (speed 7) both move
+  // one space — the 3 leaks 1, the 4 leaks 2: answer with the 3.
+  let lk = reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-ATL", modules: ["keroseneLeak"], abilities: [] }), P, C), { type: "roll", pilot: [4, 3, 3, 6], copilot: [3, 3, 1, 1], traffic: [5] }, "").state;
+  lk = { ...lk, airplanes: Array(8).fill(0), coffee: 0, turn: "copilot" };
+  lk = reduce(lk, { type: "placeDie", dieId: 0, target: { kind: "engine" } }, C).state; // Co-Pilot's 3 on the Engines
+  lk = reduce(lk, { type: "placeDie", dieId: 2, target: { kind: "axis" } }, P).state; // level Axis: 3 vs 3
+  lk = reduce(lk, { type: "placeDie", dieId: 1, target: { kind: "axis" } }, C).state;
+  const ml = planMove(lk, "pilot");
+  check("Kerosene Leak: the Engine die that leaks less", ml?.target?.kind === "engine" && lk.dice.pilot[ml.dieId].value === 3);
+  // Ice Brakes (KEF board): the Pilot holds the next step's value: it goes on the top space.
+  const ib = { ...reduce(createInitialGameState(scenarioForSetup({ scenarioId: "yellow-KEF", modules: ["iceBrakes"], abilities: [] }), P, C), { type: "roll", pilot: [ICE_BRAKE_VALUES[0], 3, 4, 4], copilot: [ICE_BRAKE_VALUES[0], 3, 4, 4], traffic: [5, 5] }, "").state, airplanes: Array(6).fill(0), coffee: 0, round: 3, gearGreen: [true, true, true] }; // (all Gear down: the switch left is the Ice Brakes)
+  const mi = planMove(ib, "pilot");
+  check("Ice Brakes: the next step's die goes on the Ice Brakes", mi?.target?.kind === "iceBrakes");
+}
+
+console.log("30) Ability candidates from the plan only (search.abilityCandidates)");
+{
+  const { searchCandidates, redactGameStateFor, newGame: ng } = await import("../packages/shared/src/index.ts");
+  const setup = { scenarioId: "green-PRG", modules: [], abilities: ["anticipation", "adaptation"] };
+  const v = redactGameStateFor(ng(setup, P, C, mulberry32(1), 0), P);
+  const saved = BOT_PROFILES_ALL["green-PRG"];
+  BOT_PROFILES_ALL["green-PRG"] = { ...saved, search: { ...saved?.search, abilityCandidates: "all" } };
+  const all = searchCandidates(v, "pilot", mulberry32(2), 3).filter((m) => m.type === "anticipate" || m.type === "adapt").length;
+  BOT_PROFILES_ALL["green-PRG"] = { ...saved, search: { ...saved?.search, abilityCandidates: "plan" } };
+  const plan = searchCandidates(v, "pilot", mulberry32(2), 3).filter((m) => m.type === "anticipate" || m.type === "adapt").length;
+  BOT_PROFILES_ALL["green-PRG"] = saved;
+  check(`abilityCandidates "plan": at most the plan's one ability move (${all} -> ${plan})`, all >= 4 && plan <= 1);
 }
 
 console.log(failures === 0 ? "\nALL BOT TESTS PASSED ✅" : `\n${failures} BOT TEST(S) FAILED ❌`);

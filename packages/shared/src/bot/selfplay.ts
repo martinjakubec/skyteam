@@ -1,4 +1,6 @@
 import type { GameSetup } from "../game/catalog";
+import type { GameCommand } from "../protocol";
+import type { Crew } from "../game/scenario";
 import { newGame, randDice, settle, withEntropy, type Rand } from "../game/entropy";
 import { reduce } from "../game/reducer";
 import { redactGameStateFor, type GameState } from "../game/state";
@@ -30,7 +32,7 @@ export function selfPlay(
   setup: GameSetup,
   seed: number,
   maxMoves = 400,
-  opts?: { budgetMs?: number; samples?: number; strategy?: "aviator" | "quick" },
+  opts?: { budgetMs?: number; samples?: number; strategy?: "aviator" | "quick"; onMove?: (move: GameCommand, crew: Crew, before: GameState) => void },
 ): SelfPlayResult {
   const streams = new Map<number, Rand>();
   const stream = (round: number): Rand => {
@@ -55,6 +57,7 @@ export function selfPlay(
     const view = redactGameStateFor(g, id);
     const move = opts?.strategy === "quick" ? quickMove(view, crew, botRand) : chooseMove(view, crew, botRand, { ...opts, now: now() });
     if (!move) return { outcome: "stuck", reason: `no legal move for the ${crew} (round ${g.round})`, rounds: g.round, moves, rolls, final: g };
+    opts?.onMove?.(move, crew, g);
     // A reroll's new values come from this round's stream; once a round ends
     // (g.round has moved on), settle rolls the next one from its own stream.
     g = reduce(g, withEntropy(move, roundDice(g.round)), id).state;

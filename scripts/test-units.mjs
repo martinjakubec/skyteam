@@ -225,11 +225,12 @@ console.log("2e) APPROACH_TRACKS: one well-formed track per card, as printed on 
     "turns list 1–4 distinct positions within ±2, never on the airport",
     tracks.every(([, t]) => t.every((s) => !s.axisAllowed || (!s.airport && s.axisAllowed.length >= 1 && s.axisAllowed.length <= 4 && new Set(s.axisAllowed).size === s.axisAllowed.length && s.axisAllowed.every((o) => Number.isInteger(o) && Math.abs(o) <= 2)))),
   );
-  // Strip lengths: the long strips have 8 spaces, Galeão 7, Paro / Heathrow / Keflavík 6, Toncontín 5.
-  const length = { YUL: 8, HND: 8, OSL: 8, PRG: 8, ATL: 8, KUL: 8, GIG: 7, PBH: 6, LHR: 6, KEF: 6, TGU: 5 };
+  // Strip lengths: the long strips have 8 spaces, Montréal and Galeão 7, Paro / Heathrow / Keflavík 6, Toncontín 5.
+  const length = { YUL: 7, HND: 8, OSL: 8, PRG: 8, ATL: 8, KUL: 8, GIG: 7, PBH: 6, LHR: 6, KEF: 6, TGU: 5 };
   check("track lengths match the strips", SCENARIO_TEMPLATES.every((t) => APPROACH_TRACKS[t.id].length === length[t.code]));
   check("no board starts with more than the 12 Airplane tokens", tracks.every(([, t]) => t.reduce((n, s) => n + s.traffic, 0) <= 12));
   const tr = (id) => APPROACH_TRACKS[id].map((s) => `${s.traffic}${s.trafficDice ? `d${s.trafficDice}` : ""}${s.axisAllowed ? `t${s.axisAllowed.join("/")}` : ""}`).join(" ");
+  check("spot check green YUL (no dice, no turns)", tr("green-YUL") === "0 0 1 2 1 3 2");
   check("spot check green HND (left turns)", tr("green-HND") === "0d2 1 1t1/0 2 1t2/1 0t2/1/0 2 1");
   check("spot check yellow PRG (no start dice)", tr("yellow-PRG") === "0 0 1 3d1 0 3d1 2 3");
   check("spot check black KEF", tr("black-KEF") === "0d2 0t2/1/0 2d1 1t0/-1/-2 1t1/0/-1 0");
@@ -668,6 +669,15 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   const none = await think(null, "pilot", 7).catch(() => (crashed = true));
   check("a bot that fails outright resolves null (the room gives up) instead of crashing the server", !crashed && none === null);
   await stopThinking(); // let the test process exit
+}
+
+console.log("Solo play: the bot flies green and yellow cards only");
+{
+  const { soloAllowed, SOLO_RESTRICTED_NOTE, SCENARIO_TEMPLATES } = await import("../packages/shared/src/index.ts");
+  const ids = (d) => SCENARIO_TEMPLATES.filter((t) => t.difficulty === d).map((t) => (t.id === "green-YUL" ? "YUL" : t.id));
+  check("green and yellow cards can be flown with the bot", [...ids("green"), ...ids("yellow")].every(soloAllowed));
+  check("red and black cards can't", [...ids("red"), ...ids("black")].every((id) => !soloAllowed(id)));
+  check("the restriction comes with its notice", typeof SOLO_RESTRICTED_NOTE === "string" && SOLO_RESTRICTED_NOTE.length > 40);
 }
 
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);

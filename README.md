@@ -45,6 +45,20 @@ each Special Ability; `ALL` plays every module combination × every ability set
 containing all those ids (scenario id, module or ability). Games are seeded, so
 a run is reproducible.
 
+`scripts/bench-cards.mjs` measures Aviator on the scenario cards as printed:
+each card with its own modules, and a card with ★ Special Abilities with
+four random picks of as many abilities. Games run in a pool of child
+processes (`CONCURRENCY=16` at once), at a fixed `SAMPLES=120` per candidate
+so results don't depend on the machine's load (`BUDGET_MS=600` plays at
+the live time budget instead). Each finished game is a line
+in `OUT` (default `sim-output/bench-cards.jsonl`); a rerun skips games
+already there, so a stopped run resumes. `DIFFICULTY=green,yellow` (default),
+`CARDS=…`, `GAMES=80`, `ONLY=…`; `SUMMARY=1` prints the table from `OUT`.
+
+```bash
+docker run --rm -v "$PWD":/app -w /app node:22-alpine node_modules/.bin/tsx scripts/bench-cards.mjs
+```
+
 `scripts/validate.mjs` is an end-to-end check against a running server
 (`BASE=http://server:3001` on the compose network).
 
@@ -93,6 +107,9 @@ Co-Pilot) and the bot's level. A server-side bot flies the other seat at a
 human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
 seat would see, and answers Reroll and Working Together offers on its own.
 Opening a solo room's invite link makes you an observer.
+The bot flies green and yellow cards only: red (Elite Pilots Only) and black
+(Heroic Landing) cards are for human crews, and a solo lobby shows them as
+unavailable (`soloAllowed` in `catalog.ts`; the server refuses them too).
 
 The bot is **Aviator**. It searches: for its best few moves it repeatedly
 fills in the dice it can't see, plays the game out with a fast rollout
@@ -110,11 +127,29 @@ Ice Brakes steps are started by the Pilot and always finished; with
 Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
 20 s are left, the crew's own Axis and Engine come first.
 
-Measured on YUL (80 games each, 120 samples a candidate, seeds 0–79), the
-share of games that land: no module 70%; Intern 86%; Kerosene Leak 63%;
-Wind 59%; Real-Time 70%; Kerosene 8% (19% with the Intern); Ice Brakes about 0% (the
-eight dice it needs leave too few for the Flaps and the pace). Real-Time
-is measured on a still clock: it tests the plan, not the time pressure.
+Measured per scenario card with `scripts/bench-cards.mjs` at the live 600 ms
+budget on the compiled bot (`BOT_DIST=1`), 12 games at once (one per physical
+core, as a live server gives one game), 400–420 games per card; a card with ★
+abilities is averaged over every ability option. Each card plays its own
+profile from `packages/shared/src/bot/profiles.ts`:
+
+| Card | Landed | | Card | Landed |
+|---|---|---|---|---|
+| green YUL | 83% | | yellow LHR | 38% |
+| green LHR | 65% | | yellow PRG | 29% |
+| green ATL | 56% | | yellow GIG | 27% |
+| green OSL | 54% | | yellow KUL | 20% |
+| green HND | 45% | | yellow TGU | 19% |
+| green PRG | 42% | | yellow ATL | 18% |
+| | | | yellow KEF | 14% |
+
+A profile switches on the card's scripted plan (`bot/planPolicy.ts`: it
+assigns a round's dice before placing them, handles every module and Special
+Ability, and its move is always searched) and tunes the rollouts: e.g.
+`tiltHold` for a run of turns that all allow one tilt, `peek` (rollouts plan
+against the partner's sampled dice — it coordinates the tilt through turns).
+Time-budget runs depend on the machine's load: more games at once than
+physical cores starves each search, so gate at `CONCURRENCY` = cores.
 
 ### Development (hot reload)
 
@@ -159,9 +194,9 @@ landing checks).
 
 - **`scenario.ts`** is pure data: the approach track (length + per-space
   traffic), altitude/reroll layout, axis spin threshold and speed-gauge starts.
-  A new airport is a new `Scenario` — the rules engine doesn't change. A few
-  board-geometry numbers aren't printed in the rulebook text and are marked
-  `CONFIRM AGAINST PHYSICAL BOARD`.
+  A new airport is a new `Scenario` — the rules engine doesn't change. The
+  approach tracks aren't in the rulebook text; every card's track was read
+  off the physical strips.
 - **`reducer.ts`** is the pure `reduce(state, command) => state`. It is the only
   place the rules live, and it is **module-ready**: the advanced "Flight Log"
   modules (Kerosene, Wind, Intern, Ice Brakes, Traffic die, Turns…) slot into the
@@ -193,15 +228,15 @@ landing checks).
   with `axisAllowed` only lets the plane advance off it — from it, or through
   it on a 2-space advance — with the Axis in one of those positions; any other
   tilt loses ("Missed the turn"). Not advancing needs no particular tilt. The
-  track draws the permitted positions as green ▼ on a small arc. *Temporary:*
-  the lobby's "YUL Montréal — Turns test" airport (`YUL_TURNS_TEST`) exists to
-  try it until a real board with turns is entered; `AIRPORT=YUL_TURNS
-  scripts/simulate.sh` plays it.
+  track draws the permitted positions as green ▼ on a small arc. The rules
+  check a turn when the Engines resolve, against the tilt at that moment.
 - **Scenario cards** (`game/catalog.ts`). `SCENARIO_TEMPLATES` lists the
   rulebook's 21 cards by difficulty (green Routine Landing, yellow Exceptional
   Conditions, red Elite Pilots Only, black Heroic Landing) with each card's
-  modules and ★ ability count. A card's `board` (traffic, turns, Traffic die,
-  length) is null until it's entered; only green YUL has one so far.
+  modules and ★ ability count. Each card's `board` takes its approach track
+  (traffic, turns, Traffic dice, length) from `APPROACH_TRACKS` and the rest
+  (rounds, Axis spin limit, speed gauges) from YUL; the reroll rounds depend
+  on the card's difficulty.
 - **Special Abilities** (`game/abilities.ts`), up to the scenario's limit
   (`maxAbilities`; YUL has none, so they're unavailable until a ★ card is
   playable):

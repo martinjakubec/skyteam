@@ -9,6 +9,8 @@ import {
   SetNamePayload,
   SetReadyPayload,
   SetSetupPayload,
+  SOLO_RESTRICTED_NOTE,
+  soloAllowed,
   hasModule,
   newGame,
   randDice,
@@ -190,6 +192,9 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   if (room.hostPlayerId !== playerId) return ack({ ok: false, error: "Only the host can change the setup." });
   if (room.status !== "lobby" && room.status !== "ready")
     return ack({ ok: false, error: "The game has already started." });
+  // The bot flies green and yellow cards only: red and black are for human crews.
+  if (room.seats.some((s) => s.bot) && !soloAllowed(parsed.data.scenarioId))
+    return ack({ ok: false, error: SOLO_RESTRICTED_NOTE });
 
   if (JSON.stringify(parsed.data) !== JSON.stringify(room.setup)) {
     room.setup = parsed.data;

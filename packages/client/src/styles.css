@@ -389,6 +389,27 @@ ul {
 .picker-option.active {
   background: #23324a;
 }
+/* Solo play: red and black cards are for human crews. */
+.picker-option.unavailable {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.picker-note {
+  margin: 0;
+  padding: 0.55rem 0.75rem 0.6rem calc(0.6rem + 5px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 5px 0 0 var(--diff-solid);
+  font-size: 0.8rem;
+  font-style: italic;
+  line-height: 1.35;
+  color: #c9d6e8;
+}
+.picker-note::before {
+  content: "“";
+}
+.picker-note::after {
+  content: "”";
+}
 .picker-option[aria-selected="true"] {
   background: #1b2638;
   box-shadow: inset 5px 0 0 var(--diff-solid), inset 8px 0 0 #9bcaf5;

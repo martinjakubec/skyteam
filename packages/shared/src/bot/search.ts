@@ -7,9 +7,13 @@ import { evaluate } from "./evaluate";
 import { legalMoves, playerIdOf } from "./moves";
 import { rankMoves } from "./policy";
 import { determinize, fastMove, rolloutInPlace, rolloutValue } from "./rollout";
+import { planFor, searchFor } from "./profiles";
+import { planMove } from "./planPolicy";
 import { mulberry32 } from "./rng";
 
 const MODULE_SPACES = ["kerosene", "iceBrakes", "intern"] as const;
+/** Ability moves always searched (one of each), besides every Anticipation die. */
+const ABILITY_MOVES = ["adapt", "swap"] as const;
 
 /** Real-Time: with this little time left in the round, the crew's own Axis and Engine come first. */
 export const REAL_TIME_URGENT_MS = 20_000;
@@ -102,6 +106,33 @@ export function searchCandidates(view: GameState, crew: Crew, rand: Rand, shortl
     const best = all.find((m) => m.type === "placeDie" && m.target.kind === kind);
     if (best) ranked.push(best);
   }
+  // Experiment (off by default): the best Radio move is always searched —
+  // clearing an airplane further ahead scores low one step ahead.
+  if (searchFor(view).radioCandidate && !ranked.some((m) => m.type === "placeDie" && m.target.kind === "radio")) {
+    const best = all.find((m) => m.type === "placeDie" && m.target.kind === "radio");
+    if (best) ranked.push(best);
+  }
+  // A card's scripted plan: its move is always weighed (the rollouts stay fast).
+  const planW = planFor(view);
+  if (planW && !planW.rollouts) {
+    const planned = planMove(view, crew, planW);
+    // (Legal: the plan checks its move on the rules. Not compared against `moves`,
+    // whose per-crew targets carry a `side` the plan's don't.)
+    if (planned && !ranked.some((m) => JSON.stringify(m) === JSON.stringify(planned))) ranked.push(planned);
+  }
+  // Special Abilities: the one-step score can't see what they're worth (an
+  // Anticipation reroll scores as "no change", so it never made the shortlist),
+  // so they're searched too — every Anticipation die (once a round, at most
+  // four), and the best Adaptation and Working Together offer.
+  // (A card set to abilityCandidates "plan" skips these: its plan's ability move, added
+  // above, is the one weighed — every extra candidate costs the others samples.)
+  const everyAbility = searchFor(view).abilityCandidates !== "plan";
+  if (everyAbility) for (const m of all) if (m.type === "anticipate" && !ranked.includes(m)) ranked.push(m);
+  if (everyAbility) for (const type of ABILITY_MOVES) {
+    if (ranked.some((m) => m.type === type)) continue;
+    const best = all.find((m) => m.type === type);
+    if (best) ranked.push(best);
+  }
   const own = fastMove(view, crew, rand);
   if (own && moves.some((m) => key(m) === key(own)) && !ranked.some((m) => key(m) === key(own))) {
     if (ranked.length < shortlist) ranked.push(own);
@@ -117,6 +148,8 @@ export interface SearchStats {
   counts: number[];
   /** Samples skipped because the rules refused a move in them (should stay 0). */
   errors?: number;
+  /** Added to a candidate's average when picking (a card plan's move breaks near-ties). */
+  bias?: number[];
 }
 
 export interface SearchOptions {
@@ -144,7 +177,7 @@ export interface SearchOptions {
  * de-duplication cut landings from 54% to 19% — dropping candidates after a
  * few noisy samples (or merging away the policy's own move) loses good moves.
  */
-export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean } = { halving: false, dedupe: false };
+export const SEARCH_DEFAULTS: { halving: boolean; dedupe: boolean; radioCandidate: boolean } = { halving: false, dedupe: false, radioCandidate: false };
 
 /**
  * Aviator's search, without the final pick: determinized Monte Carlo over the
@@ -159,7 +192,7 @@ export function searchStats(
   view: GameState,
   crew: Crew,
   rand: Rand,
-  { budgetMs, shortlist = 6, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
+  { budgetMs, shortlist = searchFor(view).shortlist, maxSamples = 400, horizon = "game", candidateSeed, halving = SEARCH_DEFAULTS.halving, dedupe = SEARCH_DEFAULTS.dedupe, candidates: given, now: clock }: SearchOptions,
 ): SearchStats {
   const moves = given ?? keroseneBrakes(view, crew, icePlan(view, crew, realTimeFirst(view, crew, legalMoves(view, crew), clock ?? Date.now())));
   if (moves.length <= 1) return { candidates: moves, totals: moves.map(() => 0), counts: moves.map(() => 1) };
@@ -200,7 +233,11 @@ export function searchStats(
       rung *= 2;
     }
   }
-  return { candidates, totals, counts, errors };
+  // A card's plan: its move gets a small head start in the pick (searchBias).
+  const planW = given ? null : planFor(view);
+  const planned = planW?.searchBias ? JSON.stringify(planMove(view, crew, planW)) : null;
+  const bias = planned ? candidates.map((m) => (JSON.stringify(m) === planned ? planW!.searchBias! : 0)) : undefined;
+  return { candidates, totals, counts, errors, ...(bias ? { bias } : {}) };
 }
 
 /**
@@ -212,6 +249,7 @@ export function searchStats(
 export function pickBest(stats: SearchStats[]): GameCommand | null {
   const first = stats.find((st) => st.candidates.length > 0);
   if (!first) return null;
+  const bias = first.bias ?? first.candidates.map(() => 0);
   const key = JSON.stringify(first.candidates);
   const same = stats.filter((st) => JSON.stringify(st.candidates) === key);
   const totals = first.candidates.map((_, i) => same.reduce((a, st) => a + st.totals[i], 0));
@@ -222,7 +260,7 @@ export function pickBest(stats: SearchStats[]): GameCommand | null {
   let best = -1;
   for (let i = 0; i < counts.length; i++) {
     if (counts[i] < enough) continue;
-    if (best < 0 || totals[i] / counts[i] > totals[best] / counts[best]) best = i;
+    if (best < 0 || totals[i] / counts[i] + bias[i] > totals[best] / counts[best] + bias[best]) best = i;
   }
   return first.candidates[best];
 }
