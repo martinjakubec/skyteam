@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { LOG_FORMAT, encodeCommand, type Crew, type DieValue, type Recorder } from "@skyteam/shared";
 import { env } from "./env";
-import { db, initDb } from "./db";
+import { db, initDb, tx } from "./db";
 import { ensureSchema } from "./schema";
 import { redis } from "./store";
 import type { Room } from "./types";
@@ -30,7 +30,13 @@ const COLUMNS = [
   "id", "room_id", "format", "build", "scenario", "modules", "abilities", "intern_order",
   "pilot", "copilot", "result", "loss_reason", "rounds_reached", "moves", "started_at", "ended_at", "seed",
 ] as const;
-type Row = Record<(typeof COLUMNS)[number], unknown>;
+/** A `games` row, and the accounts that flew it (into game_players). */
+type Row = Record<(typeof COLUMNS)[number], unknown> & { players?: { crew: Crew; user_id: string }[] };
+
+/** A link to a player's account — skipped if the account is gone by the time
+ *  the row is written (a queued row can wait a while). */
+export const SQL_LINK_PLAYER = `/* gamePlayers.insert */ INSERT INTO game_players (game_id, user_id, crew)
+  SELECT $1, id, $3 FROM users WHERE id = $2 ON CONFLICT DO NOTHING`;
 
 const INSERT = `INSERT INTO games (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map((_, i) => `$${i + 1}`).join(", ")}) ON CONFLICT (id) DO NOTHING`;
 
@@ -67,10 +73,15 @@ export function endGameLog(room: Room, result: GameResult): void {
   const game = room.game;
   room.gameLog = null;
   if (!log || !game || !db()) return;
+  const seatOf = (crew: Crew) => room.seats.find((x) => x.playerId === (crew === "pilot" ? game.pilotId : game.copilotId));
   const seat = (crew: Crew) => {
-    const s = room.seats.find((x) => x.playerId === (crew === "pilot" ? game.pilotId : game.copilotId));
+    const s = seatOf(crew);
     return s?.bot ? `bot:${s.bot}` : "human";
   };
+  const players = (["pilot", "copilot"] as const).flatMap((crew) => {
+    const id = seatOf(crew)?.accountId;
+    return id ? [{ crew, user_id: id }] : [];
+  });
   const row: Row = {
     id: log.id,
     room_id: room.id,
@@ -90,6 +101,7 @@ export function endGameLog(room: Room, result: GameResult): void {
     started_at: new Date(log.startedAt).toISOString(),
     ended_at: new Date().toISOString(),
     seed: log.seed ?? null,
+    players,
   };
   void write(row);
 }
@@ -105,7 +117,10 @@ async function write(row: Row): Promise<void> {
 
 async function insert(row: Row): Promise<void> {
   await ensureSchema();
-  await db()!.query(INSERT, COLUMNS.map((c) => row[c]));
+  await tx(async (c) => {
+    await c.query(INSERT, COLUMNS.map((col) => row[col]));
+    for (const p of row.players ?? []) await c.query(SQL_LINK_PLAYER, [row.id, p.user_id, p.crew]);
+  });
 }
 
 /** Write the rows that waited for Postgres; stops at the first that still fails. */

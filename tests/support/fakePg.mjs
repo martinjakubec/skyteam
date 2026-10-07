@@ -118,6 +118,11 @@ Pool.prototype.tags = {
     this.gamePlayers = this.gamePlayers.filter((p) => p.user_id !== id);
     return changed(before - this.users.length);
   },
+  "gamePlayers.insert"(game_id, user_id, crew) {
+    if (!this.user(user_id) || this.gamePlayers.some((p) => p.game_id === game_id && p.crew === crew)) return changed(0);
+    this.gamePlayers.push({ game_id, user_id, crew });
+    return changed(1);
+  },
   "resets.dropUnused"(userId) {
     this.resets = this.resets.filter((r) => r.user_id !== userId || r.used_at);
     return changed(1);

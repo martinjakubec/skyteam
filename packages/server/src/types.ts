@@ -13,6 +13,11 @@ export interface Seat {
   bot?: BotLevel;
   /** The name the player chose (empty or absent = none). Lobby-only to change. */
   name?: string;
+  /** The account the player was signed in with when they last joined (absent:
+   *  a guest). Their games link to it; its username is the seat's name until
+   *  they choose one. */
+  accountId?: string;
+  username?: string;
 }
 
 /** The authoritative room record. Persisted to Redis on every change. */
