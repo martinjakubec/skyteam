@@ -46,6 +46,9 @@ services:
       # Narrow this (comma-separated allowlist) for anything beyond dev.
       CLIENT_ORIGIN: "*"
       DATABASE_URL: postgres://skyteam:skyteam-dev@postgres:5432/skyteam
+      # The site owner's account, created on first start (from .env; e.g. admin/admin locally).
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-}
+      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD:-}
       # Bind-mounted source on Windows doesn't emit inotify events into the
       # container, so file watchers must poll to see host edits.
       CHOKIDAR_USEPOLLING: "true"

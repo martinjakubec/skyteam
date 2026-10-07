@@ -2960,7 +2960,7 @@ ul {
   font-family: var(--font-display);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--metal);
+  color: #26303c;
   font-size: 1.1rem;
 }
 .account-form h2,
