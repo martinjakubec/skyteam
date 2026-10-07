@@ -1,3 +1,4 @@
+import type { SeedState } from "./seededRand";
 import type { BotLevel, ChatMessage, Debrief, DieValue, Crew, GameSetup, GameState, PlayerId, RoomStatus, SeatRole } from "@skyteam/shared";
 
 /** A seat is the durable link between a room and a player. Crucially it is NOT
@@ -37,6 +38,9 @@ export interface Room {
   debrief?: Debrief | null;
   /** The game in progress, as its log so far (see gameLog.ts). Written and
    *  cleared when the game ends or is left. */
-  gameLog?: { id: string; startedAt: number; setup: GameSetup; internTokens: DieValue[]; moves: string } | null;
+  gameLog?: { id: string; startedAt: number; setup: GameSetup; internTokens: DieValue[]; moves: string; seed?: string | null } | null;
+  /** The game's secret seed and how far each of its dice streams has drawn
+   *  (seededRand.ts). Never sent to a client. Absent for a game an older build began. */
+  seedState?: SeedState | null;
   updatedAt: number;
 }

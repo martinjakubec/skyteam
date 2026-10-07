@@ -92,10 +92,12 @@ export function newGame(
   copilotId: PlayerId,
   rand: Rand,
   at: number,
-  opts: { realTimeSeconds?: number; record?: Recorder } = {},
+  /** internRand: where the Intern tokens' order comes from (default: `rand`) —
+   *  the server keeps it apart from the deal, so a seed fixes both on its own. */
+  opts: { realTimeSeconds?: number; record?: Recorder; internRand?: Rand } = {},
 ): GameState {
   const scenario = { ...scenarioForSetup(setup), ...(opts.realTimeSeconds ? { realTimeSeconds: opts.realTimeSeconds } : {}) };
-  const game = createInitialGameState(scenario, pilotId, copilotId, { internTokens: shuffledInternTokens(rand) });
+  const game = createInitialGameState(scenario, pilotId, copilotId, { internTokens: shuffledInternTokens(opts.internRand ?? rand) });
   return apply(game, roundRoll(game, randDice(rand), at), opts.record);
 }
 

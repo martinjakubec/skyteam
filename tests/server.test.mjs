@@ -26,7 +26,7 @@ const { issueToken } = await import("../packages/server/src/identity.ts");
 const { default: FakeRedis } = await import("./support/fakeRedis.mjs");
 const { Pool: FakePg } = await import("./support/fakePg.mjs");
 const { initGameLogs, flushPendingGameLogs, PENDING_KEY } = await import("../packages/server/src/gameLog.ts");
-const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, replay, settleTraffic, randDice, withEntropy, LOG_FORMAT, MOVE_CODES, UNAVAILABLE, SOLO_RESTRICTED_NOTE } = await import("../packages/shared/src/index.ts");
+const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, replay, settleTraffic, randDice, withEntropy, LOG_FORMAT, MOVE_CODES, UNAVAILABLE, SOLO_RESTRICTED_NOTE, shuffledInternTokens } = await import("../packages/shared/src/index.ts");
 
 let server, url;
 const sockets = [];
@@ -746,6 +746,54 @@ describe("game logs", () => {
     expect(row.moves.match(/D/g)).toHaveLength(2);
     expect(row.rounds_reached).toBe(2);
     expect(replayRow(row).round).toBe(2);
+  });
+
+  test("every game is seeded: the row has its seed, and the seed alone gives the logged deals and Intern order", async () => {
+    const { newSeedState, seededRand } = await import("../packages/server/src/seededRand.ts");
+    const r = await toDebrief({ scenarioId: "YUL", modules: ["intern"], abilities: [] });
+    // While it runs, the seed is in the room record (a restarted server carries on) ...
+    const stored = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`));
+    expect(stored.seedState.seed).toMatch(/^[0-9a-f]{32}$/);
+    await bothReady(r);
+    expect(await emit(r.h, "game:exit")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 1, 2000, "row");
+    const [row] = logged(r.roomId);
+    expect(row.seed).toBe(stored.seedState.seed);
+    // ... and the seed regenerates what was dealt.
+    const deals = row.moves.match(/D\d+/g);
+    expect(deals).toHaveLength(2);
+    deals.forEach((token, i) => {
+      const dice = randDice(seededRand(newSeedState(row.seed), () => `d${i + 1}`));
+      const expected = "D" + [...Array(8)].map(() => dice.d6()).join("") + [...Array(token.length - 9)].map(() => dice.traffic()).join("");
+      expect(token).toBe(expected);
+    });
+    expect(row.intern_order).toBe(shuffledInternTokens(seededRand(newSeedState(row.seed), () => "i")).join(""));
+    // ... but no player ever saw it.
+    const seen = JSON.stringify([r.h.states, r.h.events, r.g.states, r.g.events]);
+    expect(seen).not.toContain(row.seed);
+  });
+
+  test("a refused command draws nothing from the seed", async () => {
+    const r = await startedGame(); // no Anticipation ability: anticipating is refused
+    const before = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`)).seedState;
+    const res = await emit(r.h, "game:command", { commandId: "x1", command: { type: "anticipate", dieId: 0 } });
+    expect(res.ok).toBe(false);
+    const { sock, command } = nextMove(r); // the next accepted command saves the room
+    expect(await emit(sock, "game:command", { commandId: "x2", command })).toEqual({ ok: true });
+    const after = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`)).seedState;
+    expect(after.draws.p1 ?? 0).toBe(before.draws.p1 ?? 0);
+  });
+
+  test("each game gets its own seed (a reset too)", async () => {
+    const r = await startedGame();
+    expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 1, 2000, "reset row");
+    expect(await emit(r.g, "game:exit")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 2, 2000, "exit row");
+    const [a, b] = logged(r.roomId);
+    expect(a.seed).toMatch(/^[0-9a-f]{32}$/);
+    expect(b.seed).toMatch(/^[0-9a-f]{32}$/);
+    expect(a.seed).not.toBe(b.seed);
   });
 
   test("a game abandoned by a player who never came back is logged as abandoned", async () => {
