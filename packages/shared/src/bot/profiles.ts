@@ -28,12 +28,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true },
   },
-  // green HND (2026-10-06, second pass): 32.3% of 400 seeds at 600 ms with 12 at once
-  // (live-like), was 23.0%. Its three turns all allow +1: hold it; clear traffic early.
+  // green HND (2026-10-07, second pass + peek): 45.3% of 400 seeds at 600 ms with 12 at once
+  // (live-like), was 23.0%. Its three turns all allow +1: hold it; clear traffic early; peek
+  // rollouts coordinate the tilt (32.3% without).
   "green-HND": {
     plan: { engineMid: 40, searchBias: 400, tiltHold: 1, gearOnPace: true },
     search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, tiltHold: 1, safeEngines: true, gearOnPace: true, trafficPressure: 1, clearAheadMax: 5 },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, tiltHold: 1, safeEngines: true, gearOnPace: true, trafficPressure: 1, clearAheadMax: 5, peek: true },
   },
   // green OSL (2026-10-06): 49.0% of 400 seeds at 600 ms (compiled), was 34.3% —
   // just under the 50% fallback after 4 attempts. The plan feeds the Kerosene.
