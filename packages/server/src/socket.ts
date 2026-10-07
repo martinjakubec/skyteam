@@ -1,10 +1,13 @@
 import type http from "node:http";
 import { randomInt } from "node:crypto";
 import { Server, type DefaultEventsMap, type Socket } from "socket.io";
+import { nanoid } from "nanoid";
 import {
+  ChatSendPayload,
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
+  MAX_CHAT_HISTORY,
   PlayerName,
   SetNamePayload,
   SetReadyPayload,
@@ -17,8 +20,11 @@ import {
   redactGameStateFor,
   reduce,
   settle,
+  settleTraffic,
   withEntropy,
+  type ChatMessage,
   type ClientToServerEvents,
+  type Crew,
   type GameCommand,
   type GameState,
   type Rand,
@@ -31,7 +37,7 @@ import { getRoom, saveRoom, storageUp, UNAVAILABLE_ERROR } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
-import { abandonsOnDisconnect, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
+import { abandonsOnDisconnect, botSeat, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
 import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
 
@@ -58,6 +64,13 @@ const timerKey = (roomId: string, playerId: string) => `${roomId}:${playerId}`;
  * the deadline in Redis is not).
  */
 const clockTimers = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Between rounds: each room's running 3-2-1, keyed by room id. The deadline
+ * lives in the room (`debrief.countdownEndsAt`); this is the timeout that deals
+ * at it. `syncDebrief` re-arms it on (re)join, which also covers a restart.
+ */
+const debriefTimers = new Map<string, NodeJS.Timeout>();
 
 /** Events one socket may send per second. A player sends a few at most; past
  *  this, events are refused (each costs a Redis write and a broadcast). */
@@ -94,6 +107,8 @@ export function attachSocket(server: http.Server): IOServer {
     on("seat:ready", (payload, ack) => onReady(io, socket, payload, ack));
     on("seat:name", (payload, ack) => onName(io, socket, payload, ack));
     on("room:setup", (payload, ack) => onSetup(io, socket, payload, ack));
+    on("chat:send", (payload, ack) => onChat(io, socket, payload, ack));
+    on("round:ready", (payload, ack) => onRoundReady(io, socket, payload, ack));
     on("game:start", (_payload, ack) => onStart(io, socket, ack));
     on("game:reset", (_payload, ack) => onReset(io, socket, ack));
     on("game:exit", (_payload, ack) => onExit(io, socket, ack));
@@ -133,6 +148,7 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
     const name = PlayerName.safeParse(parsed.data.name);
     if (name.success && name.data && canRename(room)) seat.name = name.data;
   }
+  openDebrief(room); // a room saved between rounds by an older build
   await saveRoom(room);
 
   ack({ ok: true });
@@ -140,6 +156,7 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   socket.emit("room:state", toSnapshot(room, playerId));
   broadcastState(io, room, socket.id);
   await syncClock(io, room); // Real-Time: resume once both seats are back
+  await syncDebrief(io, room); // after a server restart, the 3-2-1 picks up where it was
   scheduleNpc(io, room.id); // after a server restart, the bot picks up where it was
 }
 
@@ -207,6 +224,60 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   broadcastState(io, room);
 }
 
+/** A seated player posts to the lobby's flight log; everyone in the room gets it. */
+async function onChat(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
+  const parsed = ChatSendPayload.safeParse(payload);
+  if (!parsed.success) return ack({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid message." });
+
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const seat = room.seats.find((s) => s.playerId === playerId);
+  if (!seat) return ack({ ok: false, error: "Spectators can't post in the flight log." });
+  if (room.status !== "lobby" && room.status !== "ready" && !room.debrief)
+    return ack({ ok: false, error: "Chat opens between rounds." });
+
+  const hostCrew = room.hostCrew ?? "pilot";
+  const msg: ChatMessage = {
+    id: nanoid(),
+    playerId,
+    crew: seat.role === "host" ? hostCrew : hostCrew === "pilot" ? "copilot" : "pilot",
+    text: parsed.data.text,
+    at: Date.now(),
+    ...(room.debrief ? { round: room.debrief.round } : {}),
+  };
+  room.chat = [...(room.chat ?? []), msg].slice(-MAX_CHAT_HISTORY);
+  await saveRoom(room);
+
+  ack({ ok: true });
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.data.roomId === room.id && sock.data.playerId) sock.emit("chat:message", msg);
+  }
+}
+
+/** Between rounds, a seated player is ready for the next dice (or takes it
+ *  back). Both ready starts the 3-2-1; taking it back stops it. */
+async function onRoundReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
+  const parsed = SetReadyPayload.safeParse(payload);
+  if (!parsed.success) return ack({ ok: false, error: "Invalid payload." });
+
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const crew = room.game ? crewOfGame(room, playerId) : null;
+  if (!room.seats.some((s) => s.playerId === playerId)) return ack({ ok: false, error: "Spectators can't ready up." });
+  if (!room.debrief || !crew) return ack({ ok: false, error: "Not between rounds." });
+
+  const debrief = room.debrief;
+  debrief.ready = { ...debrief.ready, [crew]: parsed.data.ready };
+  const both = debrief.ready.pilot && debrief.ready.copilot;
+  if (both && debrief.countdownEndsAt === null) debrief.countdownEndsAt = Date.now() + env.DEBRIEF_COUNTDOWN_MS;
+  if (!both) debrief.countdownEndsAt = null;
+  await saveRoom(room);
+
+  ack({ ok: true });
+  broadcastState(io, room);
+  await syncDebrief(io, room);
+}
+
 async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   const { room, playerId } = await context(socket);
   if (!room) return ack({ ok: false, error: "Not in a room." });
@@ -217,6 +288,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
 
   room.status = "in_progress";
   room.notice = null;
+  room.debrief = null;
   // Deal the game and roll round 1. Randomness lives on the server, never in
   // the pure reducer — rolled values are threaded in via a `roll` command.
   room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
@@ -241,6 +313,8 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   const { pilotId, copilotId } = seatCrews(room);
 
   cancelNpc(room.id); // a bot action for the old game must not land on the new one
+  clearDebrief(room.id);
+  room.debrief = null;
   room.status = "in_progress";
   room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
   room.version = 0;
@@ -266,6 +340,8 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
 
   clearClock(room.id);
   cancelNpc(room.id);
+  clearDebrief(room.id);
+  room.debrief = null;
   room.status = "lobby";
   room.game = null;
   room.version = 0;
@@ -329,28 +405,86 @@ export async function applyCommand(
   try {
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
-    game = settleNow(reduce(room.game, rcmd, playerId).state);
+    game = settleTraffic(reduce(room.game, rcmd, playerId).state, serverDice);
   } catch (e) {
     return e instanceof GameRuleError ? e.message : "Command rejected.";
   }
   room.game = game;
   room.version += 1;
   if (game.outcome) room.status = "finished";
+  openDebrief(room);
   await saveRoom(room);
 
   onApplied?.();
   emitGameEvent(io, room, command, playerId);
-  // On game end, also push a fresh room:state so the lobby/status UI updates.
-  if (room.status === "finished") broadcastState(io, room);
+  // On game end or a round's end, also push a fresh room:state so the
+  // status UI (or the debrief) updates.
+  if (room.status === "finished" || room.debrief) broadcastState(io, room);
   await syncClock(io, room);
   scheduleNpc(io, room.id);
   return null;
 }
 
-/** Supply what the reducer asked the server for (see shared `settle`): Traffic
- *  die rolls and the next round's dice, stamped with the clock for Real-Time. */
+/** Deal what the reducer is waiting for (see shared `settle`): the next round's
+ *  dice, stamped with the clock for Real-Time. */
 function settleNow(game: GameState): GameState {
   return settle(game, serverDice, Date.now);
+}
+
+/** The crew a seated player flies in the room's game. */
+function crewOfGame(room: Room, playerId: string): Crew | null {
+  if (room.game?.pilotId === playerId) return "pilot";
+  if (room.game?.copilotId === playerId) return "copilot";
+  return null;
+}
+
+/**
+ * A round ended and the game goes on: open the debrief. The board stays as the
+ * round left it, the crew may chat, and the next dice wait for both crews'
+ * Ready (a bot seat is always ready). Does nothing if one is already open.
+ */
+function openDebrief(room: Room): void {
+  const game = room.game;
+  if (room.debrief || room.status !== "in_progress" || !game || game.phase !== "rolling" || game.outcome) return;
+  const bot = botSeat(room);
+  const botCrew = bot ? crewOfGame(room, bot.playerId) : null;
+  room.debrief = {
+    round: game.round - 1,
+    ready: { pilot: botCrew === "pilot", copilot: botCrew === "copilot" },
+    countdownEndsAt: null,
+  };
+}
+
+/** Arm the room's 3-2-1 if one runs (a deadline already past deals at once). */
+async function syncDebrief(io: IOServer, room: Room): Promise<void> {
+  clearDebrief(room.id);
+  const endsAt = room.debrief?.countdownEndsAt;
+  if (endsAt == null) return;
+  debriefTimers.set(room.id, setTimeout(() => void deal(io, room.id, endsAt).catch(logFailure("deal")), Math.max(0, endsAt - Date.now())));
+}
+
+function clearDebrief(roomId: string) {
+  const t = debriefTimers.get(roomId);
+  if (t) {
+    clearTimeout(t);
+    debriefTimers.delete(roomId);
+  }
+}
+
+/** The 3-2-1 that ends at `endsAt` ran out: deal the next round's dice. */
+async function deal(io: IOServer, roomId: string, endsAt: number): Promise<void> {
+  debriefTimers.delete(roomId);
+  const room = await getRoom(roomId);
+  // Stale: cancelled, restarted, or the game moved on.
+  if (!room?.game || room.status !== "in_progress" || room.debrief?.countdownEndsAt !== endsAt) return;
+
+  room.game = settleNow(room.game);
+  room.debrief = null;
+  room.version += 1;
+  await saveRoom(room);
+  broadcastState(io, room);
+  await syncClock(io, room); // Real-Time: the clock starts with the dice
+  scheduleNpc(io, room.id); // the bot may lead the new round
 }
 
 /**
@@ -397,9 +531,10 @@ async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<v
   // Stale: the round already ended, the clock was paused, or a newer one runs.
   if (!room?.game || room.status !== "in_progress" || room.game.timerEndsAt !== endsAt) return;
 
-  room.game = settleNow(reduce(room.game, { type: "timeUp" }, "").state);
+  room.game = settleTraffic(reduce(room.game, { type: "timeUp" }, "").state, serverDice);
   room.version += 1;
   if (room.game.outcome) room.status = "finished";
+  openDebrief(room);
   await saveRoom(room);
   broadcastState(io, room);
   await syncClock(io, room);
@@ -431,6 +566,13 @@ async function onDisconnect(io: IOServer, socket: IOSocket) {
 
   const seat = room.seats.find((s) => s.playerId === playerId);
   if (seat) seat.connected = false;
+  // Between rounds: whoever left isn't ready any more, and the 3-2-1 stops.
+  const crew = crewOfGame(room, playerId);
+  if (room.debrief && crew) {
+    room.debrief.ready = { ...room.debrief.ready, [crew]: false };
+    room.debrief.countdownEndsAt = null;
+    clearDebrief(room.id);
+  }
   await saveRoom(room);
   broadcastState(io, room);
   await syncClock(io, room); // Real-Time: pause while the seat is empty
@@ -450,6 +592,7 @@ async function abandonIfStillGone(io: IOServer, roomId: string, playerId: string
   if (seat && !seat.connected && abandonsOnDisconnect(room)) {
     room.status = "abandoned";
     clearClock(roomId);
+    clearDebrief(roomId);
     await saveRoom(room);
     broadcastState(io, room);
   }

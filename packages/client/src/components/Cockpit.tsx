@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ICE_BRAKE_VALUES, REAL_TIME_SECONDS, firstPlayerForRound, placementKey, type GameCommand, type RoomSnapshot } from "@skyteam/shared";
 import type { Crew, Target } from "../types";
@@ -38,6 +38,7 @@ export function Cockpit({
   onCommand,
   show,
   clockOffset: clockOffsetOverride,
+  between,
 }: {
   snapshot: RoomSnapshot;
   onCommand: (command: GameCommand) => void;
@@ -45,6 +46,8 @@ export function Cockpit({
   show?: CockpitSection[];
   /** Tutorials run on the local clock: pass 0 instead of the server offset. */
   clockOffset?: number;
+  /** Between rounds (snapshot.debrief): shown in the dice tray's place. */
+  between?: ReactNode;
 }) {
   const vis = (section: CockpitSection) => !show || show.includes(section);
   const game = snapshot.game!;
@@ -277,6 +280,10 @@ export function Cockpit({
   // The status line under the dial: the most pressing thing for this viewer.
   const calloutText = (): string => {
     if (game.outcome) return game.outcome.result === "won" ? "Smooth landing — the passengers applaud." : game.outcome.reason;
+    if (snapshot.debrief) {
+      if (!myCrew) return "Between rounds.";
+      return snapshot.seats.some((s) => s.bot) ? "Between rounds — press Ready when you are." : "Between rounds — talk it over, then press Ready.";
+    }
     if (mustAnswerSwap) {
       // The offered die lies face-up on the card, so its value is visible.
       const offer = game.pendingSwap!;
@@ -696,7 +703,8 @@ export function Cockpit({
 
         {/* Dice tray + log */}
         <section className="tray">
-          {myCrew && (
+          {snapshot.debrief && between}
+          {myCrew && !snapshot.debrief && (
             <div className="hand">
               <label>
                 Your dice ({label(myCrew)}){selValue !== null && ` — placing as ${selValue}`}

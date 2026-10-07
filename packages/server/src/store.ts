@@ -62,6 +62,7 @@ const loadRoom = singleFlight(async (id: string): Promise<Room | null> => {
   room.setup ??= structuredClone(DEFAULT_SETUP);
   room.setup.abilities ??= []; // rooms saved before Special Abilities existed
   room.hostCrew ??= "pilot"; // rooms saved before seats chose their crew
+  room.chat ??= []; // rooms saved before the flight log existed
   for (const seat of room.seats) if (seat.bot) seat.bot = normalizeBotLevel(seat.bot); // retired levels fly as Aviator
   // An airport that's since been removed (e.g. the old Turns test board).
   if (!SCENARIOS[room.setup.scenarioId]) room.setup = structuredClone(DEFAULT_SETUP);

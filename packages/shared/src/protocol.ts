@@ -139,6 +139,28 @@ export const PlayerName = z
 export const SetNamePayload = z.object({ name: PlayerName });
 export type SetNamePayload = z.infer<typeof SetNamePayload>;
 
+export const MAX_CHAT_LENGTH = 200;
+/** The 3-2-1 between both crews pressing Ready and the next round's dice. */
+export const DEBRIEF_COUNTDOWN_MS = 3000;
+
+/** Flight log messages a room keeps (older ones are dropped). */
+export const MAX_CHAT_HISTORY = 50;
+
+/** A flight log message: trimmed, inner whitespace collapsed, 1..MAX_CHAT_LENGTH characters. */
+export const ChatText = z
+  .string()
+  .transform((s) => s.trim().replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(1, "Type a message first.")
+      .max(MAX_CHAT_LENGTH, `A message is at most ${MAX_CHAT_LENGTH} characters.`),
+  );
+
+/** Post to the room's flight log — seated players, in the lobby and between rounds. */
+export const ChatSendPayload = z.object({ text: ChatText });
+export type ChatSendPayload = z.infer<typeof ChatSendPayload>;
+
 export const SetReadyPayload = z.object({ ready: z.boolean() });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
 
@@ -199,6 +221,30 @@ export interface SeatView {
   name?: string;
 }
 
+/** One line of the lobby's flight log. `crew` is the sender's seat (it tints
+ *  the line blue for the Pilot, orange for the Co-Pilot). */
+export interface ChatMessage {
+  id: string;
+  playerId: PlayerId;
+  crew: Crew;
+  text: string;
+  /** When the server took it (epoch ms). */
+  at: number;
+  /** Sent between rounds: the round that had just ended. Absent in the lobby. */
+  round?: number;
+}
+
+/** Between rounds: the round's board stays up, the crew may chat, and the next
+ *  dice wait until both press Ready and a short countdown runs out. */
+export interface Debrief {
+  /** The round that just ended. */
+  round: number;
+  /** Who has pressed Ready (a bot seat always has). */
+  ready: Record<Crew, boolean>;
+  /** When the countdown ends and the dice are dealt (server epoch ms), while it runs. */
+  countdownEndsAt: number | null;
+}
+
 /** A full, self-contained view of a room tailored to one recipient. Sent on
  *  join, on every lobby change, and on reconnect (full resync). */
 export interface RoomSnapshot {
@@ -217,6 +263,10 @@ export interface RoomSnapshot {
   game: GameState | null;
   /** A lobby message about the room, e.g. "The Co-Pilot ended the game." */
   notice: string | null;
+  /** The flight log so far, oldest first (at most MAX_CHAT_HISTORY). */
+  chat: ChatMessage[];
+  /** Between rounds (see Debrief); null while dice are being placed or outside a game. */
+  debrief: Debrief | null;
   /** Who the recipient is, so the UI knows which seat is "me". */
   you: { playerId: PlayerId; kind: ParticipantKind; role?: SeatRole };
   /** The server's clock when this was sent (epoch ms), so a client can map a
@@ -247,6 +297,8 @@ export type Ack = { ok: true } | { ok: false; error: string; code?: typeof UNAVA
 export interface ServerToClientEvents {
   "room:state": (snapshot: RoomSnapshot) => void;
   "game:event": (msg: GameEventMsg) => void;
+  /** A new flight log line, sent to everyone in the room. */
+  "chat:message": (msg: ChatMessage) => void;
 }
 
 export interface ClientToServerEvents {
@@ -254,6 +306,9 @@ export interface ClientToServerEvents {
   "seat:ready": (payload: SetReadyPayload, ack: (res: Ack) => void) => void;
   "seat:name": (payload: SetNamePayload, ack: (res: Ack) => void) => void;
   "room:setup": (payload: SetSetupPayload, ack: (res: Ack) => void) => void;
+  "chat:send": (payload: ChatSendPayload, ack: (res: Ack) => void) => void;
+  /** Between rounds: ready (or not) for the next round's dice. */
+  "round:ready": (payload: SetReadyPayload, ack: (res: Ack) => void) => void;
   "game:start": (ack: (res: Ack) => void) => void;
   "game:reset": (ack: (res: Ack) => void) => void;
   /** End the game for both players and return the room to its lobby. */
