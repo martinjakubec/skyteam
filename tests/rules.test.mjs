@@ -1,6 +1,6 @@
 // Converted from scripts/test-rules.mjs by the Vitest codemod: each section is a test,
 // each check(label, cond) a set of assertion helpers with the same verdict (see support/checks.mjs).
-import { test } from "vitest";
+import { expect, test } from "vitest";
 import * as __c from "./support/checks.mjs";
 // Deterministic unit tests for the SkyTeam rules reducer (pure, no server).
 // Run with `npm test` (inside a node:22 container, repo bind-mounted).
@@ -1203,4 +1203,16 @@ test("32) A die that fits no space is discarded (the game never freezes)", async
   a.turn = "copilot";
   a = reduce(a, { type: "adapt", dieId: 3 }, C).state; // 5 → 2
   (__c.begin("a die stranded by Adaptation is discarded too"), __c.done(__c.cmp("a die stranded by Adaptation is discarded too", (a.round), "===", (2)) && __c.truthy("a die stranded by Adaptation is discarded too", (a.log.some((l) => /Co-Pilot's 2 has nowhere to go/.test(l))))));
+});
+
+test("33) Log wording: an airplane joining at the airport; one die, several dice", () => {
+  const short = [{ traffic: 0, trafficDice: 1 }, { traffic: 0 }, { traffic: 0, airport: true }];
+  const t = roll(init(scn({ rounds: 7, approachTrack: short })), [3, 3, 6, 6], [3, 3, 6, 6], [5]);
+  expect(t.log).toContain("Traffic die: 5 — an airplane joins the approach at the airport.");
+
+  let s = roll(createInitialGameState(scn({ rerollRounds: [1] }), P, C), [1, 1, 1, 1], [6, 6, 6, 6]);
+  s = reduce(s, { type: "reroll", dieIds: [0], values: [3] }, P).state;
+  expect(s.log).toContain("Pilot spent a Reroll token (1 die).");
+  s = reduce(s, { type: "reroll", dieIds: [0, 1], values: [2, 2] }, C).state;
+  expect(s.log).toContain("Co-Pilot rerolled 2 dice.");
 });
