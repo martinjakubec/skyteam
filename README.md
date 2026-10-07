@@ -124,28 +124,29 @@ Ice Brakes steps are started by the Pilot and always finished; with
 Kerosene, the Pilot's 2 sets the first Brakes; in Real-Time, once under
 20 s are left, the crew's own Axis and Engine come first.
 
-Measured per scenario card with `scripts/bench-cards.mjs` at the live
-600 ms budget (80 seeds per setup; each card with its printed modules; a
-card with ★ abilities over four random ability picks), the share of games
-that land:
+Measured per scenario card with `scripts/bench-cards.mjs` at the live 600 ms
+budget on the compiled bot (`BOT_DIST=1`), 12 games at once (one per physical
+core, as a live server gives one game), 400–420 games per card; a card with ★
+abilities is averaged over every ability option. Each card plays its own
+profile from `packages/shared/src/bot/profiles.ts`:
 
 | Card | Landed | | Card | Landed |
 |---|---|---|---|---|
-| green YUL | 76% | | yellow LHR | 10% |
-| green LHR | 40% | | yellow TGU | 5% |
-| green OSL | 26% | | yellow GIG | 4% |
-| green PRG | 20% | | yellow KUL | 3% |
-| green ATL | 16% | | yellow KEF | 2% |
-| green HND | 14% | | yellow PRG | 2% |
-| | | | yellow ATL | 1% |
+| green YUL | 83% | | yellow LHR | 38% |
+| green LHR | 65% | | yellow PRG | 29% |
+| green ATL | 56% | | yellow GIG | 27% |
+| green OSL | 54% | | yellow KUL | 20% |
+| green HND | 45% | | yellow TGU | 19% |
+| green PRG | 42% | | yellow ATL | 18% |
+| | | | yellow KEF | 14% |
 
-Off YUL, most lost games end short of the airport with traffic still on
-the approach: the bot can't clear airplanes fast enough to keep its pace.
-Per-card tuning (`CARD=… npm run tune`, `SCORE=graded`) and two clearing
-experiments (`SEARCH_DEFAULTS.radioCandidate`, `POLICY_PARAMS.clearPlannedAny`,
-off by default) were measured and didn't help, so `BOT_PROFILES` is empty.
-Runs at a time budget vary with the machine's load (about ±15 landings in
-300 games); compare experiments at a fixed `SAMPLES` first.
+A profile switches on the card's scripted plan (`bot/planPolicy.ts`: it
+assigns a round's dice before placing them, handles every module and Special
+Ability, and its move is always searched) and tunes the rollouts: e.g.
+`tiltHold` for a run of turns that all allow one tilt, `peek` (rollouts plan
+against the partner's sampled dice — it coordinates the tilt through turns).
+Time-budget runs depend on the machine's load: more games at once than
+physical cores starves each search, so gate at `CONCURRENCY` = cores.
 
 ### Development (hot reload)
 

@@ -57,12 +57,12 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true, abilityCandidates: "plan" },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, turnPrepAhead: true, gearOnPace: true, clearAheadMax: 5, trafficPressure: 1 },
   },
-  // yellow LHR (2026-10-06): 34.3% of 400 seeds at 600 ms (compiled), was 8.5% —
-  // above the 30% fallback. Heavy traffic: the plan weighs clearing high.
+  // yellow LHR (2026-10-07, second pass): 38.0% of 400 seeds at 600 ms with 12 at once
+  // (live-like), was 29.0%. Heavy traffic: the plan weighs clearing high; peek rollouts.
   "yellow-LHR": {
     plan: { engineMid: 40, searchBias: 400, clear: 250, clearHere: 400 },
     search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5 },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, peek: true },
   },
   // yellow GIG (2026-10-06): 19.8% of 420 games (all 6 abilities) at 600 ms, was 5.7% —
   // under the 30% fallback after 4 attempts. Wind: the plan reads it after the Axis turns it.
