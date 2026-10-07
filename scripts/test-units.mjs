@@ -1,7 +1,12 @@
+// LEGACY TEST SUITE — frozen. The tests live in tests/ (Vitest, `npm test`);
+// this file is their original, kept only as a fallback for a while
+// (`npm run test:legacy`). Add no new tests here; it will be removed.
+// `npm run test:compare` checks that both suites still agree check by check.
+//
 // Unit tests for the non-reducer pieces: hidden-dice redaction, per-viewer
 // snapshots, game-setup validation, the CORS origin check, and the client's
 // uuid() fallback.
-// Run via `npm test` (builds shared first; the server imports its dist).
+// Run via `npm run test:legacy` (builds shared first; the server imports its dist).
 import {
   ABILITY_IDS,
   APPROACH_TRACKS,

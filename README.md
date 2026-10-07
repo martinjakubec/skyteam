@@ -32,7 +32,9 @@ grace-timer logic.
 ## Tests
 
 ```bash
-npm test    # rules + unit + bot suites (run inside a node:22 container; see below)
+npm test                # Vitest: rules, units, bot, server and client suites (inside a node:22 container; see below)
+npm run test:coverage   # the same, with a coverage report (fails below 80%)
+npm run test:legacy     # the old scripts/test-*.mjs suites: frozen fallback, no new tests
 npm run bench -- [games=30] [quick|samples] [ALL]   # bot win rate
 npm run bench -- [games=40] landing [samples=20|600ms]   # YUL landings (MODULES="kerosene,intern" adds modules)
 ```
@@ -257,8 +259,14 @@ landing checks).
 
 ### Tests
 
-- `node scripts/test-rules.mjs` (run with `tsx`) — deterministic unit tests of
-  the reducer: a full winning landing plus every loss/mechanic branch.
+- `tests/` (Vitest, `npm test`) — the rules reducer (a full winning landing plus
+  every loss/mechanic branch), the units around it, the bot, the server end to
+  end over sockets (Redis faked in memory) and the client in jsdom (every
+  tutorial played through the cockpit). Client tests are `*.test.tsx`.
+- `scripts/test-{rules,units,bot}.mjs` (`npm run test:legacy`) — **legacy**: the
+  original suites `tests/` was converted from, kept for now as a fallback. They
+  are frozen (add tests to `tests/` only) and will be removed;
+  `npm run test:compare` checks that both report the same verdict for every check.
 - `node scripts/validate.mjs` — end-to-end socket test against a running server
   (create/join → lobby → start → hidden-dice redaction → realtime placement →
   reconnect resync). See the header comments for how to run each in a container.

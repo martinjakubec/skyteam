@@ -13,15 +13,23 @@
     "dev:server": "npm run build:shared && npm run dev -w @skyteam/server",
     "dev:client": "npm run build:shared && npm run dev -w @skyteam/client",
     "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
-    "test": "npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs && tsx scripts/test-bot.mjs",
+    "test": "npm run build:shared && vitest run",
+    "test:legacy": "npm run build:shared && tsx scripts/test-rules.mjs && tsx scripts/test-units.mjs && tsx scripts/test-bot.mjs",
+    "test:coverage": "npm run build:shared && vitest run --coverage",
+    "test:compare": "npm run build:shared && node tests/support/compare.mjs",
     "bench": "npm run build:shared && tsx scripts/bench.mjs",
     "tune": "npm run build:shared && tsx scripts/tune.mjs",
     "validate:realtime-bot": "npm run build:shared && node scripts/validate-realtime-bot.mjs",
     "run:docker": "docker compose -f docker-compose.dev.yml up -d"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@vitest/coverage-v8": "~3.2.7",
     "concurrently": "^9.1.0",
+    "jsdom": "^26.1.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
   }
 }
