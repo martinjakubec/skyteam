@@ -22,6 +22,10 @@ and win rate per airport, and more). `npm run logs:export` writes JSONL for
 training bots, and `npm run logs:replay` steps through one game. See
 [docs/game-logs.md](docs/game-logs.md).
 
+**Production settings.** Secrets and settings live in GitHub. The list of what
+to set (and what not to) is
+[docs/production-variables.md](docs/production-variables.md).
+
 **Between rounds (debrief).** As in the board game, the crew may talk between
 rounds but never while placing dice. When a round ends and the game goes on,
 the server holds back the next dice. The finished round stays on the board, the

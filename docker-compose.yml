@@ -57,6 +57,7 @@ services:
       RECONNECT_GRACE_MS: ${RECONNECT_GRACE_MS:-60000}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8080}
       NPC_WORKERS: ${NPC_WORKERS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
       DATABASE_URL: postgres://skyteam:${POSTGRES_PASSWORD}@postgres:5432/skyteam
       GIT_SHA: ${GIT_SHA:-dev}
     depends_on:
