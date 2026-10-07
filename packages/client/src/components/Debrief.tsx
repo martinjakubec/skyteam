@@ -32,7 +32,12 @@ export function DebriefPanel({ snapshot, onReady }: { snapshot: RoomSnapshot; on
       <ul className="debrief-crew">
         {CREWS.map((crew) => (
           <li key={crew} className={`${crew}${debrief.ready[crew] ? " is-ready" : ""}`}>
-            {names[crew] ?? label(crew)} {debrief.ready[crew] ? "✓ ready" : "…"}
+            {/* The lobby's lights: green ready, red not yet. */}
+            <span className="debrief-light" aria-hidden="true">
+              {debrief.ready[crew] ? "🟢" : "🔴"}
+            </span>{" "}
+            <span className="debrief-name">{names[crew] ?? label(crew)}</span>{" "}
+            <span className="debrief-state">{debrief.ready[crew] ? "ready" : "not ready"}</span>
           </li>
         ))}
       </ul>

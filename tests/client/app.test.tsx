@@ -427,8 +427,9 @@ describe("between rounds", () => {
     fireEvent.click(within(panel()).getByRole("button", { name: "Ready for round 2" }));
     expect(sock.last("round:ready")!.args[0]).toEqual({ ready: true });
     sock.serve("room:state", between({ ready: { pilot: true, copilot: false } }));
+    // Each crew: a green or red light, the name in full, and the word for it.
     const marks = within(panel()).getAllByRole("listitem").map((li) => li.textContent);
-    expect(marks).toEqual([expect.stringMatching(/Ann.*✓/), expect.not.stringMatching(/✓/)]);
+    expect(marks).toEqual(["🟢 Ann ready", "🔴 Bob not ready"]);
     fireEvent.click(within(panel()).getByRole("button", { name: "Wait" }));
     expect(sock.last("round:ready")!.args[0]).toEqual({ ready: false });
     // The dice are dealt: the panel goes, the tray is back.

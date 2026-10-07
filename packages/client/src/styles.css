@@ -2168,16 +2168,35 @@ ul {
 .debrief-crew {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  align-self: stretch;
 }
 .debrief-crew li {
-  padding: 0.25rem 0.6rem;
+  flex: 1 1 10rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  border-left: 3px solid;
+  border-left: 4px solid;
   background: rgba(20, 26, 35, 0.15);
   font-family: var(--font-display);
   letter-spacing: 0.04em;
-  font-size: 0.85rem;
+  font-size: 1rem;
+}
+.debrief-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debrief-state {
+  margin-left: auto;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  opacity: 0.75;
+  white-space: nowrap;
 }
 .debrief-crew li.pilot {
   border-left-color: var(--blue);
