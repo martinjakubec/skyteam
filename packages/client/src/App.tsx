@@ -10,6 +10,7 @@ import { DebriefPanel } from "./components/Debrief";
 import { Seats } from "./components/Seats";
 import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
+import { AccountChip } from "./account/AccountChip";
 
 export function App() {
   const {
@@ -80,6 +81,9 @@ export function App() {
   if (!room) {
     return (
       <main className="center">
+        <nav className="account-bar">
+          <AccountChip />
+        </nav>
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <p className="muted">Land the plane together. One Pilot, one Co-Pilot, no talking.</p>
         <button disabled={busy} onClick={() => onCreate()}>
@@ -122,6 +126,8 @@ export function App() {
       <header className="topbar">
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <div className="topbar-right">
+          {/* In a room the account pages open in a new tab: the game here goes on. */}
+          {!inGame && <AccountChip newTab />}
           <span className={`conn ${connected ? "on" : "off"}`}>
             {connected ? "● linked" : "○ reconnecting"}
           </span>

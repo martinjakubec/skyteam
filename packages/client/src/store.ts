@@ -71,6 +71,8 @@ export const useGame = create<GameStore>((set, get) => {
 
       const socket: TypedSocket = io(SERVER_URL, {
         transports: ["websocket"],
+        // Send the sign-in cookie: the server links a signed-in player's seat to their account.
+        withCredentials: true,
         reconnection: true,
         reconnectionDelayMax: 5000,
       });
