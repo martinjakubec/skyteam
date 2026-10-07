@@ -67,6 +67,7 @@ function snapshot(over: Partial<RoomSnapshot> = {}): RoomSnapshot {
     game: null,
     notice: null,
     chat: [],
+    debrief: null,
     you: { playerId: ME, kind: "player", role: "host" },
     serverTime: Date.now(),
     ...over,

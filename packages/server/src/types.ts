@@ -1,4 +1,4 @@
-import type { BotLevel, ChatMessage, Crew, GameSetup, GameState, PlayerId, RoomStatus, SeatRole } from "@skyteam/shared";
+import type { BotLevel, ChatMessage, Debrief, Crew, GameSetup, GameState, PlayerId, RoomStatus, SeatRole } from "@skyteam/shared";
 
 /** A seat is the durable link between a room and a player. Crucially it is NOT
  *  a socket: a socket can drop and a fresh one re-attach to the same seat —
@@ -33,5 +33,7 @@ export interface Room {
   notice?: string | null;
   /** The lobby's flight log, oldest first, capped at MAX_CHAT_HISTORY. */
   chat: ChatMessage[];
+  /** Between rounds: the next dice wait for both crews' Ready (see openDebrief). */
+  debrief?: Debrief | null;
   updatedAt: number;
 }

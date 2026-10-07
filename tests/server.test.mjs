@@ -11,6 +11,7 @@ Object.assign(process.env, {
   NPC_WORKERS: "1",
   RECONNECT_GRACE_MS: "250",
   REAL_TIME_SECONDS: "1",
+  DEBRIEF_COUNTDOWN_MS: "300", // the 3-2-1 between rounds, shortened
   TRUST_PROXY: "1", // each test request names its own client address (rate limits are per address)
 });
 
@@ -21,7 +22,7 @@ const { attachSocket } = await import("../packages/server/src/socket.ts");
 const { stopThinking } = await import("../packages/server/src/think.ts");
 const { issueToken } = await import("../packages/server/src/identity.ts");
 const { default: FakeRedis } = await import("./support/fakeRedis.mjs");
-const { actorFor, legalMoves, quickMove, mulberry32, UNAVAILABLE, SOLO_RESTRICTED_NOTE } = await import("../packages/shared/src/index.ts");
+const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, settleTraffic, randDice, withEntropy, UNAVAILABLE, SOLO_RESTRICTED_NOTE } = await import("../packages/shared/src/index.ts");
 
 let server, url;
 const sockets = [];
@@ -53,15 +54,18 @@ const post = async (path, body, base = url, from = `10.0.${nextAddress >> 8}.${n
   return { status: res.status, body: await res.json() };
 };
 
-/** A connected client that keeps every room:state, game:event and chat:message. */
+/** A connected client that keeps every room:state, game:event and chat:message,
+ *  and the newest game (and its version) from either. */
 async function client() {
   const sock = connect(url, { transports: ["websocket"], forceNew: true, reconnection: false });
   sockets.push(sock);
   sock.states = [];
   sock.events = [];
   sock.chat = [];
-  sock.on("room:state", (s) => sock.states.push(s));
-  sock.on("game:event", (e) => sock.events.push(e));
+  sock.game = null;
+  sock.version = -1;
+  sock.on("room:state", (s) => (sock.states.push(s), (sock.game = s.game), (sock.version = s.version)));
+  sock.on("game:event", (e) => (sock.events.push(e), (sock.game = e.game), (sock.version = e.version)));
   sock.on("chat:message", (m) => sock.chat.push(m));
   await new Promise((resolve, reject) => (sock.once("connect", resolve), sock.once("connect_error", reject)));
   return sock;
@@ -99,6 +103,47 @@ async function startedGame(setup) {
   expect(await emit(r.h, "game:start")).toEqual({ ok: true });
   await until(() => latest(r.h)?.status === "in_progress" && latest(r.g)?.status === "in_progress", 5000, "game start");
   return r;
+}
+
+/**
+ * Play quick legal moves, each crew from its own (redacted) view, until `done()`
+ * holds or the game stops. `socks` maps a crew to its socket; a crew without
+ * one is the bot, which plays by itself. Between rounds nobody acts: it waits.
+ */
+let moveNo = 0;
+async function playUntil(socks, done, rand = mulberry32(11)) {
+  const all = Object.values(socks);
+  for (let i = 0; i < 600 && !done(); i++) {
+    if (latest(all[0]).status !== "in_progress") return;
+    const crew = actorFor(all[0].game);
+    const sock = crew && socks[crew];
+    if (!sock) {
+      await new Promise((r) => setTimeout(r, 20));
+      continue;
+    }
+    const v = sock.version;
+    expect(await emit(sock, "game:command", { commandId: `p${moveNo++}`, command: quickMove(sock.game, crew, rand) })).toEqual({ ok: true });
+    await until(() => all.every((s) => s.version > v), 2000, "move broadcast");
+    await new Promise((r) => setTimeout(r, 55)); // under the 20-events-a-second flood limit
+  }
+}
+
+/** A two-player game played to its first debrief (a fresh game if the crew
+ *  crashed in round 1). */
+async function toDebrief(setup) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const r = await startedGame(setup);
+    await playUntil({ pilot: r.h, copilot: r.g }, () => !!latest(r.h).debrief);
+    if (latest(r.h).debrief && latest(r.g).debrief) return r;
+  }
+  throw new Error("no round 1 survived");
+}
+
+/** Both crews press Ready; resolves once the next round's dice are dealt. */
+async function bothReady({ h, g }) {
+  expect(await emit(h, "round:ready", { ready: true })).toEqual({ ok: true });
+  expect(await emit(g, "round:ready", { ready: true })).toEqual({ ok: true });
+  await until(() => latest(h).debrief === null && latest(h).game.phase === "placement", 3000, "the deal");
 }
 
 /** The socket whose crew acts next, and a legal move for it. */
@@ -240,7 +285,7 @@ describe("socket lobby", () => {
 
   test("before joining a room, every action is refused", async () => {
     const s = await client();
-    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["chat:send", { text: "hi" }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"]]) {
+    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["chat:send", { text: "hi" }], ["round:ready", { ready: true }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"]]) {
       expect((await emit(s, event, payload)).error, event).toBe("Not in a room.");
     }
     expect((await emit(s, "game:command", { commandId: "c", command: { type: "reroll", dieIds: [] } })).error).toBe("No active game.");
@@ -356,9 +401,9 @@ describe("socket lobby chat (flight log)", () => {
     expect(h.chat).toHaveLength(1);
   });
 
-  test("spectators can't post, and the log closes once the game starts", async () => {
+  test("spectators can't post, and the log closes while dice are placed", async () => {
     const { h, g, roomId, invite } = await startedGame();
-    expect((await emit(h, "chat:send", { text: "mid-flight" })).error).toBe("The flight log is for the lobby.");
+    expect((await emit(h, "chat:send", { text: "mid-flight" })).error).toBe("Chat opens between rounds.");
     const watcher = await post(`/rooms/${invite}/join`, {});
     const w = await client();
     await emit(w, "room:join", { roomId, token: watcher.body.token });
@@ -400,16 +445,11 @@ describe("socket game", () => {
   test("a game played to the end finishes the room", async () => {
     const r = await startedGame();
     const rand = mulberry32(7);
-    const view = (sock) => sock.events.at(-1)?.game ?? latest(sock).game;
-    for (let i = 0; i < 400 && latest(r.h).status === "in_progress"; i++) {
-      const before = r.h.events.length;
-      // Whoever acts moves from their own (redacted) view.
-      const crew = actorFor(view(r.h));
-      const sock = crew === "pilot" ? r.h : r.g;
-      const command = quickMove(view(sock), crew, rand);
-      expect(await emit(sock, "game:command", { commandId: `m${i}`, command })).toEqual({ ok: true });
-      await until(() => r.h.events.length > before && r.g.events.length > before, 2000, "move broadcast");
-      await new Promise((resolve) => setTimeout(resolve, 55)); // under the 20-events-a-second flood limit
+    // Round after round: play it, then both press Ready in the debrief.
+    for (let round = 0; round < 12 && latest(r.h).status === "in_progress"; round++) {
+      await playUntil({ pilot: r.h, copilot: r.g }, () => !!latest(r.h).debrief || latest(r.h).status !== "in_progress", rand);
+      await until(() => !!latest(r.h).debrief || latest(r.h).status !== "in_progress", 2000, "debrief or the end");
+      if (latest(r.h).debrief) await bothReady(r);
     }
     await until(() => latest(r.h).status === "finished", 2000, "finished");
     expect(latest(r.h).game.outcome).toBeTruthy();
@@ -458,6 +498,190 @@ describe("socket game", () => {
     const round = latest(h).game.round;
     // 1 s rounds: time runs out and the round (or the game) ends.
     await until(() => latest(h).game?.round !== round || latest(h).status !== "in_progress", 4000, "time up");
+  });
+});
+
+// --- sockets: between rounds (the debrief) ------------------------------------------
+
+describe("socket debrief", () => {
+  test("a round's end opens a debrief and holds the next dice back", async () => {
+    const r = await toDebrief();
+    expect(latest(r.h).debrief).toEqual({ round: 1, ready: { pilot: false, copilot: false }, countdownEndsAt: null });
+    expect(latest(r.g).debrief).toEqual(latest(r.h).debrief);
+    expect(r.h.game.phase).toBe("rolling");
+    expect(r.h.game.round).toBe(2);
+    expect(r.h.game.dice.pilot.every((d) => d.placed)).toBe(true); // the finished round stays on the board
+    await new Promise((res) => setTimeout(res, 400));
+    expect(r.h.game.phase).toBe("rolling"); // nothing is dealt on its own
+    expect((await emit(r.h, "game:command", { commandId: "x", command: { type: "reroll", dieIds: [] } })).ok).toBe(false);
+  });
+
+  test("one Ready waits; both start the 3-2-1; the dice come when it ends", async () => {
+    const r = await toDebrief();
+    expect(await emit(r.h, "round:ready", { ready: "yes" })).toEqual({ ok: false, error: "Invalid payload." });
+    expect(await emit(r.h, "round:ready", { ready: true })).toEqual({ ok: true });
+    await until(() => latest(r.g).debrief?.ready.pilot === true, 2000, "pilot ready");
+    expect(latest(r.g).debrief.countdownEndsAt).toBe(null);
+    const asked = Date.now();
+    expect(await emit(r.g, "round:ready", { ready: true })).toEqual({ ok: true });
+    await until(() => latest(r.h).debrief?.countdownEndsAt != null, 2000, "countdown");
+    const endsAt = latest(r.h).debrief.countdownEndsAt;
+    expect(endsAt - asked).toBeGreaterThanOrEqual(250);
+    expect(endsAt - asked).toBeLessThanOrEqual(1000);
+    await until(() => latest(r.h).debrief === null, 3000, "the deal");
+    expect(Date.now()).toBeGreaterThanOrEqual(endsAt - 20);
+    expect(r.h.game.phase).toBe("placement");
+    expect(r.h.game.dice.pilot.filter((d) => !d.placed)).toHaveLength(4);
+    expect(r.g.game.dice.copilot.filter((d) => !d.placed)).toHaveLength(4);
+  });
+
+  test("Wait cancels the countdown", async () => {
+    const r = await toDebrief();
+    await emit(r.h, "round:ready", { ready: true });
+    await emit(r.g, "round:ready", { ready: true });
+    await until(() => latest(r.h).debrief?.countdownEndsAt != null, 2000, "countdown");
+    expect(await emit(r.g, "round:ready", { ready: false })).toEqual({ ok: true });
+    await until(() => latest(r.h).debrief?.countdownEndsAt === null, 2000, "cancelled");
+    expect(latest(r.h).debrief.ready).toEqual({ pilot: true, copilot: false });
+    await new Promise((res) => setTimeout(res, 500)); // past the old deadline
+    expect(latest(r.h).debrief).not.toBe(null);
+    expect(r.h.game.phase).toBe("rolling");
+  });
+
+  test("the flight log opens between rounds (lines tagged with the round) and closes at the deal", async () => {
+    const r = await toDebrief();
+    expect(await emit(r.g, "chat:send", { text: "Engines at 7 next time?" })).toEqual({ ok: true });
+    await until(() => r.h.chat.length === 1, 2000, "message");
+    expect(r.h.chat[0]).toMatchObject({ text: "Engines at 7 next time?", crew: "copilot", round: 1 });
+    await emit(r.h, "round:ready", { ready: true });
+    await emit(r.g, "round:ready", { ready: true });
+    await until(() => latest(r.h).debrief?.countdownEndsAt != null, 2000, "countdown");
+    expect(await emit(r.h, "chat:send", { text: "go" })).toEqual({ ok: true }); // still open during the 3-2-1
+    await until(() => latest(r.h).debrief === null, 3000, "the deal");
+    expect((await emit(r.h, "chat:send", { text: "too late" })).error).toBe("Chat opens between rounds.");
+  });
+
+  test("a seat that drops loses its Ready and stops the countdown; back and ready, the dice come", async () => {
+    const r = await toDebrief();
+    await emit(r.h, "round:ready", { ready: true });
+    await emit(r.g, "round:ready", { ready: true });
+    await until(() => latest(r.h).debrief?.countdownEndsAt != null, 2000, "countdown");
+    r.g.disconnect();
+    await until(() => latest(r.h).debrief?.countdownEndsAt === null, 2000, "countdown stopped");
+    expect(latest(r.h).debrief.ready).toEqual({ pilot: true, copilot: false });
+    const back = await client();
+    expect(await emit(back, "room:join", { roomId: r.roomId, token: r.guestToken })).toEqual({ ok: true });
+    await until(() => latest(back)?.debrief, 2000, "debrief on rejoin");
+    await new Promise((res) => setTimeout(res, 400));
+    expect(latest(r.h).debrief).not.toBe(null); // the pilot's Ready alone deals nothing
+    await bothReady({ h: r.h, g: back });
+  });
+
+  test("spectators see the debrief but can't press Ready or chat; Ready outside a debrief is refused", async () => {
+    const r = await toDebrief();
+    const watcher = await post(`/rooms/${r.invite}/join`, {});
+    const w = await client();
+    await emit(w, "room:join", { roomId: r.roomId, token: watcher.body.token });
+    await until(() => latest(w)?.debrief, 2000, "spectator sees the debrief");
+    expect((await emit(w, "round:ready", { ready: true })).error).toBe("Spectators can't ready up.");
+    expect((await emit(w, "chat:send", { text: "hi" })).error).toBe("Spectators can't post in the flight log.");
+    await bothReady(r);
+    expect((await emit(r.h, "round:ready", { ready: true })).error).toBe("Not between rounds.");
+    const { h } = await twoPlayerRoom();
+    expect((await emit(h, "round:ready", { ready: true })).error).toBe("Not between rounds.");
+  });
+
+  test("Reset and Exit end the debrief", async () => {
+    const r = await toDebrief();
+    expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
+    await until(() => latest(r.g).debrief === null && latest(r.g).game.round === 1, 2000, "reset");
+    const r2 = await toDebrief();
+    expect(await emit(r2.g, "game:exit")).toEqual({ ok: true });
+    await until(() => latest(r2.h).status === "lobby", 2000, "lobby");
+    expect(latest(r2.h).debrief).toBe(null);
+  });
+
+  test("Real-Time: no clock between rounds; it starts at the deal", async () => {
+    // Place only the four mandatory dice and let the 1 s clock end the round:
+    // the Axis dice as close as they come (no spin), the lowest on the Engines
+    // (no speed into traffic).
+    const r = await startedGame({ scenarioId: "YUL", modules: ["realTime"], abilities: [] });
+    for (let i = 0; i < 4; i++) {
+      const crew = actorFor(r.h.game);
+      const sock = crew === "pilot" ? r.h : r.g;
+      const kind = sock.game.axis[crew] === null ? "axis" : "engine";
+      const theirs = sock.game.axis[crew === "pilot" ? "copilot" : "pilot"] ?? 3.5;
+      const score = (d) => (kind === "axis" ? Math.abs(d.value - theirs) : d.value);
+      const die = sock.game.dice[crew].filter((d) => !d.placed).reduce((a, b) => (score(b) < score(a) ? b : a));
+      const move = { type: "placeDie", dieId: die.id, target: { kind } };
+      const v = sock.version;
+      expect(await emit(sock, "game:command", { commandId: `rt${i}`, command: move })).toEqual({ ok: true });
+      await until(() => r.h.version > v && r.g.version > v, 2000, "move");
+    }
+    await until(() => !!latest(r.h).debrief, 4000, "time up");
+    expect(r.h.game.timerEndsAt).toBe(null);
+    await new Promise((res) => setTimeout(res, 1200)); // longer than a round: the debrief has no clock
+    expect(latest(r.h).debrief).not.toBe(null);
+    await bothReady(r);
+    expect(r.h.game.timerEndsAt).toBeGreaterThan(Date.now());
+  });
+
+  test("solo: the bot is always ready, so the human's Ready starts the countdown", async () => {
+    const room = await post("/rooms", { solo: { crew: "copilot", level: "aviator" } });
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const s = await client();
+      await emit(s, "room:join", { roomId: room.body.roomId, token: room.body.token });
+      await until(() => latest(s), 2000, "snapshot");
+      await emit(s, "seat:ready", { ready: true });
+      await until(() => latest(s).status === "ready", 2000, "ready");
+      expect(await emit(s, "game:start")).toEqual({ ok: true });
+      await until(() => latest(s).status === "in_progress", 2000, "started");
+      await playUntil({ copilot: s }, () => !!latest(s).debrief);
+      if (!latest(s).debrief) {
+        await emit(s, "game:exit");
+        await until(() => latest(s).status === "lobby", 2000, "lobby");
+        s.disconnect();
+        continue;
+      }
+      expect(latest(s).debrief.ready).toEqual({ pilot: true, copilot: false });
+      expect(await emit(s, "round:ready", { ready: true })).toEqual({ ok: true });
+      await until(() => latest(s).debrief === null && latest(s).game.phase === "placement", 3000, "the deal");
+      return;
+    }
+    throw new Error("no round 1 survived");
+  });
+
+  test("after a restart: a saved countdown is re-armed on rejoin; an old room stuck between rounds gets its debrief", async () => {
+    // A game at the end of round 1, as a store saved it (built with the shared rules).
+    const me = issueToken(), other = issueToken();
+    const rand = mulberry32(21);
+    const dice = randDice(rand);
+    let game = newGame({ scenarioId: "YUL", modules: [], abilities: [] }, me.playerId, other.playerId, rand, Date.now());
+    for (let i = 0; i < 40 && game.phase === "placement"; i++) {
+      const crew = actorFor(game);
+      const id = crew === "pilot" ? me.playerId : other.playerId;
+      game = settleTraffic(reduce(game, withEntropy(quickMove(game, crew, rand), dice), id).state, dice);
+    }
+    expect(game.phase).toBe("rolling");
+    const saved = (id, debrief) => ({
+      id, inviteCode: `INV${id}`.slice(0, 8), hostPlayerId: me.playerId, status: "in_progress", hostCrew: "pilot",
+      seats: [
+        { playerId: me.playerId, role: "host", ready: true, connected: false },
+        { playerId: other.playerId, role: "guest", ready: true, connected: false },
+      ],
+      observers: [], setup: { scenarioId: "YUL", modules: [], abilities: [] }, version: 9, game, chat: [], updatedAt: Date.now(),
+      ...(debrief === undefined ? {} : { debrief }),
+    });
+    // The countdown's deadline passed while the server was down: the dice come on rejoin.
+    FakeRedis.last.data.set("room:restart-1", JSON.stringify(saved("restart-1", { round: 1, ready: { pilot: true, copilot: true }, countdownEndsAt: Date.now() - 5 })));
+    const s = await client();
+    await emit(s, "room:join", { roomId: "restart-1", token: me.token });
+    await until(() => latest(s)?.debrief === null && latest(s).game.phase === "placement", 3000, "dealt on rejoin");
+    // Saved before debriefs existed: rejoining opens one.
+    FakeRedis.last.data.set("room:restart-2", JSON.stringify(saved("restart-2")));
+    await emit(s, "room:join", { roomId: "restart-2", token: me.token });
+    await until(() => latest(s).roomId === "restart-2", 2000, "second room");
+    expect(latest(s).debrief).toEqual({ round: 1, ready: { pilot: false, copilot: false }, countdownEndsAt: null });
   });
 });
 

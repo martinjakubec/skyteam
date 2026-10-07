@@ -38,8 +38,15 @@ export function roundRoll(game: GameState, dice: Dice, at: number): ReduceComman
  * (Synchronisation) and, once a round has ended, the next round's dice.
  */
 export function settle(game: GameState, dice: Dice, now: () => number): GameState {
-  while (game.trafficPending && !game.outcome) game = reduce(game, { type: "rollTraffic", value: dice.traffic() }, "").state;
+  game = settleTraffic(game, dice);
   while (game.phase === "rolling" && !game.outcome) game = reduce(game, roundRoll(game, dice, now()), "").state;
+  return game;
+}
+
+/** Only the Traffic die rolls: a round that ended stays in `rolling`, its
+ *  dice not yet dealt (the live server deals after the crews' debrief). */
+export function settleTraffic(game: GameState, dice: Dice): GameState {
+  while (game.trafficPending && !game.outcome) game = reduce(game, { type: "rollTraffic", value: dice.traffic() }, "").state;
   return game;
 }
 
