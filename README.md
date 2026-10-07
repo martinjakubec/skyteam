@@ -11,8 +11,18 @@ bottom. A room keeps its last 50 lines, which arrive with every snapshot, so a
 refresh or reconnect shows the conversation so far. On wide screens the log is
 a column beside the lobby; on phones (≤760px) it is a bubble in the bottom
 right that opens it full-screen and shows a dot while messages wait unread.
-Seated players post, in the lobby only. Solo rooms have no log, because the
-bot doesn't talk.
+Seated players post. Solo rooms have no log, because the bot doesn't talk.
+
+**Between rounds (debrief).** As in the board game, the crew may talk between
+rounds but never while placing dice. When a round ends and the game goes on,
+the server holds back the next dice. The finished round stays on the board, the
+flight log opens (with an "after round N" divider), and each player presses
+**Ready for round N+1** (`round:ready`). When both are ready, a 3 · 2 · 1
+countdown runs on the server's clock, then the dice are dealt and the log closes
+until the next debrief. **Wait** (unready) or a disconnect stops the countdown.
+A solo bot is always ready. Real-Time's clock starts with the dice. The shared
+rules are unchanged: they already pause in the `rolling` phase, and only the
+live server waits there (self-play and the bot's search deal at once).
 
 ## Architecture in one paragraph
 

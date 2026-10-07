@@ -6,7 +6,7 @@
 import "../support/dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { DEFAULT_SETUP, SOLO_RESTRICTED_NOTE, UNAVAILABLE, newGame, settle, randDice, mulberry32, type ChatMessage, type Crew, type RoomSnapshot } from "@skyteam/shared";
+import { DEFAULT_SETUP, SOLO_RESTRICTED_NOTE, UNAVAILABLE, actorFor, newGame, quickMove, reduce, settle, settleTraffic, randDice, mulberry32, withEntropy, type ChatMessage, type Crew, type Debrief, type GameState, type RoomSnapshot } from "@skyteam/shared";
 
 // --- a scripted Socket.IO client -------------------------------------------------------
 type Handler = (...args: unknown[]) => void;
@@ -267,30 +267,30 @@ describe("lobby", () => {
   });
 });
 
+/** Pretend the window is a phone (≤760px) or not; `resize` flips it later. */
+let resize: (mobile: boolean) => void;
+function viewport(mobile: boolean) {
+  const listeners = new Set<(e: { matches: boolean }) => void>();
+  let matches = mobile;
+  window.matchMedia = ((media: string) => ({
+    get matches() {
+      return matches;
+    },
+    media,
+    addEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.add(l),
+    removeEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.delete(l),
+  })) as unknown as typeof window.matchMedia;
+  resize = (m) => {
+    matches = m;
+    act(() => listeners.forEach((l) => l({ matches: m })));
+  };
+}
+afterEach(() => {
+  delete (window as { matchMedia?: unknown }).matchMedia;
+});
+
 // --- the lobby's flight log (chat) ----------------------------------------------------------
 describe("flight log", () => {
-  /** Pretend the window is a phone (≤760px) or not; `resize` flips it later. */
-  let resize: (mobile: boolean) => void;
-  function viewport(mobile: boolean) {
-    const listeners = new Set<(e: { matches: boolean }) => void>();
-    let matches = mobile;
-    window.matchMedia = ((media: string) => ({
-      get matches() {
-        return matches;
-      },
-      media,
-      addEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.add(l),
-      removeEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.delete(l),
-    })) as unknown as typeof window.matchMedia;
-    resize = (m) => {
-      matches = m;
-      act(() => listeners.forEach((l) => l({ matches: m })));
-    };
-  }
-  afterEach(() => {
-    delete (window as { matchMedia?: unknown }).matchMedia;
-  });
-
   let at = 1_000;
   const line = (playerId: string, crew: Crew, text: string): ChatMessage => ({ id: `m${at}`, playerId, crew, text, at: at++ });
   const crewOf2 = (chat: ChatMessage[] = []) =>
@@ -393,6 +393,108 @@ describe("flight log", () => {
     expect(screen.getByRole("button", { name: /Open flight log/ })).toBeTruthy();
     sock.serve("room:state", inGame());
     expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
+  });
+});
+
+// --- between rounds (the debrief) ------------------------------------------------------------
+describe("between rounds", () => {
+  /** A game at the end of round 1: every die placed, the next ones not dealt. */
+  function endOfRound1(): GameState {
+    for (let seed = 1; ; seed++) {
+      const r = mulberry32(seed);
+      const dice = randDice(r);
+      let game = settle(newGame(DEFAULT_SETUP, ME, OTHER, r, 0), dice, () => 0);
+      while (game.phase === "placement") {
+        const crew = actorFor(game)!;
+        game = settleTraffic(reduce(game, withEntropy(quickMove(game, crew, r), dice), crew === "pilot" ? ME : OTHER).state, dice);
+      }
+      if (game.phase === "rolling") return game;
+    }
+  }
+  const crew2 = [{ playerId: ME, role: "host" as const, ready: true, connection: "connected" as const, name: "Ann" }, { ...guest, name: "Bob" }];
+  const debrief = (over: Partial<Debrief> = {}): Debrief => ({ round: 1, ready: { pilot: false, copilot: false }, countdownEndsAt: null, ...over });
+  const between = (d: Partial<Debrief> = {}, over: Partial<RoomSnapshot> = {}) =>
+    snapshot({ status: "in_progress", seats: crew2, game: endOfRound1(), debrief: debrief(d), ...over });
+  const panel = () => screen.getByRole("region", { name: "Between rounds" });
+
+  test("the debrief takes the dice tray's place: the round, both crews, Ready and Wait", async () => {
+    viewport(false);
+    const sock = await inRoom(between());
+    expect(panel().textContent).toMatch(/Round 1 complete/);
+    expect(panel().textContent).toMatch(/descending to/i);
+    expect(screen.queryByText(/Your dice/)).toBe(null);
+    expect(screen.getByText("Between rounds — talk it over, then press Ready.")).toBeTruthy();
+    fireEvent.click(within(panel()).getByRole("button", { name: "Ready for round 2" }));
+    expect(sock.last("round:ready")!.args[0]).toEqual({ ready: true });
+    sock.serve("room:state", between({ ready: { pilot: true, copilot: false } }));
+    const marks = within(panel()).getAllByRole("listitem").map((li) => li.textContent);
+    expect(marks).toEqual([expect.stringMatching(/Ann.*✓/), expect.not.stringMatching(/✓/)]);
+    fireEvent.click(within(panel()).getByRole("button", { name: "Wait" }));
+    expect(sock.last("round:ready")!.args[0]).toEqual({ ready: false });
+    // The dice are dealt: the panel goes, the tray is back.
+    sock.serve("room:state", inGame({ seats: crew2 }));
+    expect(screen.queryByRole("region", { name: "Between rounds" })).toBe(null);
+    expect(screen.getByText(/Your dice/)).toBeTruthy();
+  });
+
+  test("the last round's debrief says the landing is next", async () => {
+    viewport(false);
+    const game = endOfRound1();
+    await inRoom(between({}, { game: { ...game, round: game.scenario.rounds } }));
+    expect(panel().textContent).toMatch(/final approach/i);
+  });
+
+  test("both ready: the 3-2-1 counts down on the server's clock", async () => {
+    viewport(false);
+    const ahead = 10_000; // the server's clock runs 10 s ahead of this device
+    const serverTime = Date.now() + ahead;
+    await inRoom(between({ ready: { pilot: true, copilot: true }, countdownEndsAt: serverTime + 2950 }, { serverTime }));
+    const timer = () => within(panel()).getByRole("timer");
+    expect(timer().textContent).toBe("3");
+    await waitFor(() => expect(timer().textContent).toBe("2"), { timeout: 1500 });
+  });
+
+  test("the flight log shows between rounds only, a divider before each debrief's lines; none in solo", async () => {
+    viewport(false);
+    const lobbyLine: ChatMessage = { id: "a", playerId: ME, crew: "pilot", text: "YUL then", at: 1 };
+    const debriefLine: ChatMessage = { id: "b", playerId: OTHER, crew: "copilot", text: "More coffee next round", at: 2, round: 1 };
+    const sock = await inRoom(between({}, { chat: [lobbyLine, debriefLine] }));
+    const log = screen.getByRole("log");
+    expect([...log.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/YUL then/),
+      expect.stringMatching(/after round 1/),
+      expect.stringMatching(/More coffee next round/),
+    ]);
+    sock.serve("room:state", inGame({ seats: crew2, chat: [lobbyLine, debriefLine] }));
+    expect(screen.queryByRole("log")).toBe(null);
+    sock.serve("room:state", between({ ready: { pilot: true, copilot: false } }, { seats: [crew2[0], { ...guest, bot: "aviator" }] }));
+    expect(screen.queryByRole("log")).toBe(null);
+    expect(screen.getByText("Between rounds — press Ready when you are.")).toBeTruthy();
+  });
+
+  test("an empty log between rounds invites talk about the last round", async () => {
+    viewport(false);
+    await inRoom(between());
+    expect(screen.getByRole("log").textContent).toBe("No messages yet. Talk over the last round here.");
+  });
+
+  test("phone: the bubble appears between rounds only, with its dot for the other player's line", async () => {
+    viewport(true);
+    const sock = await inRoom(inGame({ seats: crew2 }));
+    expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
+    sock.serve("room:state", between());
+    expect(screen.getByRole("button", { name: "Open flight log" })).toBeTruthy();
+    sock.serve("chat:message", { id: "c", playerId: OTHER, crew: "copilot", text: "Ready?", at: Date.now(), round: 1 });
+    expect(screen.getByRole("button", { name: "Open flight log (unread messages)" })).toBeTruthy();
+  });
+
+  test("a spectator sees the debrief without a Ready button", async () => {
+    viewport(false);
+    await inRoom(between({}, { you: { playerId: "watcher", kind: "observer" } }));
+    expect(panel()).toBeTruthy();
+    expect(within(panel()).queryByRole("button")).toBe(null);
+    expect(screen.getByText("Between rounds.")).toBeTruthy();
+    expect(screen.queryByRole("log")).toBe(null);
   });
 });
 

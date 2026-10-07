@@ -5,7 +5,8 @@ import { useGame } from "./store";
 import { Cockpit } from "./components/Cockpit";
 import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
-import { LobbyChat } from "./components/FlightLog";
+import { CrewChat } from "./components/FlightLog";
+import { DebriefPanel } from "./components/Debrief";
 import { Seats } from "./components/Seats";
 import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
@@ -25,6 +26,7 @@ export function App() {
     resetGame,
     exitGame,
     sendCommand,
+    setRoundReady,
   } = useGame();
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -161,11 +163,25 @@ export function App() {
             )}
           </div>
           {/* The crew's chat — not in a solo room: the bot doesn't talk. */}
-          {snapshot && chat && <LobbyChat snapshot={snapshot} />}
+          {snapshot && chat && <CrewChat snapshot={snapshot} />}
         </div>
       )}
 
-      {inGame && <Cockpit snapshot={snapshot} onCommand={sendCommand} />}
+      {inGame && (
+        <Cockpit
+          snapshot={snapshot}
+          onCommand={sendCommand}
+          between={
+            snapshot.debrief && (
+              <div className="between">
+                <DebriefPanel snapshot={snapshot} onReady={setRoundReady} />
+                {/* Talk it over — the crew only, and not with the bot. */}
+                {snapshot.you.kind === "player" && !solo && <CrewChat snapshot={snapshot} />}
+              </div>
+            )
+          }
+        />
+      )}
 
       {snapshot?.status === "abandoned" && (
         <p className="error">A player left and didn't return in time — the game was abandoned.</p>

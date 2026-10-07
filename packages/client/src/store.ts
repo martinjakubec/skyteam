@@ -41,6 +41,8 @@ interface GameStore {
   sendChat: (text: string, onSent?: () => void) => void;
   /** Everything in the flight log has been seen. */
   markChatRead: () => void;
+  /** Between rounds: ready (or not) for the next round's dice. */
+  setRoundReady: (ready: boolean) => void;
   startGame: () => void;
   resetGame: () => void;
   exitGame: () => void;
@@ -132,6 +134,9 @@ export const useGame = create<GameStore>((set, get) => {
       }),
 
     markChatRead: () => set({ chatReadAt: lastAt(get().snapshot?.chat ?? []) }),
+
+    setRoundReady: (ready) =>
+      get().socket?.emit("round:ready", { ready }, refused),
 
     startGame: () =>
       get().socket?.emit("game:start", refused),

@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MAX_CHAT_LENGTH, type ChatMessage, type Crew, type RoomSnapshot } from "@skyteam/shared";
 import { unreadChat, useGame } from "../store";
 import { useMediaQuery } from "../useMediaQuery";
@@ -9,11 +10,12 @@ import { ChatBubble } from "./icons";
 const PHONE = "(max-width: 760px)";
 
 /**
- * The lobby's chat: the crew agree on a card and Special Abilities here. On a
- * wide screen the log sits beside the lobby; on a phone a bubble in the corner
- * opens it full-screen, with a dot while the other player's lines wait unread.
+ * The crew's chat — in the lobby (agree on a card and Special Abilities) and
+ * between rounds. On a wide screen the log sits in the page; on a phone a
+ * bubble in the corner opens it full-screen, with a dot while the other
+ * player's lines wait unread.
  */
-export function LobbyChat({ snapshot }: { snapshot: RoomSnapshot }) {
+export function CrewChat({ snapshot }: { snapshot: RoomSnapshot }) {
   const phone = useMediaQuery(PHONE);
   const [open, setOpen] = useState(false);
   const chatReadAt = useGame((s) => s.chatReadAt);
@@ -35,15 +37,18 @@ export function LobbyChat({ snapshot }: { snapshot: RoomSnapshot }) {
   }, [phone, open]);
 
   if (!phone) return <FlightLog snapshot={snapshot} />;
+  // The bubble and the full-screen log live on <body>: in a game the phone's
+  // cockpit is CSS-zoomed, which would scale and shift anything fixed inside it.
   if (open) {
-    return (
+    return createPortal(
       <div className="chat-modal fullscreen" role="dialog" aria-modal="true" aria-label="Flight log">
         <FlightLog snapshot={snapshot} autoFocus onClose={() => setOpen(false)} />
-      </div>
+      </div>,
+      document.body,
     );
   }
   const unread = unreadChat(snapshot.chat, me, chatReadAt) > 0;
-  return (
+  return createPortal(
     <button
       type="button"
       className="chat-bubble"
@@ -52,7 +57,8 @@ export function LobbyChat({ snapshot }: { snapshot: RoomSnapshot }) {
     >
       <ChatBubble />
       {unread && <span className="chat-dot" aria-hidden="true" />}
-    </button>
+    </button>,
+    document.body,
   );
 }
 
@@ -87,15 +93,27 @@ function FlightLog({ snapshot, autoFocus, onClose }: { snapshot: RoomSnapshot; a
         )}
       </header>
       <ol className="flight-log-lines" role="log" aria-live="polite" ref={logRef}>
-        {messages.length === 0 && <li className="flight-log-empty">No messages yet. Talk over the scenario and Special Abilities here.</li>}
-        {messages.map((m) => (
-          <li key={m.id} className={`log-line ${m.crew}${m.playerId === me ? " mine" : ""}`}>
-            <span className="log-who">{names[m.crew] ?? SEAT_LABEL[m.crew]}</span>
-            <time className="log-time" dateTime={new Date(m.at).toISOString()}>
-              {clock(m.at)}
-            </time>
-            <p className="log-text">{m.text}</p>
+        {messages.length === 0 && (
+          <li className="flight-log-empty">
+            No messages yet. Talk over {snapshot.debrief ? "the last round" : "the scenario and Special Abilities"} here.
           </li>
+        )}
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {/* Each debrief's lines open under a divider naming the round. */}
+            {m.round !== undefined && m.round !== messages[i - 1]?.round && (
+              <li className="log-divider" role="separator">
+                after round {m.round}
+              </li>
+            )}
+            <li className={`log-line ${m.crew}${m.playerId === me ? " mine" : ""}`}>
+              <span className="log-who">{names[m.crew] ?? SEAT_LABEL[m.crew]}</span>
+              <time className="log-time" dateTime={new Date(m.at).toISOString()}>
+                {clock(m.at)}
+              </time>
+              <p className="log-text">{m.text}</p>
+            </li>
+          </Fragment>
         ))}
       </ol>
       <form
