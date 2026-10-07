@@ -130,3 +130,85 @@ describe("seats and accounts", () => {
     expect(linksOf(row.id)).toEqual([]);
   });
 });
+
+describe("the history and game-record API", async () => {
+  const { replay } = await import("../packages/shared/src/index.ts");
+
+  /** A logged game row, written straight into the fake (with links). */
+  function fakeGame({ id, endedAt, pilot = "human", copilot = "human", links = [], seed = "ab".repeat(16), seededFrom = null }) {
+    FakePg.last.games.push({
+      id, room_id: "r-" + id, format: 1, build: "dev", scenario: "YUL", modules: [], abilities: [], intern_order: "",
+      pilot, copilot, result: "exited", loss_reason: null, rounds_reached: 1, moves: "D11112222", started_at: endedAt, ended_at: endedAt,
+      seed, seeded_from: seededFrom,
+    });
+    for (const [crew, user_id] of links) FakePg.last.gamePlayers.push({ game_id: id, user_id, crew });
+  }
+
+  test("my games: newest first, with my seat, my partner and how it ended", async () => {
+    const kim = await s.signUp("kimiko");
+    const leo = await s.signUp("leonardo");
+    fakeGame({ id: "k1".padEnd(21, "x"), endedAt: "2026-10-01T10:00:00.000Z", links: [["pilot", kim.user.id]] });
+    fakeGame({ id: "k2".padEnd(21, "x"), endedAt: "2026-10-02T10:00:00.000Z", copilot: "bot:aviator", links: [["pilot", kim.user.id]] });
+    fakeGame({ id: "k3".padEnd(21, "x"), endedAt: "2026-10-03T10:00:00.000Z", links: [["copilot", kim.user.id], ["pilot", leo.user.id]], seededFrom: "k1".padEnd(21, "x") });
+    const r = await s.api("GET", "/api/me/games", { cookie: kim.cookie });
+    expect(r.status).toBe(200);
+    expect(r.body.next).toBe(null);
+    expect(r.body.games.map((g) => [g.id.slice(0, 2), g.crew, g.partner, g.seeded])).toEqual([
+      ["k3", "copilot", "leonardo", true],
+      ["k2", "pilot", "Bot (aviator)", false],
+      ["k1", "pilot", "Guest", false],
+    ]);
+    expect(r.body.games[0]).toMatchObject({ scenario: "YUL", modules: [], abilities: [], result: "exited", lossReason: null, roundsReached: 1, endedAt: "2026-10-03T10:00:00.000Z" });
+    // Leo sees only his own game.
+    expect((await s.api("GET", "/api/me/games", { cookie: leo.cookie })).body.games.map((g) => g.id.slice(0, 2))).toEqual(["k3"]);
+  });
+
+  test("my games: 20 a page, then the next page from the cursor", async () => {
+    const m = await s.signUp("marta");
+    for (let i = 0; i < 45; i++) fakeGame({ id: `m${String(i).padStart(2, "0")}`.padEnd(21, "x"), endedAt: new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString(), links: [["pilot", m.user.id]] });
+    const ids = [];
+    let next = "";
+    for (let page = 0; page < 5 && next !== null; page++) {
+      const r = await s.api("GET", `/api/me/games${next ? `?before=${encodeURIComponent(next)}` : ""}`, { cookie: m.cookie });
+      expect(r.status).toBe(200);
+      ids.push(r.body.games.length);
+      next = r.body.next;
+    }
+    expect(ids).toEqual([20, 20, 5]);
+    expect((await s.api("GET", "/api/me/games?before=garbage", { cookie: m.cookie })).status).toBe(400);
+  });
+
+  test("a guest has no history", async () => {
+    expect(await s.api("GET", "/api/me/games")).toMatchObject({ status: 401, body: { error: "Please sign in." } });
+  });
+
+  test("a game's record: anyone with the link; it replays to its result; no seed, no room", async () => {
+    const nora = await s.signUp("nora");
+    const r = await s.room({ hostCookie: nora.cookie, solo: { crew: "pilot" } });
+    await s.start(r);
+    await s.playToEnd(r);
+    await until(() => rowsOf(r.roomId).length === 1, 2000, "the row");
+    const [row] = rowsOf(r.roomId);
+    const res = await s.api("GET", `/api/games/${row.id}`);
+    expect(res.status).toBe(200);
+    const rec = res.body;
+    expect(rec).toMatchObject({
+      id: row.id, format: 1, setup: { scenarioId: "YUL", modules: [], abilities: [] }, moves: row.moves,
+      result: row.result, roundsReached: row.rounds_reached, crews: { pilot: "nora", copilot: "Bot (aviator)" },
+      sameDiceAvailable: true, seededFrom: null,
+    });
+    const text = JSON.stringify(rec);
+    expect(text).not.toContain(row.seed);
+    expect(text).not.toContain(r.roomId);
+    expect(text).not.toMatch(/[0-9a-f]{32}/);
+    const end = replay({ format: rec.format, setup: rec.setup, internTokens: rec.internTokens }, rec.moves);
+    expect(end.outcome.result).toBe(row.result);
+  });
+
+  test("an unknown or malformed id: 404; a game logged before seeds can't be flown again", async () => {
+    expect(await s.api("GET", `/api/games/${"z".repeat(21)}`)).toMatchObject({ status: 404, body: { error: "No game with that id." } });
+    expect((await s.api("GET", "/api/games/..%2F..%2Fetc")).status).toBe(404);
+    fakeGame({ id: "old".padEnd(21, "x"), endedAt: "2026-09-01T00:00:00.000Z", seed: null });
+    expect((await s.api("GET", `/api/games/${"old".padEnd(21, "x")}`)).body).toMatchObject({ sameDiceAvailable: false, crews: { pilot: "Guest", copilot: "Guest" } });
+  });
+});

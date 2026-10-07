@@ -42,3 +42,42 @@ export interface AccountWithCode {
   user: PublicUser;
   recoveryCode: string;
 }
+
+/** One of my games, in my history. */
+export interface GameSummary {
+  id: string;
+  scenario: string;
+  modules: string[];
+  abilities: string[];
+  result: string;
+  lossReason: string | null;
+  roundsReached: number;
+  /** The seat I flew. */
+  crew: "pilot" | "copilot";
+  /** Who flew the other seat: a username, "Guest", or "Bot (<level>)". */
+  partner: string;
+  endedAt: string;
+  /** Flown on an earlier game's dice ("Fly the same dice"). */
+  seeded: boolean;
+}
+
+/** A logged game as its page shows it — anyone with its link may see it. Never
+ *  its seed, nor the room it was played in. */
+export interface GameRecord {
+  id: string;
+  format: number;
+  setup: { scenarioId: string; modules: string[]; abilities: string[] };
+  internTokens: number[];
+  moves: string;
+  result: string;
+  lossReason: string | null;
+  roundsReached: number;
+  /** Who flew each seat: a username, "Guest", or "Bot (<level>)". */
+  crews: { pilot: string; copilot: string };
+  startedAt: string;
+  endedAt: string;
+  /** It has a seed: a new game can be flown on the same dice. */
+  sameDiceAvailable: boolean;
+  /** The game whose dice this one was flown on, if any. */
+  seededFrom: string | null;
+}
