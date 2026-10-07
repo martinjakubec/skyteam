@@ -86,12 +86,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1, peek: true },
     eval: { turnPrep: 300, turn: 1200, tilt: 160 },
   },
-  // yellow KEF (2026-10-06): 7.1% of 420 games (all 6 abilities) at 600 ms, was 2.4% —
-  // well under the 30% fallback after 4 attempts. Ice Brakes take eight dice in pairs.
+  // yellow KEF (2026-10-07, second pass): 13.8% of 420 games (all 6 abilities) at 600 ms with
+  // 12 at once (live-like), was 8.6%. Ice Brakes take eight dice in pairs: weighted high;
+  // peek rollouts coordinate the pairs.
   "yellow-KEF": {
-    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, brakes: 300, flaps: 150, switchSlack: 2 },
-    search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true },
+    plan: { engineMid: 40, searchBias: 400, gearOnPace: true, brakes: 400, flaps: 150, switchSlack: 2 },
+    search: { shortlist: 4, radioCandidate: true },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, peek: true },
   },
   // yellow PRG (2026-10-06): 20.0% of 420 games (all 15 ability pairs) at 600 ms, was 2.4% —
   // under the 30% fallback after 4 attempts. The plan minds the Kerosene Leak.
@@ -100,12 +101,13 @@ export const BOT_PROFILES: Record<string, BotProfile> = {
     search: { shortlist: 3, radioCandidate: true },
     policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, trafficPressure: 1 },
   },
-  // yellow ATL (2026-10-06): 7.4% of 420 games (all 6 abilities) at 600 ms, was 0.0%. Heaviest traffic of
-  // all (10 airplanes, 5 Traffic dice); its two turns both allow −1: hold it.
+  // yellow ATL (2026-10-07, second pass): 17.9% of 420 games (all 6 abilities) at 600 ms with
+  // 12 at once (live-like), was 7.6%. Heaviest traffic of all; hold −1 through its two
+  // turns; peek rollouts coordinate the tilt.
   "yellow-ATL": {
     plan: { engineMid: 40, searchBias: 400, gearOnPace: true, tiltHold: -1, clear: 250, clearHere: 400 },
     search: { shortlist: 3, radioCandidate: true },
-    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1 },
+    policy: { switchCredit: 200, clearPlannedAny: true, jointPicks: true, clearAheadMax: 5, safeEngines: true, gearOnPace: true, tiltHold: -1, peek: true },
   },
 };
 
