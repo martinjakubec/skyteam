@@ -671,5 +671,14 @@ console.log("6) think(): Aviator in a worker, with a fallback");
   await stopThinking(); // let the test process exit
 }
 
+console.log("Solo play: the bot flies green and yellow cards only");
+{
+  const { soloAllowed, SOLO_RESTRICTED_NOTE, SCENARIO_TEMPLATES } = await import("../packages/shared/src/index.ts");
+  const ids = (d) => SCENARIO_TEMPLATES.filter((t) => t.difficulty === d).map((t) => (t.id === "green-YUL" ? "YUL" : t.id));
+  check("green and yellow cards can be flown with the bot", [...ids("green"), ...ids("yellow")].every(soloAllowed));
+  check("red and black cards can't", [...ids("red"), ...ids("black")].every((id) => !soloAllowed(id)));
+  check("the restriction comes with its notice", typeof SOLO_RESTRICTED_NOTE === "string" && SOLO_RESTRICTED_NOTE.length > 40);
+}
+
 console.log(failures === 0 ? "\nALL UNIT TESTS PASSED ✅" : `\n${failures} UNIT TEST(S) FAILED ❌`);
 process.exit(failures === 0 ? 0 : 1);

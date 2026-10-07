@@ -107,6 +107,9 @@ Co-Pilot) and the bot's level. A server-side bot flies the other seat at a
 human pace (`NPC_DELAY_MS` between its moves), sees only what a player in its
 seat would see, and answers Reroll and Working Together offers on its own.
 Opening a solo room's invite link makes you an observer.
+The bot flies green and yellow cards only: red (Elite Pilots Only) and black
+(Heroic Landing) cards are for human crews, and a solo lobby shows them as
+unavailable (`soloAllowed` in `catalog.ts`; the server refuses them too).
 
 The bot is **Aviator**. It searches: for its best few moves it repeatedly
 fills in the dice it can't see, plays the game out with a fast rollout

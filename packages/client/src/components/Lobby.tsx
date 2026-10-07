@@ -10,6 +10,8 @@ import {
   MODULE_IDS,
   MODULE_LABELS,
   SCENARIOS,
+  SOLO_RESTRICTED_NOTE,
+  soloAllowed,
   templateFor,
   type AbilityId,
   type GameSetup,
@@ -41,7 +43,7 @@ export function Lobby({
   return (
     <div className="panel">
       <NameField name={me?.name ?? ""} onSave={onName} />
-      <SetupPicker setup={snapshot.setup} editable={isHost} onChange={onSetup} />
+      <SetupPicker setup={snapshot.setup} editable={isHost} solo={snapshot.seats.some((s) => !!s.bot)} onChange={onSetup} />
       <div className="row">
         <button onClick={() => onReady(!me?.ready)}>{me?.ready ? "Unready" : "Ready up"}</button>
         {isHost && (
@@ -92,10 +94,13 @@ function NameField({ name, onSave }: { name: string; onSave: (name: string) => v
 function SetupPicker({
   setup,
   editable,
+  solo,
   onChange,
 }: {
   setup: GameSetup;
   editable: boolean;
+  /** A solo room (the bot flies the other seat): red and black cards are unavailable. */
+  solo: boolean;
   onChange: (setup: GameSetup) => void;
 }) {
   // The scenario caps how many Special Abilities the crew may choose.
@@ -143,7 +148,13 @@ function SetupPicker({
       </button>
       <div className="setup-airport">
         <span className="setup-label">Scenario</span>
-        <ScenarioPicker value={setup.scenarioId} disabled={!editable} onChange={pickAirport} />
+        {/* Solo play: the bot flies green and yellow cards only. */}
+        <ScenarioPicker
+          value={setup.scenarioId}
+          disabled={!editable}
+          onChange={pickAirport}
+          {...(solo ? { allow: soloAllowed, restrictedNote: SOLO_RESTRICTED_NOTE } : {})}
+        />
       </div>
       <fieldset className="setup-modules">
         <legend className="setup-label">Modules</legend>

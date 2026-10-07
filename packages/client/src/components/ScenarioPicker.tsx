@@ -36,11 +36,18 @@ export function ScenarioPicker({
   value,
   disabled,
   onChange,
+  allow,
+  restrictedNote,
 }: {
   value: ScenarioId;
   disabled: boolean;
   onChange: (id: ScenarioId) => void;
+  /** Which cards may be picked (solo play: the bot flies green and yellow only). Default: all. */
+  allow?: (id: ScenarioId) => boolean;
+  /** Shown under a difficulty whose cards are all unavailable. */
+  restrictedNote?: string;
 }) {
+  const allowed = (t: ScenarioTemplate) => !allow || allow(idOf(t));
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -58,6 +65,7 @@ export function ScenarioPicker({
     if (refocus) trigger.current?.focus();
   };
   const choose = (t: ScenarioTemplate) => {
+    if (!allowed(t)) return;
     if (idOf(t) !== value) onChange(idOf(t));
     close();
   };
@@ -130,6 +138,9 @@ export function ScenarioPicker({
                 <div id={`${uid}-${d.id}`} className="picker-band">
                   {d.label}
                 </div>
+                {restrictedNote && ORDER.every((t) => t.difficulty !== d.id || !allowed(t)) && (
+                  <blockquote className="picker-note">{restrictedNote}</blockquote>
+                )}
                 {ORDER.map((t, i) =>
                   t.difficulty !== d.id ? null : (
                     <div
@@ -138,7 +149,8 @@ export function ScenarioPicker({
                       role="option"
                       data-value={idOf(t)}
                       aria-selected={t === current}
-                      className={`picker-option${i === active ? " active" : ""}`}
+                      aria-disabled={!allowed(t)}
+                      className={`picker-option${i === active ? " active" : ""}${allowed(t) ? "" : " unavailable"}`}
                       onPointerMove={() => i !== active && setActive(i)}
                       onClick={() => choose(t)}
                     >

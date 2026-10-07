@@ -197,3 +197,21 @@ export const DEFAULT_SETUP: GameSetup = { scenarioId: "YUL", modules: [], abilit
 export function scenarioForSetup(setup: GameSetup): Scenario {
   return { ...SCENARIOS[setup.scenarioId], modules: [...setup.modules], abilities: [...(setup.abilities ?? [])] };
 }
+
+// Solo play -------------------------------------------------------------------
+
+/** Card difficulties the bot may fly in a solo game. Red (Elite Pilots Only)
+ *  and black (Heroic Landing) cards are for human crews only. */
+export const SOLO_DIFFICULTIES: readonly Difficulty[] = ["green", "yellow"];
+
+/** Whether a solo game (a bot in the other seat) may fly this scenario. */
+export function soloAllowed(id: ScenarioId): boolean {
+  const t = templateFor(id);
+  return !!t && SOLO_DIFFICULTIES.includes(t.difficulty);
+}
+
+/** Shown wherever a red or black card is offered in a solo game. */
+export const SOLO_RESTRICTED_NOTE =
+  "Elite and Heroic approaches exceed the autopilot's certification. A landing this demanding " +
+  "calls for a human crew in command: sound judgement and hands-on airmanship that no automated " +
+  "system can replace. Invite a co-pilot to fly this scenario.";

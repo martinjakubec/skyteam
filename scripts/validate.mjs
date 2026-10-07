@@ -172,6 +172,13 @@ async function main() {
   const lobbyS = h.state?.seats?.length === 2 ? h.state : await waitFor(h, "room:state", (st) => st.seats.length === 2);
   check("solo room: a bot fills the other seat, ready", lobbyS.seats.some((st) => st.bot === "aviator" && st.ready));
   check("solo room: the human flies Co-Pilot", lobbyS.hostCrew === "copilot");
+  // Red and black cards are for human crews: the bot won't fly them.
+  const red = await emit(h, "room:setup", { scenarioId: "red-HND", modules: ["kerosene", "intern"], abilities: [] });
+  check("solo room: a red card is refused, with the notice", red.ok === false && /human crew/.test(red.error ?? ""));
+  const black = await emit(h, "room:setup", { scenarioId: "black-KEF", modules: ["wind", "iceBrakes"], abilities: [] });
+  check("solo room: a black card is refused", black.ok === false);
+  check("solo room: a yellow card is fine", (await emit(h, "room:setup", { scenarioId: "yellow-LHR", modules: ["intern"], abilities: [] })).ok === true);
+  check("…and back to YUL", (await emit(h, "room:setup", { scenarioId: "YUL", modules: [], abilities: [] })).ok === true);
   const readyS = waitFor(h, "room:state", (st) => st.status === "ready");
   await emit(h, "seat:ready", { ready: true });
   await readyS;
