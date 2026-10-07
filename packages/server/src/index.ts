@@ -4,7 +4,9 @@ import { attachSocket } from "./socket";
 import { env } from "./env";
 import { warmThinking } from "./think";
 import { initGameLogs } from "./gameLog";
+import { initDb } from "./db";
 
+initDb(); // Postgres, when DATABASE_URL is set
 const app = createApp();
 const server = http.createServer(app);
 attachSocket(server);
