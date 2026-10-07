@@ -10,3 +10,4 @@ export * from "./game/entropy";
 export * from "./bot";
 export * from "./log/codes";
 export * from "./log/codec";
+export * from "./accounts";

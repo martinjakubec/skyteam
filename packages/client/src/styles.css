@@ -2891,3 +2891,122 @@ ul {
   color: var(--ink);
   opacity: 0.7;
 }
+
+/* Accounts: the chip (sign in / the user's menu), the account pages' forms, and
+   the recovery code shown once. */
+.account-bar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 1.6rem;
+}
+.account-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+.account-chip a,
+.form-links a,
+.page-links a {
+  color: #dfe8f2;
+}
+.center .form-links a {
+  color: var(--blue-d);
+}
+.chip-name {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+}
+.account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 30;
+  min-width: 11rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem;
+  border-radius: 10px;
+  background: var(--recess-2);
+  border: 1px solid #0c1016;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+}
+.account-menu a,
+.account-menu button {
+  display: block;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+.account-menu a:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.account-menu button {
+  margin-top: 0.2rem;
+}
+.home-link {
+  text-decoration: none;
+  align-self: flex-start;
+}
+.page-title {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #26303c;
+  font-size: 1.1rem;
+}
+.account-form h2,
+.account-form h3 {
+  margin: 0;
+}
+.center .account-form .muted {
+  color: var(--ink);
+  opacity: 0.75;
+  margin: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.field input {
+  font-size: 1rem;
+  font-family: var(--font-body);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.field-hint {
+  font-size: 0.78rem !important;
+}
+.form-error {
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  background: rgba(120, 22, 14, 0.85);
+  color: #ffe1dc;
+  font-size: 0.9rem;
+}
+.recovery-code {
+  margin: 0;
+  padding: 0.7rem;
+  border-radius: 8px;
+  background: var(--recess);
+  color: var(--green);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: clamp(1rem, 4.6vw, 1.35rem);
+  letter-spacing: 0.06em;
+  text-align: center;
+  user-select: all;
+  word-break: break-all;
+}
+.account-form.danger {
+  border-color: #5e231d;
+}

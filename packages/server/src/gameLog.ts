@@ -1,7 +1,8 @@
-import pg from "pg";
 import { nanoid } from "nanoid";
-import { LOG_FORMAT, MOVE_CODES, encodeCommand, type Crew, type DieValue, type Recorder } from "@skyteam/shared";
+import { LOG_FORMAT, encodeCommand, type Crew, type DieValue, type Recorder } from "@skyteam/shared";
 import { env } from "./env";
+import { db, initDb } from "./db";
+import { ensureSchema } from "./schema";
 import { redis } from "./store";
 import type { Room } from "./types";
 
@@ -31,38 +32,7 @@ const COLUMNS = [
 ] as const;
 type Row = Record<(typeof COLUMNS)[number], unknown>;
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS games (
-  id             text PRIMARY KEY,
-  room_id        text NOT NULL,
-  format         smallint NOT NULL,
-  build          text NOT NULL,
-  scenario       text NOT NULL,
-  modules        text[] NOT NULL,
-  abilities      text[] NOT NULL,
-  intern_order   text NOT NULL,
-  pilot          text NOT NULL,
-  copilot        text NOT NULL,
-  result         text NOT NULL CHECK (result IN ('won', 'lost', 'abandoned', 'exited', 'reset')),
-  loss_reason    text,
-  rounds_reached smallint NOT NULL,
-  moves          text NOT NULL,
-  started_at     timestamptz NOT NULL,
-  ended_at       timestamptz NOT NULL
-);
-CREATE INDEX IF NOT EXISTS games_scenario_result ON games (scenario, result);
-CREATE TABLE IF NOT EXISTS move_codes (
-  format  smallint NOT NULL,
-  code    text NOT NULL,
-  meaning text NOT NULL,
-  PRIMARY KEY (format, code)
-);`;
-
 const INSERT = `INSERT INTO games (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map((_, i) => `$${i + 1}`).join(", ")}) ON CONFLICT (id) DO NOTHING`;
-
-let pool: pg.Pool | null = null;
-/** The tables exist and the code list is current (checked again until it works). */
-let schemaReady = false;
 
 /** Connect, create the tables and the code list, and start retrying queued rows. */
 export async function initGameLogs(): Promise<void> {
@@ -70,21 +40,9 @@ export async function initGameLogs(): Promise<void> {
     console.warn("[gamelog] DATABASE_URL is not set: games are not logged.");
     return;
   }
-  pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 4 });
-  pool.on("error", (e) => console.error("[gamelog] postgres:", e.message));
+  initDb();
   await flushPendingGameLogs();
   setInterval(() => void flushPendingGameLogs(), RETRY_MS).unref();
-}
-
-async function ensureSchema(db: pg.Pool): Promise<void> {
-  if (schemaReady) return;
-  await db.query(SCHEMA);
-  await db.query(
-    `INSERT INTO move_codes (format, code, meaning) SELECT $1, unnest($2::text[]), unnest($3::text[])
-     ON CONFLICT (format, code) DO UPDATE SET meaning = EXCLUDED.meaning`,
-    [LOG_FORMAT, MOVE_CODES.map((c) => c.code), MOVE_CODES.map((c) => c.meaning)],
-  );
-  schemaReady = true;
 }
 
 /** Begin a new game's log (call before dealing it, so the first deal is recorded). */
@@ -107,7 +65,7 @@ export function endGameLog(room: Room, result: GameResult): void {
   const log = room.gameLog;
   const game = room.game;
   room.gameLog = null;
-  if (!log || !game || !pool) return;
+  if (!log || !game || !db()) return;
   const seat = (crew: Crew) => {
     const s = room.seats.find((x) => x.playerId === (crew === "pilot" ? game.pilotId : game.copilotId));
     return s?.bot ? `bot:${s.bot}` : "human";
@@ -144,15 +102,15 @@ async function write(row: Row): Promise<void> {
 }
 
 async function insert(row: Row): Promise<void> {
-  await ensureSchema(pool!);
-  await pool!.query(INSERT, COLUMNS.map((c) => row[c]));
+  await ensureSchema();
+  await db()!.query(INSERT, COLUMNS.map((c) => row[c]));
 }
 
 /** Write the rows that waited for Postgres; stops at the first that still fails. */
 export async function flushPendingGameLogs(): Promise<void> {
-  if (!pool) return;
+  if (!db()) return;
   try {
-    await ensureSchema(pool);
+    await ensureSchema();
     for (let raw = await redis.lpop(PENDING_KEY); raw !== null; raw = await redis.lpop(PENDING_KEY)) {
       try {
         await insert(JSON.parse(raw) as Row);

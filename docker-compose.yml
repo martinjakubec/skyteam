@@ -54,6 +54,11 @@ services:
       # Required: the server runs with NODE_ENV=production and refuses a missing,
       # placeholder or short secret. Put one in .env (see .env.example).
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env, e.g. openssl rand -hex 32}
+      # Signs sign-in sessions; must differ from JWT_SECRET (see .env.example).
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env, e.g. openssl rand -hex 32}
+      # The site owner's account (SUPERADMIN), created on first start.
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-}
+      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD:-}
       RECONNECT_GRACE_MS: ${RECONNECT_GRACE_MS:-60000}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8080}
       NPC_WORKERS: ${NPC_WORKERS:-}
