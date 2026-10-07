@@ -25,6 +25,7 @@ import {
   type ChatMessage,
   type ClientToServerEvents,
   type Crew,
+  type Dice,
   type GameCommand,
   type GameState,
   type Rand,
@@ -41,6 +42,7 @@ import { abandonsOnDisconnect, botSeat, canRename, crewOf, lobbyStatus, seatCrew
 import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
 import { endGameLog, recorder, startGameLog } from "./gameLog";
+import { newSeedState, seededRand } from "./seededRand";
 
 // No server-to-server events in a single-server deployment (default map).
 export type IOServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
@@ -292,8 +294,7 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   room.debrief = null;
   // Deal the game and roll round 1. Randomness lives on the server, never in
   // the pure reducer — rolled values are threaded in via a `roll` command.
-  startGameLog(room);
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS, record: recorder(room) });
+  dealNewGame(room, pilotId, copilotId);
   room.version = 0;
   await saveRoom(room);
 
@@ -319,8 +320,7 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
   if (room.status === "in_progress") endGameLog(room, "reset"); // a finished game is logged already
   room.debrief = null;
   room.status = "in_progress";
-  startGameLog(room);
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS, record: recorder(room) });
+  dealNewGame(room, pilotId, copilotId);
   room.version = 0;
   await saveRoom(room);
 
@@ -358,9 +358,34 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
   broadcastState(io, room);
 }
 
-/** Server-owned entropy for every roll and shuffle. */
+/** Unseeded entropy: a game an older build began (it has no seed) rolls from it. */
 const rand: Rand = (n) => randomInt(0, n);
 const serverDice = randDice(rand);
+
+/**
+ * The room's dice. Every game is seeded (seededRand.ts): each round's deal
+ * draws from its own stream, and so does everything else rolled in a round
+ * (rerolls, Traffic dice) — so the same seed deals the same dice every round,
+ * whatever the crews did.
+ */
+function gameDice(room: Room): { deal: Dice; play: Dice } {
+  const s = room.seedState;
+  if (!s) return { deal: serverDice, play: serverDice };
+  const round = () => room.game?.round ?? 1;
+  return { deal: randDice(seededRand(s, () => `d${round()}`)), play: randDice(seededRand(s, () => `p${round()}`)) };
+}
+
+/** A new game in the room, on a new seed: its log begins, the Intern tokens
+ *  are shuffled and round 1 is dealt. */
+function dealNewGame(room: Room, pilotId: string, copilotId: string): void {
+  const s = (room.seedState = newSeedState());
+  startGameLog(room);
+  room.game = newGame(room.setup, pilotId, copilotId, seededRand(s, () => "d1"), Date.now(), {
+    realTimeSeconds: env.REAL_TIME_SECONDS,
+    record: recorder(room),
+    internRand: seededRand(s, () => "i"),
+  });
+}
 
 async function onCommand(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = GameCommandPayload.safeParse(payload);
@@ -396,7 +421,8 @@ export async function applyCommand(
   if (!room.game) return "No active game.";
   // A reroll is an intent: the server supplies the new (secret) dice values.
   // Same for Anticipation's single-die reroll.
-  const rcmd = withEntropy(command, serverDice);
+  const dice = gameDice(room);
+  const rcmd = withEntropy(command, dice.play);
 
   // Real-Time: a command that arrives after the deadline (before the timeout
   // got to run) is too late — the round ends now instead.
@@ -414,7 +440,7 @@ export async function applyCommand(
     const before = room.game;
     game = reduce(before, rcmd, playerId).state;
     record(before, rcmd, crewOfGame(room, playerId));
-    game = settleTraffic(game, serverDice, record);
+    game = settleTraffic(game, dice.play, record);
   } catch (e) {
     return e instanceof GameRuleError ? e.message : "Command rejected.";
   }
@@ -484,7 +510,9 @@ async function deal(io: IOServer, roomId: string, endsAt: number): Promise<void>
   // Stale: cancelled, restarted, or the game moved on.
   if (!room?.game || room.status !== "in_progress" || room.debrief?.countdownEndsAt !== endsAt) return;
 
-  room.game = settle(room.game, serverDice, Date.now, recorder(room));
+  const dice = gameDice(room);
+  const record = recorder(room);
+  room.game = settle(settleTraffic(room.game, dice.play, record), dice.deal, Date.now, record);
   room.debrief = null;
   room.version += 1;
   await saveRoom(room);
@@ -541,7 +569,7 @@ async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<v
   const before = room.game;
   room.game = reduce(before, { type: "timeUp" }, "").state;
   record(before, { type: "timeUp" }, null);
-  room.game = settleTraffic(room.game, serverDice, record);
+  room.game = settleTraffic(room.game, gameDice(room).play, record);
   room.version += 1;
   if (room.game.outcome) {
     room.status = "finished";
