@@ -1,4 +1,4 @@
-// An in-memory stand-in for ioredis: just the calls the server's store makes.
+// An in-memory stand-in for ioredis: just the calls the server makes.
 // Tests reach the instance through `FakeRedis.last` to take storage "down"
 // (`status`) or make the next command fail (`failNext`).
 export default class FakeRedis {
@@ -29,6 +29,25 @@ export default class FakeRedis {
   async get(key) {
     this.check();
     return this.data.get(key) ?? null;
+  }
+
+  // Lists (the game log's retry queue).
+  async rpush(key, value) {
+    this.check();
+    const list = this.data.get(key) ?? [];
+    list.push(value);
+    this.data.set(key, list);
+    return list.length;
+  }
+
+  async lpop(key) {
+    this.check();
+    const list = this.data.get(key) ?? [];
+    return list.length ? list.shift() : null;
+  }
+
+  async llen(key) {
+    return (this.data.get(key) ?? []).length;
   }
 
   multi() {

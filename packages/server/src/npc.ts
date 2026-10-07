@@ -5,6 +5,7 @@ import { npcGivesUp, npcShouldAct } from "./seating";
 import { applyCommand, broadcastState, logFailure, TOO_LATE, type IOServer } from "./socket";
 import { getRoom, saveRoom } from "./store";
 import { think } from "./think";
+import { endGameLog } from "./gameLog";
 
 const timers = new Map<string, NodeJS.Timeout>();
 /** Rejected bot moves in a row, per room. */
@@ -64,6 +65,7 @@ async function giveUp(io: IOServer, roomId: string, why: string): Promise<void> 
   const room = await getRoom(roomId);
   if (!room) return;
   room.status = "abandoned";
+  endGameLog(room, "abandoned");
   await saveRoom(room);
   broadcastState(io, room);
 }

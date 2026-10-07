@@ -22,6 +22,25 @@ services:
       timeout: 3s
       retries: 5
 
+  # Game logs (see docs/game-logs.md). Reachable only from this machine — use
+  # an SSH tunnel for SQL tools.
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skyteam
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env, e.g. openssl rand -hex 24}
+      POSTGRES_DB: skyteam
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "skyteam"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   server:
     build:
       context: .
@@ -38,8 +57,12 @@ services:
       RECONNECT_GRACE_MS: ${RECONNECT_GRACE_MS:-60000}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8080}
       NPC_WORKERS: ${NPC_WORKERS:-}
+      DATABASE_URL: postgres://skyteam:${POSTGRES_PASSWORD}@postgres:5432/skyteam
+      GIT_SHA: ${GIT_SHA:-dev}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   client:
@@ -56,3 +79,4 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:

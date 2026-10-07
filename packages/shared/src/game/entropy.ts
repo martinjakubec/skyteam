@@ -2,7 +2,7 @@ import type { GameCommand, PlayerId } from "../protocol";
 import { TRAFFIC_DIE_FACES } from "./abilities";
 import { scenarioForSetup, type GameSetup } from "./catalog";
 import { reduce, reduceInPlace, type ReduceCommand } from "./reducer";
-import { DICE_PER_PLAYER, INTERN_TOKEN_COUNT, type DieValue } from "./scenario";
+import { DICE_PER_PLAYER, INTERN_TOKEN_COUNT, type Crew, type DieValue } from "./scenario";
 import { createInitialGameState, type GameState } from "./state";
 
 /**
@@ -33,20 +33,32 @@ export function roundRoll(game: GameState, dice: Dice, at: number): ReduceComman
   return { type: "roll", pilot: hand(), copilot: hand(), traffic: Array.from({ length: trafficDice }, () => dice.traffic()), at };
 }
 
+/** Told of every command applied, with the state before it and the crew that
+ *  acted (null for the server's own: deals, Traffic rolls, the clock). The game
+ *  log records through it. */
+export type Recorder = (before: GameState, command: ReduceCommand, crew: Crew | null) => void;
+
+/** A server command applied, and recorded if anyone listens. */
+function apply(game: GameState, command: ReduceCommand, record?: Recorder): GameState {
+  const next = reduce(game, command, "").state;
+  record?.(game, command, null);
+  return next;
+}
+
 /**
  * Supply what the reducer asked for after a command: Traffic die rolls
  * (Synchronisation) and, once a round has ended, the next round's dice.
  */
-export function settle(game: GameState, dice: Dice, now: () => number): GameState {
-  game = settleTraffic(game, dice);
-  while (game.phase === "rolling" && !game.outcome) game = reduce(game, roundRoll(game, dice, now()), "").state;
+export function settle(game: GameState, dice: Dice, now: () => number, record?: Recorder): GameState {
+  game = settleTraffic(game, dice, record);
+  while (game.phase === "rolling" && !game.outcome) game = apply(game, roundRoll(game, dice, now()), record);
   return game;
 }
 
 /** Only the Traffic die rolls: a round that ended stays in `rolling`, its
  *  dice not yet dealt (the live server deals after the crews' debrief). */
-export function settleTraffic(game: GameState, dice: Dice): GameState {
-  while (game.trafficPending && !game.outcome) game = reduce(game, { type: "rollTraffic", value: dice.traffic() }, "").state;
+export function settleTraffic(game: GameState, dice: Dice, record?: Recorder): GameState {
+  while (game.trafficPending && !game.outcome) game = apply(game, { type: "rollTraffic", value: dice.traffic() }, record);
   return game;
 }
 
@@ -80,11 +92,11 @@ export function newGame(
   copilotId: PlayerId,
   rand: Rand,
   at: number,
-  opts: { realTimeSeconds?: number } = {},
+  opts: { realTimeSeconds?: number; record?: Recorder } = {},
 ): GameState {
   const scenario = { ...scenarioForSetup(setup), ...(opts.realTimeSeconds ? { realTimeSeconds: opts.realTimeSeconds } : {}) };
   const game = createInitialGameState(scenario, pilotId, copilotId, { internTokens: shuffledInternTokens(rand) });
-  return reduce(game, roundRoll(game, randDice(rand), at), "").state;
+  return apply(game, roundRoll(game, randDice(rand), at), opts.record);
 }
 
 /** One player action end to end, as the server performs it: add server values

@@ -203,6 +203,9 @@ function handleRoll(
   return { state: s, description: `Round ${s.round} begins.` };
 }
 
+/** "1 die", "2 dice". */
+const diceCount = (n: number) => `${n} ${n === 1 ? "die" : "dice"}`;
+
 /**
  * Traffic die (Approach Track effect): a result adds an Airplane token that
  * many spaces along, counting the Current Position as the first — past the end
@@ -216,7 +219,7 @@ function addTraffic(s: GameState, value: DieValue): void {
   const airport = airportIndex(s.scenario);
   const at = Math.min(s.position + value - 1, airport);
   s.airplanes[at] += 1;
-  const where = at === airport ? "the airport" : `${at - s.position} space${at - s.position === 1 ? "" : "s"} ahead`;
+  const where = at === airport ? "at the airport" : `${at - s.position} space${at - s.position === 1 ? "" : "s"} ahead`;
   s.log.push(`Traffic die: ${value} — an airplane joins the approach ${where}.`);
 }
 
@@ -302,7 +305,7 @@ function initiateReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; value
   applyReroll(s, crew, cmd);
   s.rerollTokens -= 1;
   s.rerollSpent += 1;
-  s.log.push(`${crewLabel(crew)} spent a Reroll token (${cmd.dieIds.length} dice).`);
+  s.log.push(`${crewLabel(crew)} spent a Reroll token (${diceCount(cmd.dieIds.length)}).`);
 
   // Hand the (free) reroll to the other crew. If they have no dice left to
   // reroll, there is nothing to prompt — resolve the event immediately.
@@ -321,7 +324,7 @@ function respondReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values
   s.pendingReroll = null;
   s.log.push(
     cmd.dieIds.length > 0
-      ? `${crewLabel(crew)} rerolled ${cmd.dieIds.length} dice.`
+      ? `${crewLabel(crew)} rerolled ${diceCount(cmd.dieIds.length)}.`
       : `${crewLabel(crew)} declined to reroll.`,
   );
   return { state: s, description: "Reroll complete." };

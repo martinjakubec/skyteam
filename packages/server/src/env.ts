@@ -23,6 +23,10 @@ export const env = {
   TRUST_PROXY: Number(process.env.TRUST_PROXY ?? 0),
   /** Testing only: shortens every Real-Time round (unset = the game's 60 s). */
   REAL_TIME_SECONDS: process.env.REAL_TIME_SECONDS ? Number(process.env.REAL_TIME_SECONDS) : undefined,
+  /** PostgreSQL for game logs (unset: games aren't logged). */
+  DATABASE_URL: process.env.DATABASE_URL || undefined,
+  /** Which build wrote a game log (e.g. the git commit). */
+  BUILD: process.env.GIT_SHA || "dev",
   /** The 3-2-1 between rounds, from both Ready to the deal (testing shortens it). */
   DEBRIEF_COUNTDOWN_MS: Number(process.env.DEBRIEF_COUNTDOWN_MS ?? DEBRIEF_COUNTDOWN_MS),
 };

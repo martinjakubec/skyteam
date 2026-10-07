@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("ioredis", () => import("./support/fakeRedis.mjs"));
+vi.mock("pg", () => import("./support/fakePg.mjs"));
 
 // Read once when the server's env module loads: fast bots, short grace, 1 s Real-Time rounds.
 Object.assign(process.env, {
@@ -12,6 +13,7 @@ Object.assign(process.env, {
   RECONNECT_GRACE_MS: "250",
   REAL_TIME_SECONDS: "1",
   DEBRIEF_COUNTDOWN_MS: "300", // the 3-2-1 between rounds, shortened
+  DATABASE_URL: "postgres://fake/skyteam", // game logs go to the fake Postgres
   TRUST_PROXY: "1", // each test request names its own client address (rate limits are per address)
 });
 
@@ -22,7 +24,9 @@ const { attachSocket } = await import("../packages/server/src/socket.ts");
 const { stopThinking } = await import("../packages/server/src/think.ts");
 const { issueToken } = await import("../packages/server/src/identity.ts");
 const { default: FakeRedis } = await import("./support/fakeRedis.mjs");
-const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, settleTraffic, randDice, withEntropy, UNAVAILABLE, SOLO_RESTRICTED_NOTE } = await import("../packages/shared/src/index.ts");
+const { Pool: FakePg } = await import("./support/fakePg.mjs");
+const { initGameLogs, flushPendingGameLogs, PENDING_KEY } = await import("../packages/server/src/gameLog.ts");
+const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, replay, settleTraffic, randDice, withEntropy, LOG_FORMAT, MOVE_CODES, UNAVAILABLE, SOLO_RESTRICTED_NOTE } = await import("../packages/shared/src/index.ts");
 
 let server, url;
 const sockets = [];
@@ -30,6 +34,7 @@ const sockets = [];
 beforeAll(async () => {
   server = http.createServer(createApp());
   attachSocket(server);
+  await initGameLogs();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   url = `http://127.0.0.1:${server.address().port}`;
 });
@@ -43,7 +48,14 @@ afterAll(async () => {
 beforeEach(() => {
   FakeRedis.last.status = "ready";
   FakeRedis.last.failNext = null;
+  FakePg.last.down = false;
 });
+
+/** The game-log rows written for a room, oldest first. */
+const logged = (roomId) => FakePg.last.games.filter((row) => row.room_id === roomId);
+/** A logged game replayed from its row. */
+const replayRow = (row) =>
+  replay({ format: row.format, setup: { scenarioId: row.scenario, modules: row.modules, abilities: row.abilities }, internTokens: [...row.intern_order].map(Number) }, row.moves);
 
 // --- helpers -----------------------------------------------------------------
 
@@ -74,10 +86,10 @@ async function client() {
 const emit = (sock, event, payload) =>
   new Promise((resolve) => (payload === undefined ? sock.emit(event, resolve) : sock.emit(event, payload, resolve)));
 
-/** Wait until `pred` holds (polled), or fail after `ms`. */
+/** Wait until `pred` holds (polled; it may be async), or fail after `ms`. */
 async function until(pred, ms = 5000, what = "condition") {
   const end = Date.now() + ms;
-  while (!pred()) {
+  while (!(await pred())) {
     if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -452,10 +464,25 @@ describe("socket game", () => {
       if (latest(r.h).debrief) await bothReady(r);
     }
     await until(() => latest(r.h).status === "finished", 2000, "finished");
-    expect(latest(r.h).game.outcome).toBeTruthy();
-    // A finished game can be reset (host) or left.
+    const end = latest(r.h).game;
+    expect(end.outcome).toBeTruthy();
+    // The game is logged once, and its moves replay to how it ended.
+    await until(() => logged(r.roomId).length === 1, 2000, "the game's log row");
+    const [row] = logged(r.roomId);
+    expect(row).toMatchObject({
+      format: LOG_FORMAT, scenario: "YUL", modules: [], abilities: [], intern_order: "", pilot: "human", copilot: "human",
+      result: end.outcome.result, loss_reason: end.outcome.result === "lost" ? end.outcome.reason : null, rounds_reached: end.round,
+    });
+    expect(row.moves).toMatch(/^D\d{8}/);
+    expect(new Date(row.ended_at) >= new Date(row.started_at)).toBe(true);
+    const replayed = replayRow(row);
+    expect(replayed.outcome).toEqual(end.outcome);
+    expect(replayed.log).toEqual(end.log);
+    // A finished game can be reset (host) or left: that logs nothing more.
     expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
     await until(() => latest(r.g).status === "in_progress" && latest(r.g).version === 0, 2000, "reset");
+    await new Promise((res) => setTimeout(res, 50));
+    expect(logged(r.roomId)).toHaveLength(1);
   });
 
   test("reset: host only; exit: back to the lobby with a notice", async () => {
@@ -685,6 +712,69 @@ describe("socket debrief", () => {
   });
 });
 
+// --- game logs ------------------------------------------------------------------------
+
+describe("game logs", () => {
+  test("the code list is in the database", () => {
+    expect(FakePg.last.moveCodes.map((c) => c.code)).toEqual(MOVE_CODES.map((c) => c.code));
+    expect(FakePg.last.moveCodes[0].format).toBe(LOG_FORMAT);
+  });
+
+  test("Reset mid-game logs the old game as reset; Exit logs the new one as exited", async () => {
+    const r = await startedGame({ scenarioId: "YUL", modules: ["intern"], abilities: [] });
+    const { sock, command } = nextMove(r);
+    await emit(sock, "game:command", { commandId: "lg1", command });
+    expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 1, 2000, "reset row");
+    const [reset] = logged(r.roomId);
+    expect(reset).toMatchObject({ result: "reset", loss_reason: null, rounds_reached: 1, modules: ["intern"] });
+    expect(reset.intern_order).toMatch(/^[1-6]{6}$/);
+    expect(reset.moves).toMatch(/^D\d{8}[PC]\d/); // the deal, then the move
+    expect(replayRow(reset).placedThisRound).toBe(1);
+    expect(await emit(r.g, "game:exit")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 2, 2000, "exit row");
+    expect(logged(r.roomId)[1]).toMatchObject({ result: "exited" });
+    expect(logged(r.roomId)[1].id).not.toBe(reset.id);
+  });
+
+  test("a game left between rounds: both deals are in its log", async () => {
+    const r = await toDebrief();
+    await bothReady(r);
+    expect(await emit(r.h, "game:exit")).toEqual({ ok: true });
+    await until(() => logged(r.roomId).length === 1, 2000, "row");
+    const [row] = logged(r.roomId);
+    expect(row.moves.match(/D/g)).toHaveLength(2);
+    expect(row.rounds_reached).toBe(2);
+    expect(replayRow(row).round).toBe(2);
+  });
+
+  test("a game abandoned by a player who never came back is logged as abandoned", async () => {
+    const { h, g, roomId } = await startedGame();
+    g.disconnect();
+    await until(() => latest(h).status === "abandoned", 3000, "abandoned");
+    await until(() => logged(roomId).length === 1, 2000, "row");
+    expect(logged(roomId)[0].result).toBe("abandoned");
+  });
+
+  test("Postgres down: the row waits in Redis, and the retry writes it once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await startedGame();
+    FakePg.last.down = true;
+    expect(await emit(r.h, "game:exit")).toEqual({ ok: true });
+    await until(async () => (await FakeRedis.last.llen(PENDING_KEY)) === 1, 2000, "queued");
+    expect(logged(r.roomId)).toHaveLength(0);
+    await flushPendingGameLogs(); // still down: it stays queued
+    expect(await FakeRedis.last.llen(PENDING_KEY)).toBe(1);
+    FakePg.last.down = false;
+    await flushPendingGameLogs();
+    await flushPendingGameLogs(); // nothing left: no duplicate
+    expect(logged(r.roomId)).toHaveLength(1);
+    expect(logged(r.roomId)[0].result).toBe("exited");
+    expect(await FakeRedis.last.llen(PENDING_KEY)).toBe(0);
+    vi.mocked(console.error).mockRestore();
+  });
+});
+
 // --- sockets: the bot, abuse, outages ------------------------------------------------
 
 describe("socket solo, limits, outages", () => {
@@ -704,6 +794,9 @@ describe("socket solo, limits, outages", () => {
     expect(await emit(s, "game:exit")).toEqual({ ok: true });
     await until(() => latest(s).status === "lobby", 2000, "lobby");
     expect(latest(s).seats[1].ready).toBe(true);
+    // Logged as left, with the bot in the Pilot's seat.
+    await until(() => logged(room.body.roomId).length === 1, 2000, "log row");
+    expect(logged(room.body.roomId)[0]).toMatchObject({ result: "exited", pilot: "bot:aviator", copilot: "human" });
   });
 
   test("a socket flooding events is slowed down", async () => {

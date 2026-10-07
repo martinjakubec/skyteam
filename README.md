@@ -13,6 +13,15 @@ a column beside the lobby; on phones (≤760px) it is a bubble in the bottom
 right that opens it full-screen and shows a dot while messages wait unread.
 Seated players post. Solo rooms have no log, because the bot doesn't talk.
 
+**Game logs.** Every live game, solo included, is written to PostgreSQL as one
+row when it ends: its setup, who flew each seat, the result (won, lost,
+abandoned, exited or reset), the loss reason, and a compact move string
+(`D35612244P4aC2eP6b2…`, about 300 characters) that replays it exactly.
+Statistics are plain SQL (`docs/game-log-queries.sql`: play rate, crash causes
+and win rate per airport, and more). `npm run logs:export` writes JSONL for
+training bots, and `npm run logs:replay` steps through one game. See
+[docs/game-logs.md](docs/game-logs.md).
+
 **Between rounds (debrief).** As in the board game, the crew may talk between
 rounds but never while placing dice. When a round ends and the game goes on,
 the server holds back the next dice. The finished round stays on the board, the

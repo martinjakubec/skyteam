@@ -16,6 +16,20 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
+  # Game logs (see docs/game-logs.md). Dev only: a fixed password, reachable from
+  # this machine for SQL tools on port 5433 (psql -h 127.0.0.1 -p 5433 -U skyteam
+  # skyteam) — 5433, as Windows often reserves 5432 or a local Postgres has it.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: skyteam
+      POSTGRES_PASSWORD: skyteam-dev
+      POSTGRES_DB: skyteam
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+
   server:
     image: node:22-alpine
     working_dir: /app
@@ -31,6 +45,7 @@ services:
       # a phone or another PC at http://<host-ip>:5173) without pinning an IP.
       # Narrow this (comma-separated allowlist) for anything beyond dev.
       CLIENT_ORIGIN: "*"
+      DATABASE_URL: postgres://skyteam:skyteam-dev@postgres:5432/skyteam
       # Bind-mounted source on Windows doesn't emit inotify events into the
       # container, so file watchers must poll to see host edits.
       CHOKIDAR_USEPOLLING: "true"
@@ -39,6 +54,7 @@ services:
       - server-node-modules:/app/node_modules
     depends_on:
       - redis
+      - postgres
 
   client:
     image: node:22-alpine
@@ -58,5 +74,6 @@ services:
       - server
 
 volumes:
+  postgres-dev-data:
   server-node-modules:
   client-node-modules:

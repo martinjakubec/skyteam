@@ -20,7 +20,9 @@
     "bench": "npm run build:shared && tsx scripts/bench.mjs",
     "tune": "npm run build:shared && tsx scripts/tune.mjs",
     "validate:realtime-bot": "npm run build:shared && node scripts/validate-realtime-bot.mjs",
-    "run:docker": "docker compose -f docker-compose.dev.yml up -d"
+    "run:docker": "docker compose -f docker-compose.dev.yml up -d",
+    "logs:export": "tsx scripts/game-logs.mjs export",
+    "logs:replay": "tsx scripts/game-logs.mjs replay"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

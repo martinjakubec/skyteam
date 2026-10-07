@@ -40,6 +40,7 @@ import { cancelNpc, scheduleNpc } from "./npc";
 import { abandonsOnDisconnect, botSeat, canRename, crewOf, lobbyStatus, seatCrews, unreadyOthers } from "./seating";
 import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
+import { endGameLog, recorder, startGameLog } from "./gameLog";
 
 // No server-to-server events in a single-server deployment (default map).
 export type IOServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
@@ -291,7 +292,8 @@ async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {
   room.debrief = null;
   // Deal the game and roll round 1. Randomness lives on the server, never in
   // the pure reducer — rolled values are threaded in via a `roll` command.
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
+  startGameLog(room);
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS, record: recorder(room) });
   room.version = 0;
   await saveRoom(room);
 
@@ -314,9 +316,11 @@ async function onReset(io: IOServer, socket: IOSocket, ack: Ack) {
 
   cancelNpc(room.id); // a bot action for the old game must not land on the new one
   clearDebrief(room.id);
+  if (room.status === "in_progress") endGameLog(room, "reset"); // a finished game is logged already
   room.debrief = null;
   room.status = "in_progress";
-  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS });
+  startGameLog(room);
+  room.game = newGame(room.setup, pilotId, copilotId, rand, Date.now(), { realTimeSeconds: env.REAL_TIME_SECONDS, record: recorder(room) });
   room.version = 0;
   await saveRoom(room);
 
@@ -341,6 +345,7 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
   clearClock(room.id);
   cancelNpc(room.id);
   clearDebrief(room.id);
+  if (room.status === "in_progress") endGameLog(room, "exited"); // a finished game is logged already
   room.debrief = null;
   room.status = "lobby";
   room.game = null;
@@ -402,16 +407,23 @@ export async function applyCommand(
   }
 
   let game: GameState;
+  const record = recorder(room);
   try {
     // Node processes one event at a time, so commands for a room are naturally
     // serialized here — "simultaneous" inputs are simply ordered by arrival.
-    game = settleTraffic(reduce(room.game, rcmd, playerId).state, serverDice);
+    const before = room.game;
+    game = reduce(before, rcmd, playerId).state;
+    record(before, rcmd, crewOfGame(room, playerId));
+    game = settleTraffic(game, serverDice, record);
   } catch (e) {
     return e instanceof GameRuleError ? e.message : "Command rejected.";
   }
   room.game = game;
   room.version += 1;
-  if (game.outcome) room.status = "finished";
+  if (game.outcome) {
+    room.status = "finished";
+    endGameLog(room, game.outcome.result);
+  }
   openDebrief(room);
   await saveRoom(room);
 
@@ -423,12 +435,6 @@ export async function applyCommand(
   await syncClock(io, room);
   scheduleNpc(io, room.id);
   return null;
-}
-
-/** Deal what the reducer is waiting for (see shared `settle`): the next round's
- *  dice, stamped with the clock for Real-Time. */
-function settleNow(game: GameState): GameState {
-  return settle(game, serverDice, Date.now);
 }
 
 /** The crew a seated player flies in the room's game. */
@@ -478,7 +484,7 @@ async function deal(io: IOServer, roomId: string, endsAt: number): Promise<void>
   // Stale: cancelled, restarted, or the game moved on.
   if (!room?.game || room.status !== "in_progress" || room.debrief?.countdownEndsAt !== endsAt) return;
 
-  room.game = settleNow(room.game);
+  room.game = settle(room.game, serverDice, Date.now, recorder(room));
   room.debrief = null;
   room.version += 1;
   await saveRoom(room);
@@ -531,9 +537,16 @@ async function onTimeUp(io: IOServer, roomId: string, endsAt: number): Promise<v
   // Stale: the round already ended, the clock was paused, or a newer one runs.
   if (!room?.game || room.status !== "in_progress" || room.game.timerEndsAt !== endsAt) return;
 
-  room.game = settleTraffic(reduce(room.game, { type: "timeUp" }, "").state, serverDice);
+  const record = recorder(room);
+  const before = room.game;
+  room.game = reduce(before, { type: "timeUp" }, "").state;
+  record(before, { type: "timeUp" }, null);
+  room.game = settleTraffic(room.game, serverDice, record);
   room.version += 1;
-  if (room.game.outcome) room.status = "finished";
+  if (room.game.outcome) {
+    room.status = "finished";
+    endGameLog(room, room.game.outcome.result);
+  }
   openDebrief(room);
   await saveRoom(room);
   broadcastState(io, room);
@@ -593,6 +606,7 @@ async function abandonIfStillGone(io: IOServer, roomId: string, playerId: string
     room.status = "abandoned";
     clearClock(roomId);
     clearDebrief(roomId);
+    endGameLog(room, "abandoned");
     await saveRoom(room);
     broadcastState(io, room);
   }
