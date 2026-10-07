@@ -83,7 +83,7 @@ string splits with `/[DSTPC][^DSTPC]*/g`.
 | `t` | Intern training |
 | suffix `'` | The other crew's side, for Axis, Engine, Radio or Intern (only the Traffic die does this) |
 
-Example of a round: `D3561224 4P4aC2eP6b2C2+1c0…`, read as: deal; the pilot
+Example of a round: `D35612244P4aC2eP6b2C2+1c0…`, read as: deal; the pilot
 plays 4 on Axis; the co-pilot 2 on Engines; the pilot 6 on Brakes 3; the
 co-pilot 2 with +1 Coffee on Concentration 1.
 

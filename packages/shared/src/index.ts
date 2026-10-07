@@ -8,3 +8,5 @@ export * from "./game/state";
 export * from "./game/reducer";
 export * from "./game/entropy";
 export * from "./bot";
+export * from "./log/codes";
+export * from "./log/codec";
