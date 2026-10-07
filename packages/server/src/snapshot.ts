@@ -24,6 +24,7 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
     version: room.version,
     game: room.game ? redactGameStateFor(room.game, viewerId) : null,
     notice: room.notice ?? null,
+    chat: room.chat,
     you: { playerId: viewerId, kind, role: seat?.role },
     serverTime: Date.now(),
   };

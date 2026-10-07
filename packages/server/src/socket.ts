@@ -1,10 +1,13 @@
 import type http from "node:http";
 import { randomInt } from "node:crypto";
 import { Server, type DefaultEventsMap, type Socket } from "socket.io";
+import { nanoid } from "nanoid";
 import {
+  ChatSendPayload,
   GameCommandPayload,
   GameRuleError,
   JoinRoomPayload,
+  MAX_CHAT_HISTORY,
   PlayerName,
   SetNamePayload,
   SetReadyPayload,
@@ -18,6 +21,7 @@ import {
   reduce,
   settle,
   withEntropy,
+  type ChatMessage,
   type ClientToServerEvents,
   type GameCommand,
   type GameState,
@@ -94,6 +98,7 @@ export function attachSocket(server: http.Server): IOServer {
     on("seat:ready", (payload, ack) => onReady(io, socket, payload, ack));
     on("seat:name", (payload, ack) => onName(io, socket, payload, ack));
     on("room:setup", (payload, ack) => onSetup(io, socket, payload, ack));
+    on("chat:send", (payload, ack) => onChat(io, socket, payload, ack));
     on("game:start", (_payload, ack) => onStart(io, socket, ack));
     on("game:reset", (_payload, ack) => onReset(io, socket, ack));
     on("game:exit", (_payload, ack) => onExit(io, socket, ack));
@@ -205,6 +210,35 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
 
   ack({ ok: true });
   broadcastState(io, room);
+}
+
+/** A seated player posts to the lobby's flight log; everyone in the room gets it. */
+async function onChat(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
+  const parsed = ChatSendPayload.safeParse(payload);
+  if (!parsed.success) return ack({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid message." });
+
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const seat = room.seats.find((s) => s.playerId === playerId);
+  if (!seat) return ack({ ok: false, error: "Spectators can't post in the flight log." });
+  if (room.status !== "lobby" && room.status !== "ready")
+    return ack({ ok: false, error: "The flight log is for the lobby." });
+
+  const hostCrew = room.hostCrew ?? "pilot";
+  const msg: ChatMessage = {
+    id: nanoid(),
+    playerId,
+    crew: seat.role === "host" ? hostCrew : hostCrew === "pilot" ? "copilot" : "pilot",
+    text: parsed.data.text,
+    at: Date.now(),
+  };
+  room.chat = [...(room.chat ?? []), msg].slice(-MAX_CHAT_HISTORY);
+  await saveRoom(room);
+
+  ack({ ok: true });
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.data.roomId === room.id && sock.data.playerId) sock.emit("chat:message", msg);
+  }
 }
 
 async function onStart(io: IOServer, socket: IOSocket, ack: Ack) {

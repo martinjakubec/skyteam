@@ -1,8 +1,18 @@
 # SkyTeam — realtime two-player game
 
 An online two-player game with simultaneous, server-authoritative actions,
-multiple concurrent rooms, invite-link join, ready-up/host-start lobby flow, and
-reconnect-after-disconnect. TypeScript end to end.
+multiple concurrent rooms, invite-link join, ready-up/host-start lobby flow, a
+lobby chat (the flight log), and reconnect-after-disconnect. TypeScript end to end.
+
+**Flight log (lobby chat).** The crew talk over the scenario and Special
+Abilities before take-off (`chat:send` → `chat:message`). Lines are tinted
+blue for the Pilot and orange for the Co-Pilot, and the newest sits at the
+bottom. A room keeps its last 50 lines, which arrive with every snapshot, so a
+refresh or reconnect shows the conversation so far. On wide screens the log is
+a column beside the lobby; on phones (≤760px) it is a bubble in the bottom
+right that opens it full-screen and shows a dot while messages wait unread.
+Seated players post, in the lobby only. Solo rooms have no log, because the
+bot doesn't talk.
 
 ## Architecture in one paragraph
 

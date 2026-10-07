@@ -32,6 +32,7 @@ export async function createRoom(hostPlayerId: string, solo?: { crew: Crew; leve
     setup: structuredClone(DEFAULT_SETUP),
     version: 0,
     game: null,
+    chat: [],
     updatedAt: Date.now(),
   };
   await saveRoom(room);

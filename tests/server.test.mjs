@@ -53,14 +53,16 @@ const post = async (path, body, base = url, from = `10.0.${nextAddress >> 8}.${n
   return { status: res.status, body: await res.json() };
 };
 
-/** A connected client that keeps the latest room:state and every game:event. */
+/** A connected client that keeps every room:state, game:event and chat:message. */
 async function client() {
   const sock = connect(url, { transports: ["websocket"], forceNew: true, reconnection: false });
   sockets.push(sock);
   sock.states = [];
   sock.events = [];
+  sock.chat = [];
   sock.on("room:state", (s) => sock.states.push(s));
   sock.on("game:event", (e) => sock.events.push(e));
+  sock.on("chat:message", (m) => sock.chat.push(m));
   await new Promise((resolve, reject) => (sock.once("connect", resolve), sock.once("connect_error", reject)));
   return sock;
 }
@@ -213,6 +215,7 @@ describe("HTTP routes", () => {
     expect(latest(s).setup).toEqual({ scenarioId: "YUL", modules: [], abilities: [] });
     expect(latest(s).hostCrew).toBe("pilot");
     expect(latest(s).seats[1].bot).toBe("aviator"); // retired levels fly as the Aviator
+    expect(latest(s).chat).toEqual([]); // saved before the flight log existed
 
     // An airport that no longer exists falls back to the default.
     FakeRedis.last.data.set("room:gone-airport", JSON.stringify({ ...legacy, id: "gone-airport", setup: { scenarioId: "TURNS", modules: [] } }));
@@ -237,7 +240,7 @@ describe("socket lobby", () => {
 
   test("before joining a room, every action is refused", async () => {
     const s = await client();
-    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"]]) {
+    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["chat:send", { text: "hi" }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"]]) {
       expect((await emit(s, event, payload)).error, event).toBe("Not in a room.");
     }
     expect((await emit(s, "game:command", { commandId: "c", command: { type: "reroll", dieIds: [] } })).error).toBe("No active game.");
@@ -302,6 +305,66 @@ describe("socket lobby", () => {
     expect((await emit(w, "seat:name", { name: "Eve" })).error).toBe("Observers have no seat to name.");
     expect((await emit(w, "game:command", { commandId: "c", command: nextMove({ h, g }).command })).error).toBe("Observers cannot act.");
     expect((await emit(w, "game:exit")).error).toBe("Only the crew can end the game.");
+  });
+});
+
+describe("socket lobby chat (flight log)", () => {
+  test("a message reaches both players, tagged with its sender's crew", async () => {
+    const { h, g } = await twoPlayerRoom();
+    expect(await emit(g, "chat:send", { text: "  Shall we   try   Kerosene? " })).toEqual({ ok: true });
+    await until(() => h.chat.length === 1 && g.chat.length === 1, 2000, "message");
+    const m = h.chat[0];
+    expect(m).toMatchObject({ text: "Shall we try Kerosene?", crew: "copilot", playerId: latest(g).you.playerId });
+    expect(typeof m.id).toBe("string");
+    expect(typeof m.at).toBe("number");
+    expect(g.chat[0]).toEqual(m);
+  });
+
+  test("history comes with the snapshot, so a player who rejoins sees it", async () => {
+    const { h, roomId, guestToken } = await twoPlayerRoom();
+    await emit(h, "chat:send", { text: "first" });
+    await emit(h, "chat:send", { text: "second" });
+    const again = await client();
+    await emit(again, "room:join", { roomId, token: guestToken });
+    await until(() => latest(again), 2000, "snapshot");
+    expect(latest(again).chat.map((m) => m.text)).toEqual(["first", "second"]);
+    expect(latest(again).chat[0].crew).toBe("pilot");
+  });
+
+  test("only the last 50 messages are kept", async () => {
+    const { h, roomId, hostToken } = await twoPlayerRoom();
+    for (let i = 0; i < 53; i++) {
+      expect(await emit(h, "chat:send", { text: `m${i}` })).toEqual({ ok: true });
+      await new Promise((r) => setTimeout(r, 55)); // under the socket's 20 events/s
+    }
+    const again = await client();
+    await emit(again, "room:join", { roomId, token: hostToken });
+    await until(() => latest(again), 2000, "snapshot");
+    const texts = latest(again).chat.map((m) => m.text);
+    expect(texts).toHaveLength(50);
+    expect(texts[0]).toBe("m3");
+    expect(texts.at(-1)).toBe("m52");
+  });
+
+  test("empty, too long and malformed messages are refused", async () => {
+    const { h } = await twoPlayerRoom();
+    expect((await emit(h, "chat:send", { text: "   " })).error).toBe("Type a message first.");
+    expect((await emit(h, "chat:send", { text: "x".repeat(201) })).error).toBe("A message is at most 200 characters.");
+    expect((await emit(h, "chat:send", { text: 5 })).ok).toBe(false);
+    expect(await emit(h, "chat:send", { text: "x".repeat(200) })).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(h.chat).toHaveLength(1);
+  });
+
+  test("spectators can't post, and the log closes once the game starts", async () => {
+    const { h, g, roomId, invite } = await startedGame();
+    expect((await emit(h, "chat:send", { text: "mid-flight" })).error).toBe("The flight log is for the lobby.");
+    const watcher = await post(`/rooms/${invite}/join`, {});
+    const w = await client();
+    await emit(w, "room:join", { roomId, token: watcher.body.token });
+    expect((await emit(w, "chat:send", { text: "hello" })).error).toBe("Spectators can't post in the flight log.");
+    expect(h.chat).toHaveLength(0);
+    expect(g.chat).toHaveLength(0);
   });
 });
 

@@ -5,6 +5,7 @@ import { useGame } from "./store";
 import { Cockpit } from "./components/Cockpit";
 import { InviteBox } from "./components/InviteBox";
 import { Lobby } from "./components/Lobby";
+import { LobbyChat } from "./components/FlightLog";
 import { Seats } from "./components/Seats";
 import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
@@ -110,9 +111,12 @@ export function App() {
   const inGame =
     (snapshot?.status === "in_progress" || snapshot?.status === "finished") && snapshot.game;
   const inviteUrl = `${window.location.origin}/?join=${room.inviteCode}`;
+  const solo = !!snapshot?.seats.some((s) => s.bot);
+  const inLobby = snapshot?.you.kind === "player" && (snapshot.status === "lobby" || snapshot.status === "ready");
+  const chat = inLobby && !solo;
 
   return (
-    <main className={inGame ? "stage" : "center"}>
+    <main className={inGame ? "stage" : chat ? "center wide" : "center"}>
       <header className="topbar">
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <div className="topbar-right">
@@ -146,17 +150,19 @@ export function App() {
       {lastError && <p className="error">{lastError}</p>}
 
       {!inGame && (
-        <>
-          {/* A solo room's other seat is the bot: nobody to invite. */}
-          {!snapshot?.seats.some((s) => s.bot) && <InviteBox url={inviteUrl} />}
-          {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
-          <Seats snapshot={snapshot} />
-          {snapshot &&
-            snapshot.you.kind === "player" &&
-            (snapshot.status === "lobby" || snapshot.status === "ready") && (
+        <div className={chat ? "lobby-layout with-log" : "lobby-layout"}>
+          <div className="lobby-col">
+            {/* A solo room's other seat is the bot: nobody to invite. */}
+            {!solo && <InviteBox url={inviteUrl} />}
+            {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
+            <Seats snapshot={snapshot} />
+            {snapshot && inLobby && (
               <Lobby snapshot={snapshot} onReady={setReady} onName={setName} onSetup={setSetup} onStart={startGame} />
             )}
-        </>
+          </div>
+          {/* The crew's chat — not in a solo room: the bot doesn't talk. */}
+          {snapshot && chat && <LobbyChat snapshot={snapshot} />}
+        </div>
       )}
 
       {inGame && <Cockpit snapshot={snapshot} onCommand={sendCommand} />}

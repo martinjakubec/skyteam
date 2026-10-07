@@ -50,6 +50,7 @@ export function snapshotOf(game: GameState, as: Crew | "spectator", extra: Parti
     version: 0,
     game,
     notice: null,
+    chat: [],
     you: as === "spectator" ? { playerId: you, kind: "observer" } : { playerId: you, kind: "player", role: as === "pilot" ? "host" : "guest" },
     serverTime: Date.now(),
     ...extra,

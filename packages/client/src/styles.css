@@ -234,6 +234,191 @@ ul {
   color: #ff8a7d;
 }
 
+/* Lobby with its flight log: on a wide screen the log is a second column that
+   stays in view while the lobby scrolls; on a phone (≤760px) it's a bubble. */
+.lobby-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.lobby-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+@media (min-width: 761px) {
+  .center.wide {
+    max-width: 840px;
+  }
+  .lobby-layout.with-log {
+    display: grid;
+    grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+    align-items: start;
+  }
+  .with-log > .flight-log {
+    position: sticky;
+    top: 1rem;
+    height: min(36rem, calc(100vh - 2rem));
+  }
+}
+
+/* Phone: room under the last button for the chat bubble. */
+@media (max-width: 760px) {
+  .center.wide {
+    padding-bottom: 5.5rem;
+  }
+}
+
+/* The flight log: a dark recessed screen in a panel, lines tinted by crew. */
+.flight-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  padding: 0.8rem;
+  border-radius: 12px;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--panel-edge);
+  border-top-color: rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+.flight-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.flight-log-head h2 {
+  margin: 0;
+}
+.flight-log-close {
+  padding: 0.3rem 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+.flight-log-lines {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-radius: 8px;
+  background: var(--recess);
+  border: 1px solid #0c1016;
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.6);
+  color: var(--paper);
+}
+/* Few lines sit at the bottom, by the box — new ones push older ones up. */
+.flight-log-lines > :first-child {
+  margin-top: auto;
+}
+.flight-log-empty {
+  color: #8f9aa6;
+  font-size: 0.85rem;
+  text-align: center;
+}
+.log-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  border-left: 3px solid;
+}
+.log-line.pilot {
+  border-left-color: var(--blue);
+  background: rgba(47, 111, 176, 0.18);
+}
+.log-line.copilot {
+  border-left-color: var(--orange);
+  background: rgba(223, 138, 54, 0.15);
+}
+.log-who {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-line.pilot .log-who {
+  color: #7fb6ee;
+}
+.log-line.copilot .log-who {
+  color: #f3b06b;
+}
+.log-time {
+  font-size: 0.7rem;
+  color: #7d8894;
+  font-variant-numeric: tabular-nums;
+}
+.log-text {
+  grid-column: 1 / -1;
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.flight-log-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.flight-log-form input {
+  font: inherit;
+}
+
+/* Phone: the bubble in the bottom-right corner, its unread dot, and the
+   full-screen log it opens. */
+.chat-bubble {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  width: 3.4rem;
+  height: 3.4rem;
+  padding: 0.75rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.chat-bubble svg {
+  width: 100%;
+  height: 100%;
+}
+.chat-dot {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 2px solid #2a3a4d;
+}
+.chat-modal.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  background: rgba(10, 14, 20, 0.6);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+}
+.chat-modal .flight-log {
+  flex: 1;
+  border-radius: 0;
+}
+/* 16px keeps iOS from zooming in on the box. */
+.chat-modal .flight-log-form input {
+  font-size: 16px;
+}
+
 /* Lobby: your name (kept in the browser for the next room). */
 .name-field {
   display: flex;

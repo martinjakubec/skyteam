@@ -25,6 +25,7 @@ function snapshotFor(game: GameState): RoomSnapshot {
     version: 0,
     game,
     notice: null,
+    chat: [],
     you: { playerId: crew === "pilot" ? PILOT_ID : COPILOT_ID, kind: "player", role: crew === "pilot" ? "host" : "guest" },
     serverTime: Date.now(),
   };

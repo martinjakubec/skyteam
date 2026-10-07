@@ -6,7 +6,7 @@
 import "../support/dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { DEFAULT_SETUP, SOLO_RESTRICTED_NOTE, UNAVAILABLE, newGame, settle, randDice, mulberry32, type RoomSnapshot } from "@skyteam/shared";
+import { DEFAULT_SETUP, SOLO_RESTRICTED_NOTE, UNAVAILABLE, newGame, settle, randDice, mulberry32, type ChatMessage, type Crew, type RoomSnapshot } from "@skyteam/shared";
 
 // --- a scripted Socket.IO client -------------------------------------------------------
 type Handler = (...args: unknown[]) => void;
@@ -66,6 +66,7 @@ function snapshot(over: Partial<RoomSnapshot> = {}): RoomSnapshot {
     version: 0,
     game: null,
     notice: null,
+    chat: [],
     you: { playerId: ME, kind: "player", role: "host" },
     serverTime: Date.now(),
     ...over,
@@ -91,7 +92,7 @@ const roomReply = { roomId: "room-1", inviteCode: "INVITE01", token: "tok-1" };
 
 beforeEach(() => {
   sockets.length = 0;
-  useGame.setState({ socket: null, connected: false, snapshot: null, lastError: null, serverDown: false, clockOffset: 0 });
+  useGame.setState({ socket: null, connected: false, snapshot: null, lastError: null, serverDown: false, clockOffset: 0, chatReadAt: null });
   window.history.replaceState(null, "", "/");
   window.name = "";
   sessionStorage.clear();
@@ -262,6 +263,135 @@ describe("lobby", () => {
   test("the room was abandoned", async () => {
     await inRoom(snapshot({ status: "abandoned" }));
     expect(screen.getByText(/the game was abandoned/)).toBeTruthy();
+  });
+});
+
+// --- the lobby's flight log (chat) ----------------------------------------------------------
+describe("flight log", () => {
+  /** Pretend the window is a phone (≤760px) or not; `resize` flips it later. */
+  let resize: (mobile: boolean) => void;
+  function viewport(mobile: boolean) {
+    const listeners = new Set<(e: { matches: boolean }) => void>();
+    let matches = mobile;
+    window.matchMedia = ((media: string) => ({
+      get matches() {
+        return matches;
+      },
+      media,
+      addEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.add(l),
+      removeEventListener: (_: string, l: (e: { matches: boolean }) => void) => listeners.delete(l),
+    })) as unknown as typeof window.matchMedia;
+    resize = (m) => {
+      matches = m;
+      act(() => listeners.forEach((l) => l({ matches: m })));
+    };
+  }
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  let at = 1_000;
+  const line = (playerId: string, crew: Crew, text: string): ChatMessage => ({ id: `m${at}`, playerId, crew, text, at: at++ });
+  const crewOf2 = (chat: ChatMessage[] = []) =>
+    snapshot({
+      seats: [
+        { playerId: ME, role: "host", ready: false, connection: "connected", name: "Ann" },
+        { ...guest, name: "Bob" },
+      ],
+      chat,
+    });
+  const lines = () => [...screen.getByRole("log").querySelectorAll("li")];
+
+  test("desktop: oldest first, tinted by crew; a new line lands at the bottom and is scrolled to", async () => {
+    viewport(false);
+    const sock = await inRoom(crewOf2([line(ME, "pilot", "Kerosene?"), line(OTHER, "copilot", "Sure, and Anticipation.")]));
+    expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
+    expect(lines().map((l) => l.textContent)).toEqual([expect.stringMatching(/Ann.*Kerosene\?/), expect.stringMatching(/Bob.*Sure, and Anticipation\./)]);
+    expect(lines().map((l) => l.className)).toEqual([expect.stringMatching(/\bpilot\b/), expect.stringMatching(/\bcopilot\b/)]);
+
+    const log = screen.getByRole("log");
+    let top = 0;
+    Object.defineProperty(log, "scrollHeight", { configurable: true, get: () => 900 });
+    Object.defineProperty(log, "scrollTop", { configurable: true, get: () => top, set: (v: number) => (top = v) });
+    sock.serve("chat:message", line(OTHER, "copilot", "Ready when you are."));
+    expect(lines().at(-1)!.textContent).toMatch(/Ready when you are\./);
+    expect(top).toBe(900);
+  });
+
+  test("a crew without a name is called by its seat", async () => {
+    viewport(false);
+    await inRoom(snapshot({ seats: [{ playerId: ME, role: "host", ready: false, connection: "connected" }, guest], chat: [line(OTHER, "copilot", "hi")] }));
+    expect(lines()[0].textContent).toMatch(/Co-Pilot.*hi/);
+  });
+
+  test("sending: Enter posts the message and clears the box; empty can't be sent; a refusal is shown", async () => {
+    viewport(false);
+    const sock = await inRoom(crewOf2());
+    const box = screen.getByRole("textbox", { name: "Message" }) as HTMLInputElement;
+    const send = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+    expect(box.maxLength).toBe(200);
+    expect(send.disabled).toBe(true);
+    fireEvent.change(box, { target: { value: "   " } });
+    expect(send.disabled).toBe(true);
+    fireEvent.change(box, { target: { value: "Let's do YUL" } });
+    fireEvent.submit(box.closest("form")!);
+    expect(sock.last("chat:send")!.args[0]).toEqual({ text: "Let's do YUL" });
+    expect(box.value).toBe("");
+    sock.reply = () => ({ ok: false, error: "A message is at most 200 characters." });
+    fireEvent.change(box, { target: { value: "too long, the server says" } });
+    fireEvent.click(send);
+    expect(screen.getByText("A message is at most 200 characters.")).toBeTruthy();
+    expect(box.value).toBe("too long, the server says"); // kept, so it can be shortened
+  });
+
+  test("phone: a bubble instead of the log; the other player's message lights its dot, mine doesn't", async () => {
+    viewport(true);
+    const sock = await inRoom(crewOf2([line(OTHER, "copilot", "said before I came")]));
+    expect(screen.queryByRole("log")).toBe(null);
+    const bubble = screen.getByRole("button", { name: "Open flight log" });
+    expect(bubble.querySelector(".chat-dot")).toBe(null); // history isn't news
+    sock.serve("chat:message", line(ME, "pilot", "mine"));
+    expect(bubble.querySelector(".chat-dot")).toBe(null);
+    sock.serve("chat:message", line(OTHER, "copilot", "theirs"));
+    expect(screen.getByRole("button", { name: "Open flight log (unread messages)" }).querySelector(".chat-dot")).toBeTruthy();
+  });
+
+  test("phone: the bubble opens a full-screen log with the box focused; reading clears the dot; ✕ and Escape close it", async () => {
+    viewport(true);
+    const sock = await inRoom(crewOf2());
+    sock.serve("chat:message", line(OTHER, "copilot", "Kerosene or not?"));
+    fireEvent.click(screen.getByRole("button", { name: /Open flight log/ }));
+    const dialog = screen.getByRole("dialog", { name: "Flight log" });
+    expect(dialog.className).toMatch(/fullscreen/);
+    expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Message" }));
+    expect(within(dialog).getByRole("log").textContent).toMatch(/Kerosene or not\?/);
+    // Read while open: nothing is unread once it closes.
+    sock.serve("chat:message", line(OTHER, "copilot", "still there?"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close flight log" }));
+    expect(screen.queryByRole("dialog")).toBe(null);
+    expect(screen.getByRole("button", { name: "Open flight log" }).querySelector(".chat-dot")).toBe(null);
+    fireEvent.click(screen.getByRole("button", { name: "Open flight log" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBe(null);
+  });
+
+  test("turning the phone to a wide screen swaps the bubble for the log", async () => {
+    viewport(true);
+    await inRoom(crewOf2());
+    expect(screen.queryByRole("log")).toBe(null);
+    resize(false);
+    expect(screen.getByRole("log")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
+  });
+
+  test("no flight log in a solo room or once the game starts", async () => {
+    viewport(true);
+    const sock = await inRoom(snapshot({ seats: [{ playerId: ME, role: "host", ready: false, connection: "connected" }, { ...guest, bot: "aviator" }] }));
+    expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
+    sock.serve("room:state", crewOf2());
+    expect(screen.getByRole("button", { name: /Open flight log/ })).toBeTruthy();
+    sock.serve("room:state", inGame());
+    expect(screen.queryByRole("button", { name: /Open flight log/ })).toBe(null);
   });
 });
 

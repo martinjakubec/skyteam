@@ -1,8 +1,10 @@
 import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
 import {
+  MAX_CHAT_HISTORY,
   UNAVAILABLE,
   type Ack,
+  type ChatMessage,
   type ClientToServerEvents,
   type GameCommand,
   type GameSetup,
@@ -25,12 +27,20 @@ interface GameStore {
   /** Server clock − this device's clock (ms), from the latest message: maps a
    *  Real-Time deadline onto local time. */
   clockOffset: number;
+  /** The newest flight log line this player has seen (its server `at`); later
+   *  lines from the other player are unread. Null until the first snapshot,
+   *  which counts as read — history isn't news. */
+  chatReadAt: number | null;
 
   connect: (roomId: string) => void;
   setReady: (ready: boolean) => void;
   /** Rename yourself (lobby only); remembered in this browser for later rooms. */
   setName: (name: string) => void;
   setSetup: (setup: GameSetup) => void;
+  /** Post to the flight log; `onSent` runs once the server took it. */
+  sendChat: (text: string, onSent?: () => void) => void;
+  /** Everything in the flight log has been seen. */
+  markChatRead: () => void;
   startGame: () => void;
   resetGame: () => void;
   exitGame: () => void;
@@ -52,6 +62,7 @@ export const useGame = create<GameStore>((set, get) => {
     lastError: null,
     serverDown: false,
     clockOffset: 0,
+    chatReadAt: null,
 
     connect: (roomId) => {
       if (get().socket) return; // guard against React StrictMode double-invoke
@@ -86,7 +97,14 @@ export const useGame = create<GameStore>((set, get) => {
         const fresh = serverTime - Date.now();
         return Math.abs(fresh - get().clockOffset) > 250 ? fresh : get().clockOffset;
       };
-      socket.on("room:state", (snapshot) => set({ snapshot, clockOffset: offset(snapshot.serverTime) }));
+      socket.on("room:state", (snapshot) =>
+        set({ snapshot, clockOffset: offset(snapshot.serverTime), chatReadAt: get().chatReadAt ?? lastAt(snapshot.chat) }),
+      );
+      socket.on("chat:message", (msg) => {
+        const snap = get().snapshot;
+        if (snap && !snap.chat.some((m) => m.id === msg.id))
+          set({ snapshot: { ...snap, chat: [...snap.chat, msg].slice(-MAX_CHAT_HISTORY) } });
+      });
       socket.on("game:event", (msg) => {
         const snap = get().snapshot;
         if (snap) set({ snapshot: { ...snap, game: msg.game, version: msg.version }, clockOffset: offset(msg.serverTime) });
@@ -107,6 +125,14 @@ export const useGame = create<GameStore>((set, get) => {
     setSetup: (setup) =>
       get().socket?.emit("room:setup", setup, refused),
 
+    sendChat: (text, onSent) =>
+      get().socket?.emit("chat:send", { text }, (res) => {
+        if (res.ok) onSent?.();
+        else refused(res);
+      }),
+
+    markChatRead: () => set({ chatReadAt: lastAt(get().snapshot?.chat ?? []) }),
+
     startGame: () =>
       get().socket?.emit("game:start", refused),
 
@@ -122,3 +148,11 @@ export const useGame = create<GameStore>((set, get) => {
     serverIsDown: () => set({ serverDown: true }),
   };
 });
+
+/** When the newest line of a log was posted (0 for an empty log). */
+const lastAt = (chat: ChatMessage[]) => chat.at(-1)?.at ?? 0;
+
+/** Flight log lines from the other player that this one hasn't seen. */
+export function unreadChat(chat: ChatMessage[], me: string, readAt: number | null): number {
+  return chat.filter((m) => m.playerId !== me && m.at > (readAt ?? Infinity)).length;
+}
