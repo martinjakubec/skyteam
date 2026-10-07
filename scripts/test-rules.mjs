@@ -1,5 +1,10 @@
+// LEGACY TEST SUITE — frozen. The tests live in tests/ (Vitest, `npm test`);
+// this file is their original, kept only as a fallback for a while
+// (`npm run test:legacy`). Add no new tests here; it will be removed.
+// `npm run test:compare` checks that both suites still agree check by check.
+//
 // Deterministic unit tests for the SkyTeam rules reducer (pure, no server).
-// Run with `npm test` (inside a node:22 container, repo bind-mounted).
+// Run with `npm run test:legacy` (inside a node:22 container, repo bind-mounted).
 // Imported from source via tsx (the dist build uses extensionless ESM imports
 // that bare `node` can't resolve).
 import {

@@ -1,4 +1,9 @@
-// Bot and game-driving tests (pure, no server). Run via `npm test`.
+// LEGACY TEST SUITE — frozen. The tests live in tests/ (Vitest, `npm test`);
+// this file is their original, kept only as a fallback for a while
+// (`npm run test:legacy`). Add no new tests here; it will be removed.
+// `npm run test:compare` checks that both suites still agree check by check.
+//
+// Bot and game-driving tests (pure, no server). Run via `npm run test:legacy`.
 import { newGame, applyIntent, randDice, shuffledInternTokens, settle, mulberry32, DEFAULT_SETUP } from "../packages/shared/src/index.ts";
 
 let failures = 0;
