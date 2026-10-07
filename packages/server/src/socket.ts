@@ -422,12 +422,19 @@ export async function applyCommand(
   // A reroll is an intent: the server supplies the new (secret) dice values.
   // Same for Anticipation's single-die reroll.
   const dice = gameDice(room);
+  // A refused command takes back what it drew, so the seed's streams follow
+  // only the commands the game kept (the log replays those).
+  const drawn = room.seedState ? { ...room.seedState.draws } : null;
+  const undraw = () => {
+    if (room.seedState && drawn) room.seedState.draws = drawn;
+  };
   const rcmd = withEntropy(command, dice.play);
 
   // Real-Time: a command that arrives after the deadline (before the timeout
   // got to run) is too late — the round ends now instead.
   const endsAt = room.game.timerEndsAt;
   if (endsAt !== null && Date.now() >= endsAt) {
+    undraw();
     await onTimeUp(io, room.id, endsAt);
     return TOO_LATE;
   }
@@ -442,6 +449,7 @@ export async function applyCommand(
     record(before, rcmd, crewOfGame(room, playerId));
     game = settleTraffic(game, dice.play, record);
   } catch (e) {
+    undraw();
     return e instanceof GameRuleError ? e.message : "Command rejected.";
   }
   room.game = game;

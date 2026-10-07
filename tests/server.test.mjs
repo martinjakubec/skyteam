@@ -773,6 +773,17 @@ describe("game logs", () => {
     expect(seen).not.toContain(row.seed);
   });
 
+  test("a refused command draws nothing from the seed", async () => {
+    const r = await startedGame(); // no Anticipation ability: anticipating is refused
+    const before = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`)).seedState;
+    const res = await emit(r.h, "game:command", { commandId: "x1", command: { type: "anticipate", dieId: 0 } });
+    expect(res.ok).toBe(false);
+    const { sock, command } = nextMove(r); // the next accepted command saves the room
+    expect(await emit(sock, "game:command", { commandId: "x2", command })).toEqual({ ok: true });
+    const after = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`)).seedState;
+    expect(after.draws.p1 ?? 0).toBe(before.draws.p1 ?? 0);
+  });
+
   test("each game gets its own seed (a reset too)", async () => {
     const r = await startedGame();
     expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
