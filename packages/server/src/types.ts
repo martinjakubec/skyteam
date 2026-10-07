@@ -47,5 +47,7 @@ export interface Room {
   /** The game's secret seed and how far each of its dice streams has drawn
    *  (seededRand.ts). Never sent to a client. Absent for a game an older build began. */
   seedState?: SeedState | null;
+  /** The game that ended last (won or lost) and was logged — its replay's id. */
+  lastGameId?: string | null;
   updatedAt: number;
 }

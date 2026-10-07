@@ -73,6 +73,8 @@ export function endGameLog(room: Room, result: GameResult): void {
   const game = room.game;
   room.gameLog = null;
   if (!log || !game || !db()) return;
+  // A game that ran its course can be replayed from its log row.
+  room.lastGameId = result === "won" || result === "lost" ? log.id : null;
   const seatOf = (crew: Crew) => room.seats.find((x) => x.playerId === (crew === "pilot" ? game.pilotId : game.copilotId));
   const seat = (crew: Crew) => {
     const s = seatOf(crew);

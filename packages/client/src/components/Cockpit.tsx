@@ -571,6 +571,11 @@ export function Cockpit({
 
         <p className={`callout ${game.outcome ? (game.outcome.result === "won" ? "good" : "bad") : ""}`}>
           {calloutText()}
+          {game.outcome && snapshot.lastGameId && (
+            <a className="replay-link" href={`/games/${snapshot.lastGameId}`} target="_blank" rel="noopener">
+              Watch the replay
+            </a>
+          )}
         </p>
 
         {/* Main deck: shared modules, styled like the crew-rail modules (one

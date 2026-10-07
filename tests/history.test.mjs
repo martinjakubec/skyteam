@@ -189,6 +189,8 @@ describe("the history and game-record API", async () => {
     await s.playToEnd(r);
     await until(() => rowsOf(r.roomId).length === 1, 2000, "the row");
     const [row] = rowsOf(r.roomId);
+    // The room tells its players where the replay is.
+    await until(() => latest(r.h).lastGameId === row.id, 2000, "the replay's id in the snapshot");
     const res = await s.api("GET", `/api/games/${row.id}`);
     expect(res.status).toBe(200);
     const rec = res.body;

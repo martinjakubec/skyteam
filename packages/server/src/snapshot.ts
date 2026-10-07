@@ -28,5 +28,6 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
     debrief: room.debrief ?? null,
     you: { playerId: viewerId, kind, role: seat?.role },
     serverTime: Date.now(),
+    lastGameId: room.status === "finished" ? (room.lastGameId ?? null) : null,
   };
 }

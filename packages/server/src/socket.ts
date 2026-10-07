@@ -400,6 +400,7 @@ function gameDice(room: Room): { deal: Dice; play: Dice } {
  *  are shuffled and round 1 is dealt. */
 function dealNewGame(room: Room, pilotId: string, copilotId: string): void {
   const s = (room.seedState = newSeedState());
+  room.lastGameId = null;
   startGameLog(room);
   room.game = newGame(room.setup, pilotId, copilotId, seededRand(s, () => "d1"), Date.now(), {
     realTimeSeconds: env.REAL_TIME_SECONDS,

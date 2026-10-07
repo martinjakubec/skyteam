@@ -3010,3 +3010,100 @@ ul {
 .account-form.danger {
   border-color: #5e231d;
 }
+
+/* History and replays: tables of games, the replay's header and controls. */
+.table-panel {
+  padding: 0.4rem;
+  overflow-x: auto;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+.data-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  opacity: 0.75;
+  padding: 0.4rem 0.5rem;
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.16);
+  vertical-align: top;
+}
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.data-table a {
+  color: var(--blue-d);
+}
+.tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--orange-d);
+  color: #fff3e3;
+  font-size: 0.68rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+.center.wide-page {
+  max-width: 980px;
+}
+.replay-page .topbar {
+  align-items: center;
+}
+.replay-head p {
+  margin: 0;
+}
+.replay-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.replay-controls {
+  margin: 0.6rem 0;
+  align-items: stretch;
+}
+.replay-controls .row {
+  justify-content: center;
+}
+.replay-controls button {
+  min-width: 2.6rem;
+}
+.replay-controls input[type="range"] {
+  flex: none;
+  width: 100%;
+  padding: 0;
+  accent-color: var(--blue);
+}
+.replay-pos {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+}
+.raw-moves {
+  display: block;
+  margin-top: 0.4rem;
+  word-break: break-all;
+  font-size: 0.8rem;
+}
+.replay-link {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  color: inherit;
+}
