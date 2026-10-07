@@ -21,7 +21,13 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
     process.env.DATABASE_URL = `${base}${base.includes("?") ? "&" : "?"}options=${encodeURIComponent(`-c search_path=${schema}`)}`;
     const db = await import("../packages/server/src/db.ts");
     db.initDb();
-    mod = { db, schema: await import("../packages/server/src/schema.ts") };
+    mod = {
+      db,
+      schema: await import("../packages/server/src/schema.ts"),
+      acc: await import("../packages/server/src/accounts.ts"),
+      sessions: await import("../packages/server/src/sessions.ts"),
+      env: (await import("../packages/server/src/env.ts")).env,
+    };
   });
 
   afterAll(async () => {
@@ -56,6 +62,53 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       await mod.schema.ensureSchema();
       expect(await q(`SELECT privilege FROM role_privileges WHERE role = 'ADMIN'`)).toEqual([{ privilege: "history" }]);
       await q(`INSERT INTO role_privileges VALUES ('ADMIN', 'view_stats')`);
+    });
+  });
+
+  describe("accounts", () => {
+    test("register, sign in, privileges from the role, a taken name", async () => {
+      const { user, recoveryCode } = await mod.acc.register("alice", "ten chars!");
+      expect(user).toEqual({ id: user.id, username: "alice", role: "USER", privileges: ["history"] });
+      expect(recoveryCode).toMatch(/^([0-9A-Z]{5}-){3}[0-9A-Z]{5}$/);
+      expect(await mod.acc.login("alice", "ten chars!")).toEqual(user);
+      expect(await mod.acc.login("alice", "wrong one!")).toBe(null);
+      await expect(mod.acc.register("alice", "ten chars!")).rejects.toMatchObject({ code: "taken" });
+      await q(`UPDATE users SET role = 'SUPERADMIN' WHERE id = $1`, [user.id]);
+      expect((await mod.acc.userById(user.id)).privileges).toEqual(["history", "manage_users", "view_stats"]);
+      await q(`UPDATE users SET role = 'USER' WHERE id = $1`, [user.id]);
+    });
+
+    test("recovery code, reset link (once, and not after expiry), sessions ending, deleting", async () => {
+      const { user, recoveryCode } = await mod.acc.register("bruno", "ten chars!");
+      const session = mod.sessions.issueSession(user.id);
+      expect(await mod.sessions.sessionUser(session)).toEqual(user);
+      await new Promise((r) => setTimeout(r, 5));
+      const recovered = await mod.acc.recover("bruno", recoveryCode, "new password!");
+      expect(recovered.recoveryCode).not.toBe(recoveryCode);
+      expect(await mod.sessions.sessionUser(session)).toBe(null);
+      expect(await mod.acc.recover("bruno", recoveryCode, "x".repeat(12))).toBe(null);
+
+      const link = await mod.acc.createResetLink(user.id, user.id);
+      expect(await mod.acc.resetWithToken(link.token, "third password")).not.toBe(null);
+      expect(await mod.acc.resetWithToken(link.token, "fourth password")).toBe(null);
+      const old = await mod.acc.createResetLink(user.id, user.id);
+      await q(`UPDATE password_resets SET expires_at = now() - interval '1 minute' WHERE used_at IS NULL`);
+      expect(await mod.acc.resetWithToken(old.token, "fourth password")).toBe(null);
+
+      expect(await mod.acc.deleteOwnAccount(user.id, "third password")).toBe(true);
+      expect(await q(`SELECT * FROM password_resets WHERE user_id = $1`, [user.id])).toEqual([]);
+      expect(await mod.acc.userById(user.id)).toBe(null);
+    });
+
+    test("the first SUPERADMIN is created once, then kept SUPERADMIN", async () => {
+      mod.env.SUPERADMIN_USERNAME = "admin";
+      mod.env.SUPERADMIN_INITIAL_PASSWORD = "admin";
+      expect(await mod.acc.bootstrapSuperadmin()).toBe("created");
+      expect(await mod.acc.bootstrapSuperadmin()).toBe("unchanged");
+      await q(`UPDATE users SET role = 'USER' WHERE username = 'admin'`);
+      expect(await mod.acc.bootstrapSuperadmin()).toBe("promoted");
+      expect(await mod.acc.login("admin", "admin")).toMatchObject({ role: "SUPERADMIN" });
+      mod.env.SUPERADMIN_USERNAME = undefined;
     });
   });
 });

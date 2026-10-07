@@ -78,8 +78,8 @@ export const DEFAULT_ROLES = [
   { name: "SUPERADMIN", rank: 3, privileges: ["history", "view_stats", "manage_users"] },
 ] as const;
 
-export const SQL_INSERT_ROLES = `INSERT INTO roles (name, rank) SELECT unnest($1::text[]), unnest($2::smallint[]) ON CONFLICT DO NOTHING RETURNING name`;
-export const SQL_INSERT_PRIVILEGES = `INSERT INTO role_privileges (role, privilege) SELECT unnest($1::text[]), unnest($2::text[]) ON CONFLICT DO NOTHING`;
+export const SQL_INSERT_ROLES = `/* roles.insert */ INSERT INTO roles (name, rank) SELECT unnest($1::text[]), unnest($2::smallint[]) ON CONFLICT DO NOTHING RETURNING name`;
+export const SQL_INSERT_PRIVILEGES = `/* privileges.insert */ INSERT INTO role_privileges (role, privilege) SELECT unnest($1::text[]), unnest($2::text[]) ON CONFLICT DO NOTHING`;
 export const SQL_MOVE_CODES = `INSERT INTO move_codes (format, code, meaning) SELECT $1, unnest($2::text[]), unnest($3::text[])
      ON CONFLICT (format, code) DO UPDATE SET meaning = EXCLUDED.meaning`;
 

@@ -423,7 +423,7 @@ test("3) originChecker: wildcard, allowlist, missing origin", async () => {
 
 // 3b) Production configuration ------------------------------------------------
 test("3b) productionProblems: a production server refuses unsafe settings", async () => {
-  const good = { NODE_ENV: "production", JWT_SECRET: "a".repeat(64), CLIENT_ORIGIN: "https://skyteam.example" };
+  const good = { NODE_ENV: "production", JWT_SECRET: "a".repeat(64), SESSION_SECRET: "b".repeat(64), CLIENT_ORIGIN: "https://skyteam.example" };
   (__c.begin("a sound production config passes"), __c.done(__c.cmp("a sound production config passes", (productionProblems(good).length), "===", (0))));
   (__c.begin("outside production nothing is enforced"), __c.done(__c.cmp("outside production nothing is enforced", (productionProblems({}).length), "===", (0))));
   (__c.begin("a missing secret is refused"), __c.done(__c.cmp("a missing secret is refused", (productionProblems({ ...good, JWT_SECRET: undefined }).length), "===", (1))));
