@@ -1,8 +1,9 @@
-import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
+import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import cors from "cors";
 import { corsOptions } from "./cors";
 import { env } from "./env";
-import { rateLimiter } from "./guard";
+import { limit, route } from "./routing";
+import { apiRouter } from "./api";
 import { storageUp, UNAVAILABLE_ERROR } from "./store";
 import { issueToken, verifyToken } from "./identity";
 import { SoloRoomRequest } from "@skyteam/shared";
@@ -16,22 +17,6 @@ const ROOMS_PER_MINUTE = 20;
 const JOINS_PER_MINUTE = 60;
 const IDENTITIES_PER_MINUTE = 60;
 
-/** Refuse a client address past `perMinute` requests to this route. */
-function limit(perMinute: number): RequestHandler {
-  const allow = rateLimiter(perMinute, 60_000);
-  return (req, res, next) => {
-    if (allow(req.ip ?? "")) return next();
-    res.status(429).json({ error: "Too many requests — try again in a minute." });
-  };
-}
-
-/** Express 4 doesn't catch a rejected async handler (the process would end on
- *  it): pass the error on to the error handler instead. */
-const route =
-  (handle: (req: Request, res: Response) => Promise<void>): RequestHandler =>
-  (req, res, next) =>
-    void handle(req, res).catch(next);
-
 /** Rooms live in Redis: while it's down, refuse at once with a 500 the client
  *  shows as its "server unavailable" page, instead of failing halfway. */
 const requireStorage: RequestHandler = (_req, res, next) => {
@@ -40,6 +25,11 @@ const requireStorage: RequestHandler = (_req, res, next) => {
 };
 
 const onError: ErrorRequestHandler = (err, _req, res, _next) => {
+  // A body that isn't valid JSON: the client's mistake, not the server's.
+  if ((err as { type?: string }).type === "entity.parse.failed") {
+    res.status(400).json({ error: "The request isn't valid JSON." });
+    return;
+  }
   console.error("[http] request failed:", err);
   if (!res.headersSent) res.status(500).json(storageUp() ? { error: "Server error." } : UNAVAILABLE_ERROR);
 };
@@ -93,6 +83,9 @@ export function createApp() {
       throw e;
     }
   }));
+
+  // Accounts, history and the admin pages (JSON; see api.ts).
+  app.use("/api", apiRouter());
 
   app.use(onError);
   return app;

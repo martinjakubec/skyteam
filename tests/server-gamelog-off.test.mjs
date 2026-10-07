@@ -27,3 +27,19 @@ test("without DATABASE_URL: a warning at startup, and nothing written or queued"
   await flushPendingGameLogs();
   expect(await FakeRedis.last.llen(PENDING_KEY)).toBe(0);
 });
+
+test("without a database: the accounts API answers 503, and the rest of the server works", async () => {
+  const http = await import("node:http");
+  const { createApp } = await import("../packages/server/src/http.ts");
+  const server = http.createServer(createApp());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const me = await fetch(`${url}/api/auth/me`);
+    expect(me.status).toBe(503);
+    expect(await me.json()).toEqual({ error: "Accounts need the database." });
+    expect((await fetch(`${url}/health`)).status).toBe(200);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
