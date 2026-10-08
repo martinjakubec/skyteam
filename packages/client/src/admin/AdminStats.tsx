@@ -56,7 +56,7 @@ export default function AdminStats() {
         </Link>
         <h1 className="page-title">SkyTeam statistics</h1>
         <div className="row admin-tools">
-          <label className="switch">
+          <label className="seeded-toggle">
             <input type="checkbox" checked={includeSeeded} onChange={(e) => setIncludeSeeded(e.target.checked)} />
             Include same-dice games ({stats?.seededGames ?? 0})
           </label>

@@ -3155,14 +3155,27 @@ ul {
   letter-spacing: 0.08em;
   font-size: 0.8rem;
 }
-.switch {
+.seeded-toggle {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  white-space: nowrap;
   color: #26303c;
   opacity: 1;
 }
-.switch input {
+/* The page's muted grey is for the dark background: on the light page and on
+   the panels, use ink. */
+.center .admin-head .muted {
+  color: #3a4450;
+}
+.center .admin-section .muted,
+.center .table-panel .muted {
+  color: var(--ink);
+  opacity: 0.72;
+  margin: 0;
+}
+.seeded-toggle input {
   flex: none;
 }
 .totals {
