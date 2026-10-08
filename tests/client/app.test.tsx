@@ -116,6 +116,26 @@ async function inRoom(first: RoomSnapshot = snapshot()) {
   return sock;
 }
 
+// --- same dice ----------------------------------------------------------------------------
+describe("a room flying an earlier game's dice", () => {
+  test("the lobby says so, links the original, locks the setup; the host can use fresh dice", async () => {
+    const sock = await inRoom(snapshot({ sameDice: { gameId: "g".repeat(21) } }));
+    expect(document.querySelector(".same-dice")!.textContent).toMatch(/^Same dice as an earlier game\. Its results are marked/);
+    expect(screen.getByRole("link", { name: "an earlier game" }).getAttribute("href")).toBe(`/games/${"g".repeat(21)}`);
+    const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[]; // the setup: locked
+    expect(boxes.length).toBeGreaterThan(0);
+    expect(boxes.every((b) => b.disabled)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Use fresh dice" }));
+    expect(sock.last("room:freshDice")).toBeTruthy();
+  });
+
+  test("the guest sees the note, not the button", async () => {
+    await inRoom(snapshot({ sameDice: { gameId: "g".repeat(21) }, you: { playerId: ME, kind: "player", role: "guest" }, hostPlayerId: OTHER }));
+    expect(document.querySelector(".same-dice")!.textContent).toMatch(/^Same dice as an earlier game\. Its results are marked/);
+    expect(screen.queryByRole("button", { name: "Use fresh dice" })).toBe(null);
+  });
+});
+
 // --- landing page -------------------------------------------------------------------------
 describe("landing page", () => {
   test("creating a room connects, joins with the stored token, and puts the invite in the URL", async () => {

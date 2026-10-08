@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { replaySteps, type DieValue, type GameRecord, type GameSetup, type GameState, type ReplayStep, type RoomSnapshot } from "@skyteam/shared";
 import { call } from "../account/authApi";
+import { Alert } from "../account/AccountPages";
+import { createRoom } from "../api";
+import { navigate } from "../router";
 import { Cockpit } from "../components/Cockpit";
 import { Link } from "../router";
 import { RESULT_LABELS, airportName, extrasOf, when } from "./format";
@@ -73,6 +76,7 @@ function Replay({ record }: { record: GameRecord }) {
             </>
           )}
         </p>
+        {record.sameDiceAvailable && <FlySameDice gameId={record.id} />}
       </section>
       {steps instanceof Error ? (
         <section className="panel">
@@ -86,6 +90,60 @@ function Replay({ record }: { record: GameRecord }) {
         <Stepper record={record} steps={steps} />
       )}
     </>
+  );
+}
+
+/** Start a new room on this game's dice: with a friend (an invite link) or solo. */
+function FlySameDice({ gameId }: { gameId: string }) {
+  const [open, setOpen] = useState(false);
+  const [crew, setCrew] = useState<"pilot" | "copilot">("pilot");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fly = async (solo: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await createRoom(solo ? { crew } : undefined, gameId);
+      navigate(`/?join=${r.inviteCode}`); // the room's lobby, as an invite link opens it
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <div className="row">
+        <button onClick={() => setOpen(true)}>Fly the same dice</button>
+      </div>
+    );
+  }
+  return (
+    <div className="fly-same">
+      <p className="muted">
+        A new game on this game's dice: the same airport, the same Intern tokens, the same deal every round. Such games are marked and kept out
+        of the statistics.
+      </p>
+      <div className="row">
+        <button disabled={busy} onClick={() => void fly(false)}>
+          With a friend
+        </button>
+      </div>
+      <fieldset className="solo-options">
+        <legend className="setup-label">Solo: your seat</legend>
+        {(["pilot", "copilot"] as const).map((c) => (
+          <label key={c}>
+            <input type="radio" name="same-dice-crew" checked={crew === c} onChange={() => setCrew(c)} />
+            {c === "pilot" ? "Pilot" : "Co-Pilot"}
+          </label>
+        ))}
+      </fieldset>
+      <div className="row">
+        <button disabled={busy} onClick={() => void fly(true)}>
+          Solo with the bot
+        </button>
+      </div>
+      <Alert error={error} />
+    </div>
   );
 }
 

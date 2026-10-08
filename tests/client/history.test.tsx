@@ -73,6 +73,8 @@ beforeEach(() => {
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   });
   useAccount.setState({ user: undefined, available: true });
+  // After "Fly the same dice" the lobby opens; with no socket here, joining fails into an alert.
+  vi.spyOn(window, "alert").mockImplementation(() => {});
 });
 afterEach(() => {
   cleanup();
@@ -164,6 +166,48 @@ describe("a game's page and its replay", () => {
     vi.advanceTimersByTime(3000);
     expect(screen.getByText(/^Round 1 · move 3 of/)).toBeTruthy();
     vi.useRealTimers();
+  });
+
+  test("fly the same dice with a friend: a room on this game's dice, then its lobby", async () => {
+    const posted: unknown[] = [];
+    routes["POST /rooms"] = () => ({ body: { roomId: "room-9", inviteCode: "SAME0001", token: "tok-9" } });
+    routes["POST /rooms/SAME0001/join"] = () => ({ body: { roomId: "room-9", inviteCode: "SAME0001", token: "tok-9" } });
+    const fetchSpy = vi.mocked(globalThis.fetch);
+    await open(`/games/${GAME_ID}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Fly the same dice" }));
+    fireEvent.click(screen.getByRole("button", { name: "With a friend" }));
+    await waitFor(() => expect(window.location.search).toBe("?join=SAME0001"));
+    for (const [input, init] of fetchSpy.mock.calls) if (new URL(String(input)).pathname === "/rooms") posted.push(JSON.parse(String(init?.body)));
+    expect(posted).toEqual([expect.objectContaining({ sameDiceAs: GAME_ID })]);
+    expect(posted[0]).not.toHaveProperty("solo");
+  });
+
+  test("fly the same dice solo: the chosen seat goes along", async () => {
+    routes["POST /rooms"] = () => ({ body: { roomId: "room-9", inviteCode: "SAME0002", token: "tok-9" } });
+    routes["POST /rooms/SAME0002/join"] = () => ({ body: { roomId: "room-9", inviteCode: "SAME0002", token: "tok-9" } });
+    const fetchSpy = vi.mocked(globalThis.fetch);
+    await open(`/games/${GAME_ID}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Fly the same dice" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Co-Pilot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Solo with the bot" }));
+    await waitFor(() => expect(window.location.search).toBe("?join=SAME0002"));
+    const call = fetchSpy.mock.calls.find(([input]) => new URL(String(input)).pathname === "/rooms")!;
+    expect(JSON.parse(String(call[1]!.body))).toMatchObject({ sameDiceAs: GAME_ID, solo: { crew: "copilot" } });
+  });
+
+  test("a game logged before seeds has no 'Fly the same dice'", async () => {
+    routes[`GET /api/games/${GAME_ID}`] = () => ({ body: { ...RECORD, sameDiceAvailable: false } });
+    await open(`/games/${GAME_ID}`);
+    await screen.findByText(/^Round 1 · move 1 of/);
+    expect(screen.queryByRole("button", { name: "Fly the same dice" })).toBe(null);
+  });
+
+  test("the server's refusal shows", async () => {
+    routes["POST /rooms"] = () => ({ status: 404, body: { error: "That game can't be flown again." } });
+    await open(`/games/${GAME_ID}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Fly the same dice" }));
+    fireEvent.click(screen.getByRole("button", { name: "With a friend" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That game can't be flown again.");
   });
 
   test("an unknown game says so", async () => {

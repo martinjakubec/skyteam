@@ -75,9 +75,10 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** Create a room as its host; with `solo`, a bot flies the other seat. */
-export async function createRoom(solo?: { crew: Crew }): Promise<RoomResponse> {
-  const data = await post<RoomResponse>("/rooms", { token: getStoredToken(), ...(solo ? { solo } : {}) });
+/** Create a room as its host; with `solo`, a bot flies the other seat; with
+ *  `sameDiceAs`, it flies that logged game's dice again. */
+export async function createRoom(solo?: { crew: Crew }, sameDiceAs?: string): Promise<RoomResponse> {
+  const data = await post<RoomResponse>("/rooms", { token: getStoredToken(), ...(solo ? { solo } : {}), ...(sameDiceAs ? { sameDiceAs } : {}) });
   storeToken(data.token);
   return data;
 }

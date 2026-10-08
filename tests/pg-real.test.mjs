@@ -161,6 +161,14 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       expect(sizes).toEqual([20, 20, 5]);
     });
 
+    test("the same dice: a game's seed and setup, or nothing for a game logged before seeds", async () => {
+      await insertGame(gid("s1"), "2026-10-05T10:00:00Z", { modules: ["intern"], seed: "cd".repeat(16) });
+      expect(await mod.history.sameDiceSource(gid("s1"))).toEqual({ seed: "cd".repeat(16), setup: { scenarioId: "YUL", modules: ["intern"], abilities: [] } });
+      await insertGame(gid("s2"), "2026-10-05T11:00:00Z", { seed: null });
+      expect(await mod.history.sameDiceSource(gid("s2"))).toBe(null);
+      expect(await mod.history.sameDiceSource(gid("nope"))).toBe(null);
+    });
+
     test("a game's record names its crews and never shows the seed", async () => {
       const { user } = await mod.acc.register("nora", "ten chars!");
       await insertGame(gid("n1"), "2026-10-04T10:00:00Z", { copilot: "bot:aviator", intern_order: "123456" });

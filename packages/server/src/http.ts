@@ -6,7 +6,9 @@ import { limit, route } from "./routing";
 import { apiRouter } from "./api";
 import { storageUp, UNAVAILABLE_ERROR } from "./store";
 import { issueToken, verifyToken } from "./identity";
-import { SoloRoomRequest } from "@skyteam/shared";
+import { SOLO_RESTRICTED_NOTE, SoloRoomRequest, soloAllowed, type GameSetup } from "@skyteam/shared";
+import { db } from "./db";
+import { sameDiceSource } from "./history";
 import { createRoom, joinByInvite, RoomError } from "./rooms";
 import { searchWorkers } from "./think";
 
@@ -65,7 +67,30 @@ export function createApp() {
       }
       solo = parsed.data;
     }
-    const room = await createRoom(me.playerId, solo);
+    // "Fly the same dice": an earlier game's seed and setup.
+    let sameDice: { gameId: string; seed: string; setup: GameSetup } | undefined;
+    if (req.body?.sameDiceAs !== undefined) {
+      const gameId = req.body.sameDiceAs;
+      if (typeof gameId !== "string") {
+        res.status(400).json({ error: "Invalid game." });
+        return;
+      }
+      if (!db()) {
+        res.status(503).json({ error: "Flying an earlier game's dice needs the database." });
+        return;
+      }
+      const source = await sameDiceSource(gameId);
+      if (!source) {
+        res.status(404).json({ error: "That game can't be flown again." });
+        return;
+      }
+      if (solo && !soloAllowed(source.setup.scenarioId)) {
+        res.status(400).json({ error: SOLO_RESTRICTED_NOTE });
+        return;
+      }
+      sameDice = { gameId, ...source };
+    }
+    const room = await createRoom(me.playerId, solo, sameDice);
     res.json({ roomId: room.id, inviteCode: room.inviteCode, token: me.token });
   }));
 

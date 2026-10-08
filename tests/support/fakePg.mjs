@@ -141,6 +141,9 @@ Pool.prototype.tags = {
       .sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : a.crew.localeCompare(b.crew)));
     return rows(out.slice(0, 21));
   },
+  "games.seedOf"(id) {
+    return rows(this.games.filter((g) => g.id === id).map((g) => ({ seed: g.seed ?? null, scenario: g.scenario, modules: g.modules, abilities: g.abilities })));
+  },
   "games.byId"(id) {
     const g = this.games.find((x) => x.id === id);
     if (!g) return rows([]);

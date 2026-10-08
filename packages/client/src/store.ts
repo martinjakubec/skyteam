@@ -37,6 +37,8 @@ interface GameStore {
   /** Rename yourself (lobby only); remembered in this browser for later rooms. */
   setName: (name: string) => void;
   setSetup: (setup: GameSetup) => void;
+  /** Host, lobby: stop flying an earlier game's dice. */
+  freshDice: () => void;
   /** Post to the flight log; `onSent` runs once the server took it. */
   sendChat: (text: string, onSent?: () => void) => void;
   /** Everything in the flight log has been seen. */
@@ -128,6 +130,8 @@ export const useGame = create<GameStore>((set, get) => {
 
     setSetup: (setup) =>
       get().socket?.emit("room:setup", setup, refused),
+
+    freshDice: () => get().socket?.emit("room:freshDice", refused),
 
     sendChat: (text, onSent) =>
       get().socket?.emit("chat:send", { text }, (res) => {

@@ -30,8 +30,10 @@ export function Lobby({
   onName,
   onSetup,
   onStart,
+  onFreshDice,
 }: {
   snapshot: RoomSnapshot;
+  onFreshDice?: () => void;
   onReady: (ready: boolean) => void;
   onName: (name: string) => void;
   onSetup: (setup: GameSetup) => void;
@@ -43,7 +45,23 @@ export function Lobby({
   return (
     <div className="panel">
       <NameField name={me?.name ?? ""} onSave={onName} />
-      <SetupPicker setup={snapshot.setup} editable={isHost} solo={snapshot.seats.some((s) => !!s.bot)} onChange={onSetup} />
+      {snapshot.sameDice && (
+        <div className="notice same-dice">
+          <p>
+            Same dice as{" "}
+            <a href={`/games/${snapshot.sameDice.gameId}`} target="_blank" rel="noopener">
+              an earlier game
+            </a>
+            . Its results are marked and kept out of the statistics.
+          </p>
+          {isHost && onFreshDice && (
+            <button type="button" onClick={onFreshDice}>
+              Use fresh dice
+            </button>
+          )}
+        </div>
+      )}
+      <SetupPicker setup={snapshot.setup} editable={isHost && !snapshot.sameDice} solo={snapshot.seats.some((s) => !!s.bot)} onChange={onSetup} />
       <div className="row">
         <button onClick={() => onReady(!me?.ready)}>{me?.ready ? "Unready" : "Ready up"}</button>
         {isHost && (

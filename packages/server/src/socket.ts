@@ -112,6 +112,7 @@ export function attachSocket(server: http.Server): IOServer {
     on("seat:ready", (payload, ack) => onReady(io, socket, payload, ack));
     on("seat:name", (payload, ack) => onName(io, socket, payload, ack));
     on("room:setup", (payload, ack) => onSetup(io, socket, payload, ack));
+    on("room:freshDice", (_payload, ack) => onFreshDice(io, socket, ack));
     on("chat:send", (payload, ack) => onChat(io, socket, payload, ack));
     on("round:ready", (payload, ack) => onRoundReady(io, socket, payload, ack));
     on("game:start", (_payload, ack) => onStart(io, socket, ack));
@@ -184,6 +185,21 @@ async function accountOf(socket: IOSocket): Promise<PublicUser | null> {
   }
 }
 
+export const SAME_DICE_LOCKED = "This room flies the same dice as an earlier game — use fresh dice to change the setup.";
+
+/** Stop flying an earlier game's dice: the next game gets a seed of its own,
+ *  and the host may change the setup again. */
+async function onFreshDice(io: IOServer, socket: IOSocket, ack: Ack) {
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  if (room.hostPlayerId !== playerId) return ack({ ok: false, error: "Only the host can change the setup." });
+  if (room.status !== "lobby" && room.status !== "ready") return ack({ ok: false, error: "The game has already started." });
+  room.sameDice = null;
+  await saveRoom(room);
+  ack({ ok: true });
+  broadcastState(io, room);
+}
+
 async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = SetReadyPayload.safeParse(payload);
   if (!parsed.success) return ack({ ok: false, error: "Invalid payload." });
@@ -233,6 +249,7 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   if (room.hostPlayerId !== playerId) return ack({ ok: false, error: "Only the host can change the setup." });
   if (room.status !== "lobby" && room.status !== "ready")
     return ack({ ok: false, error: "The game has already started." });
+  if (room.sameDice) return ack({ ok: false, error: SAME_DICE_LOCKED });
   // The bot flies green and yellow cards only: red and black are for human crews.
   if (room.seats.some((s) => s.bot) && !soloAllowed(parsed.data.scenarioId))
     return ack({ ok: false, error: SOLO_RESTRICTED_NOTE });
@@ -399,7 +416,8 @@ function gameDice(room: Room): { deal: Dice; play: Dice } {
 /** A new game in the room, on a new seed: its log begins, the Intern tokens
  *  are shuffled and round 1 is dealt. */
 function dealNewGame(room: Room, pilotId: string, copilotId: string): void {
-  const s = (room.seedState = newSeedState());
+  // A same-dice room replays its original's seed; any other game gets a new one.
+  const s = (room.seedState = newSeedState(room.sameDice?.seed));
   room.lastGameId = null;
   startGameLog(room);
   room.game = newGame(room.setup, pilotId, copilotId, seededRand(s, () => "d1"), Date.now(), {

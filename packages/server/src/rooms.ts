@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { DEFAULT_SETUP, MAX_PLAYERS, type BotLevel, type Crew } from "@skyteam/shared";
+import { DEFAULT_SETUP, MAX_PLAYERS, type BotLevel, type Crew, type GameSetup } from "@skyteam/shared";
 import type { Room } from "./types";
 import { getRoom, getRoomIdByInvite, saveRoom } from "./store";
 
@@ -17,7 +17,13 @@ export class RoomError extends Error {
 /** Create a fresh room with the creator seated as host. With `solo`, the host
  *  flies `crew` and a bot at `level` flies the other seat (always connected
  *  and ready). */
-export async function createRoom(hostPlayerId: string, solo?: { crew: Crew; level: BotLevel }): Promise<Room> {
+/** A new room with its host. `solo`: a bot takes the other seat. `sameDice`: the
+ *  room flies an earlier game's dice (its seed and setup). */
+export async function createRoom(
+  hostPlayerId: string,
+  solo?: { crew: Crew; level: BotLevel },
+  sameDice?: { gameId: string; seed: string; setup: GameSetup },
+): Promise<Room> {
   const room: Room = {
     id: nanoid(),
     inviteCode: nanoid(8),
@@ -29,7 +35,8 @@ export async function createRoom(hostPlayerId: string, solo?: { crew: Crew; leve
     ],
     hostCrew: solo?.crew ?? "pilot",
     observers: [],
-    setup: structuredClone(DEFAULT_SETUP),
+    setup: structuredClone(sameDice?.setup ?? DEFAULT_SETUP),
+    sameDice: sameDice ? { gameId: sameDice.gameId, seed: sameDice.seed } : null,
     version: 0,
     game: null,
     chat: [],
