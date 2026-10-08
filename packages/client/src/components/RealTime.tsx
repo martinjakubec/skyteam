@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { REAL_TIME_SECONDS } from "@skyteam/shared";
+import { Stopwatch } from "./icons";
 
 /**
  * Real-Time module (advanced): the round's countdown, as a track under the
@@ -49,7 +50,7 @@ export function RealTime({
 
   return (
     <div className={`approach realtime ${level}`}>
-      <span className="approach-tag rt-tag">Real-Time ⏱</span>
+      <span className="approach-tag rt-tag">Real-Time <Stopwatch /></span>
       <div className="approach-track rt-track" role="timer" aria-label={`${secs} seconds left`}>
         <div className="rt-bar" style={{ width: `${(100 * left) / TOTAL_MS}%` }} />
         <span className="rt-text">

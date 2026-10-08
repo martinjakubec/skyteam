@@ -1,5 +1,6 @@
 import type { Game } from "../types";
 import { useFollow } from "../useFollow";
+import { Plane, PlaneLanding } from "./icons";
 
 export function Approach({ game, airportIdx }: { game: Game; airportIdx: number }) {
   // On phones the track (and its turn tabs) scrolls sideways; keep the plane's
@@ -17,13 +18,13 @@ export function Approach({ game, airportIdx }: { game: Game; airportIdx: number 
               className={`appr-cell ${i === game.position ? "here" : ""} ${i === airportIdx ? "airport" : ""}`}
               title={turnTitle(turns[i])}
             >
-              {i === game.position && <span className="me">✈</span>}
-              {i === airportIdx && i !== game.position && <span className="rwy">🛬</span>}
+              {i === game.position && <span className="me"><Plane /></span>}
+              {i === airportIdx && i !== game.position && <span className="rwy"><PlaneLanding /></span>}
               <TrafficDice count={game.scenario.approachTrack[i]?.trafficDice} />
               <span className="traffic">
                 {Array.from({ length: planes }, (_, k) => (
                   <span key={k} className="traffic-plane">
-                    ✈
+                    <Plane />
                   </span>
                 ))}
               </span>

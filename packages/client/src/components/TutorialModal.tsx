@@ -3,6 +3,7 @@ import { tutorialFor } from "../tutorials";
 import type { TutorialId } from "../tutorials/types";
 import { useSandbox } from "../tutorials/useSandbox";
 import { Cockpit } from "./Cockpit";
+import { Cross } from "./icons";
 
 /** The full game's, a module's or a Special Ability's rules plus its guided, playable tutorial. */
 export function TutorialModal({ id, onClose }: { id: TutorialId; onClose: () => void }) {
@@ -74,7 +75,7 @@ export function TutorialModal({ id, onClose }: { id: TutorialId; onClose: () => 
         <header className="tutorial-head">
           <h2 id="tutorial-title">{tutorial.title}</h2>
           <button className="tutorial-close" aria-label="Close" onClick={requestClose}>
-            ✕
+            <Cross />
           </button>
         </header>
         <p className="tutorial-desc">{tutorial.description}</p>

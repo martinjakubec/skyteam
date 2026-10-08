@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { DIFFICULTIES, MODULE_LABELS, SCENARIO_TEMPLATES, templateFor, type ScenarioId, type ScenarioTemplate } from "@skyteam/shared";
+import { ChevronDown, Star } from "./icons";
 
 /** The lobby id a card is picked by ("YUL" for the first game). */
 const idOf = (t: ScenarioTemplate): ScenarioId => (t.id === "green-YUL" ? "YUL" : t.id);
@@ -7,11 +8,17 @@ const idOf = (t: ScenarioTemplate): ScenarioId => (t.id === "green-YUL" ? "YUL" 
 /** Cards in list order: by difficulty, then as the rulebook lists them. */
 const ORDER = DIFFICULTIES.flatMap((d) => SCENARIO_TEMPLATES.filter((t) => t.difficulty === d.id));
 
-/** What a card adds to the base game, e.g. "Kerosene · Intern · ★1". */
-function extras(t: ScenarioTemplate): string {
-  const parts = t.modules.map((m) => MODULE_LABELS[m]);
-  if (t.abilityCount) parts.push(`★${t.abilityCount}`);
-  return parts.join(" · ");
+/** What a card adds to the base game, e.g. "Kerosene · Intern · ★1" (the star an icon). */
+function extras(t: ScenarioTemplate): ReactNode {
+  const modules = t.modules.map((m) => MODULE_LABELS[m]).join(" · ");
+  if (!t.abilityCount) return modules;
+  return (
+    <>
+      {modules && `${modules} · `}
+      <Star title="Special Abilities" />
+      {t.abilityCount}
+    </>
+  );
 }
 
 function CardLabel({ t }: { t: ScenarioTemplate }) {
@@ -118,7 +125,7 @@ export function ScenarioPicker({
       >
         <CardLabel t={current} />
         <span className="pick-caret" aria-hidden="true">
-          ▾
+          <ChevronDown />
         </span>
       </button>
       {open && (

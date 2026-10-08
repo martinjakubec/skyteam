@@ -31,7 +31,7 @@ export const basics: Tutorial = {
       5, 6, 6, 2, 4, 6, 6, 6, // round 7
     ],
   },
-  outro: "You landed at YUL! That's the whole game. Create a room and send the invite to your Co-Pilot, or try a module's ℹ️ tutorial.",
+  outro: "You landed at YUL! That's the whole game. Create a room and send the invite to your Co-Pilot, or open a module's tutorial with its info button.",
   steps: [
     // --- Before take-off -----------------------------------------------------
     {

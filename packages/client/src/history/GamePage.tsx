@@ -7,6 +7,7 @@ import { navigate } from "../router";
 import { Cockpit } from "../components/Cockpit";
 import { Link } from "../router";
 import { RESULT_LABELS, airportName, extrasOf, when } from "./format";
+import { FastForward, Pause, Play, Rewind, SkipBack, SkipForward, StepBack, StepForward } from "../components/icons";
 
 /**
  * A logged game's page — anyone with the link may open it: what was flown, by
@@ -193,15 +194,15 @@ function Stepper({ record, steps }: { record: GameRecord; steps: ReplayStep[] })
     <>
       <div className="panel replay-controls" role="toolbar" aria-label="Replay">
         <div className="row">
-          <button aria-label="First move" onClick={() => go(0)} disabled={at === 0}>⏮</button>
-          <button aria-label="Previous round" onClick={prevRound} disabled={at === 0}>⏪</button>
-          <button aria-label="Previous move" onClick={() => go(at - 1)} disabled={at === 0}>◀</button>
+          <button aria-label="First move" onClick={() => go(0)} disabled={at === 0}><SkipBack /></button>
+          <button aria-label="Previous round" onClick={prevRound} disabled={at === 0}><Rewind /></button>
+          <button aria-label="Previous move" onClick={() => go(at - 1)} disabled={at === 0}><StepBack /></button>
           <button aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying(!playing)} disabled={!playing && at === last}>
-            {playing ? "⏸" : "▶"}
+            {playing ? <Pause /> : <Play />}
           </button>
-          <button aria-label="Next move" onClick={() => go(at + 1)} disabled={at === last}>▶|</button>
-          <button aria-label="Next round" onClick={nextRound} disabled={at === last}>⏩</button>
-          <button aria-label="Last move" onClick={() => go(last)} disabled={at === last}>⏭</button>
+          <button aria-label="Next move" onClick={() => go(at + 1)} disabled={at === last}><StepForward /></button>
+          <button aria-label="Next round" onClick={nextRound} disabled={at === last}><FastForward /></button>
+          <button aria-label="Last move" onClick={() => go(last)} disabled={at === last}><SkipForward /></button>
         </div>
         <input
           type="range"

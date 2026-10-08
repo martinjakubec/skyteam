@@ -5,6 +5,7 @@ import { unreadChat, useGame } from "../store";
 import { useMediaQuery } from "../useMediaQuery";
 import { seatNames } from "./Seats";
 import { ChatBubble } from "./icons";
+import { Cross } from "./icons";
 
 /** Phones (the cockpit's own breakpoint) get the bubble and a full-screen log. */
 const PHONE = "(max-width: 760px)";
@@ -88,7 +89,7 @@ function FlightLog({ snapshot, autoFocus, onClose }: { snapshot: RoomSnapshot; a
         <h2 className="setup-label">Flight log</h2>
         {onClose && (
           <button type="button" className="flight-log-close" aria-label="Close flight log" onClick={onClose}>
-            ✕
+            <Cross />
           </button>
         )}
       </header>

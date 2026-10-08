@@ -834,3 +834,14 @@ button.primary:disabled {
 .alt-cell.now .reroll-dot {
   color: #fef08a;
 }
+
+/* Icons in the theme's colours. */
+.info-btn {
+  color: #93c5fd;
+}
+.ice-caption .ico {
+  color: #7dd3fc;
+}
+.kg-x {
+  stroke: var(--muted);
+}

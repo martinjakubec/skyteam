@@ -1,4 +1,5 @@
 import { BOT_LEVEL_LABELS, crewNames, type Crew, type RoomSnapshot, type SeatView } from "@skyteam/shared";
+import { Crown, Dot, Robot } from "./icons";
 
 /** The crew a seat flies: the host flies `hostCrew`, the guest the other. */
 export function seatCrew(snapshot: RoomSnapshot, seat: SeatView): Crew {
@@ -6,11 +7,11 @@ export function seatCrew(snapshot: RoomSnapshot, seat: SeatView): Crew {
 }
 
 /** Each crew's on-screen name (null where its player chose none). A bot is
- *  called by its level, so a human named the same is told apart by seat too. */
+ *  called by its level; the crew list marks it with the robot icon. */
 export function seatNames(snapshot: RoomSnapshot): Record<Crew, string | null> {
   const nameOf = (crew: Crew) => {
     const seat = snapshot.seats.find((s) => seatCrew(snapshot, s) === crew);
-    return seat?.bot ? `🤖 ${BOT_LEVEL_LABELS[seat.bot]}` : seat?.name;
+    return seat?.bot ? BOT_LEVEL_LABELS[seat.bot] : seat?.name;
   };
   return crewNames({ pilot: nameOf("pilot"), copilot: nameOf("copilot") });
 }
@@ -27,12 +28,19 @@ export function Seats({ snapshot }: { snapshot: RoomSnapshot | null }) {
           return (
             <li key={s.playerId}>
               <span>
-                {crew === "pilot" ? "Pilot" : "Co-Pilot"}: {s.role === "host" ? "👑 " : ""}
+                {crew === "pilot" ? "Pilot" : "Co-Pilot"}:{" "}
+                {s.role === "host" && <Crown title="Host" />}
+                {s.bot && <Robot title="Bot" />}
+                {s.role === "host" || s.bot ? " " : ""}
                 {names[crew] ?? s.playerId.slice(0, 6)}
                 {s.playerId === snapshot.you.playerId ? " (you)" : ""}
               </span>
               <span>
-                {s.connection === "connected" ? "🟢" : "🔴"} {s.ready ? "ready" : "…"}
+                <Dot
+                  color={s.connection === "connected" ? "#22c55e" : "#ef4444"}
+                  title={s.connection === "connected" ? "Connected" : "Disconnected"}
+                />{" "}
+                {s.ready ? "ready" : "…"}
               </span>
             </li>
           );

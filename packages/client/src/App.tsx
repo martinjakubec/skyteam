@@ -11,6 +11,7 @@ import { Seats } from "./components/Seats";
 import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
 import { AccountChip } from "./account/AccountChip";
+import { Dot } from "./components/icons";
 
 export function App() {
   const {
@@ -130,7 +131,7 @@ export function App() {
           {/* In a room the account pages open in a new tab: the game here goes on. */}
           {!inGame && <AccountChip newTab />}
           <span className={`conn ${connected ? "on" : "off"}`}>
-            {connected ? "● linked" : "○ reconnecting"}
+            <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
           </span>
           {inGame && snapshot?.you.kind === "player" && (
             <button

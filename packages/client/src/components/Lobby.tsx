@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { ScenarioPicker } from "./ScenarioPicker";
 import type { TutorialId } from "../tutorials/types";
 import { TutorialModal } from "./TutorialModal";
+import { Info } from "./icons";
 
 export function Lobby({
   snapshot,
@@ -152,12 +153,12 @@ function SetupPicker({
       abilities: [],
     });
 
-  // The ℹ️ beside each module and ability opens its tutorial — for host and
+  // The info button beside each module and ability opens its tutorial — for host and
   // guest alike (it runs locally; nothing is sent).
   const [tutorial, setTutorial] = useState<TutorialId | null>(null);
   const info = (id: ModuleId | AbilityId, name: string) => (
     <button type="button" className="info-btn" aria-label={`How ${name} works`} title={`How ${name} works`} onClick={() => setTutorial(id)}>
-      ℹ️
+      <Info />
     </button>
   );
 

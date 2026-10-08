@@ -1,5 +1,6 @@
 import type { Game } from "../types";
 import { useFollow } from "../useFollow";
+import { Plane } from "./icons";
 
 export function Altitude({ game }: { game: Game }) {
   const { rounds, startAltitudeFeet, feetPerRound, rerollRounds } = game.scenario;
@@ -10,7 +11,7 @@ export function Altitude({ game }: { game: Game }) {
   // palette: a tag above a left-to-right row of per-round altitude cells.
   return (
     <div className="approach altitude">
-      <span className="approach-tag alt-tag">Altitude ✈</span>
+      <span className="approach-tag alt-tag">Altitude <Plane /></span>
       <div className="approach-track scroll" ref={track}>
         {rows.map((r) => {
           const feet = startAltitudeFeet - (r - 1) * feetPerRound;

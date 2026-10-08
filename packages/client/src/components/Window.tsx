@@ -1,4 +1,5 @@
 import { clamp } from "../util";
+import { Cross } from "./icons";
 
 // The cockpit window IS the axis indicator: the plane points straight up when
 // level (offset 0) and banks with the tilt. Drawn as SVG so orientation doesn't
@@ -32,7 +33,7 @@ export function Window({
           const y = 88 - R * Math.cos(rad);
           return (
             <span key={i} className={`pip pip--${kind}`} style={{ left: `${x}px`, top: `${y}px` }}>
-              {kind === "x" ? "✕" : null}
+              {kind === "x" ? <Cross /> : null}
             </span>
           );
         })}

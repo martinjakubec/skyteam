@@ -106,9 +106,9 @@ function playThroughUI(game: GameState, crew: Crew, command: GameCommand, show?:
       click(slot(command.target)); // the held token is selected already
       break;
     case "reroll":
-      if (game.pendingReroll !== crew) click(ui.getByRole("button", { name: /^Reroll 🎲/ }));
+      if (game.pendingReroll !== crew) click(ui.getByRole("button", { name: /^Reroll ×/ }));
       for (const id of command.dieIds) click(die(id));
-      click(ui.getByRole("button", { name: /^(Reroll \d+ 🎲|Skip)$/ }));
+      click(ui.getByRole("button", { name: /^(Reroll \d+|Skip)$/ }));
       break;
     case "adapt":
       click(ui.getByRole("button", { name: "Flip a die" }));
@@ -252,9 +252,9 @@ describe("cockpit views", () => {
     const g = { ...dealt(), rerollTokens: 1 };
     const crew = g.turn;
     const { getByRole, getByText, queryByRole } = render(<Cockpit snapshot={snapshotOf(g, crew)} onCommand={() => {}} />);
-    fireEvent.click(getByRole("button", { name: /^Reroll 🎲 ×1/ }));
+    fireEvent.click(getByRole("button", { name: /^Reroll ×1/ }));
     expect(getByText("Reroll — pick the dice to reroll, then Confirm.")).toBeTruthy();
-    expect((getByRole("button", { name: "Reroll 0 🎲" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole("button", { name: "Reroll 0" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(getByRole("button", { name: "Cancel" }));
     expect(queryByRole("button", { name: "Cancel" })).toBe(null);
     cleanup();
