@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { ABILITY_LABELS, MODULE_LABELS, type AbilityId, type AdminStats as Stats, type ModuleId } from "@skyteam/shared";
 import { useSignedIn } from "../account/Account";
-import { AccountFrame, Alert } from "../account/AccountPages";
 import { call } from "../account/authApi";
 import { useAccount } from "../account/useAccount";
 import { RESULT_LABELS, airportName, when } from "../history/format";
 import { Link, navigate } from "../router";
+import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
 
 /**
  * The statistics dashboard (view_stats): every query in
@@ -15,12 +15,10 @@ import { Link, navigate } from "../router";
 export default function AdminStats() {
   const user = useSignedIn("/admin");
   const allowed = useAccount((s) => !!s.user?.privileges.includes("view_stats"));
-  const managesUsers = useAccount((s) => !!s.user?.privileges.includes("manage_users"));
   const [stats, setStats] = useState<Stats | null>(null);
   const [includeSeeded, setIncludeSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useNoIndex();
 
   const load = useCallback(async (withSeeded: boolean) => {
     setBusy(true);
@@ -42,46 +40,32 @@ export default function AdminStats() {
   if (!user) return null;
   if (!allowed) {
     return (
-      <AccountFrame title="Statistics">
-        <p className="notice">You don't have access to this.</p>
-      </AccountFrame>
+      <AdminLayout title="Statistics">
+        <p className="adm-empty">You don't have access to this.</p>
+      </AdminLayout>
     );
   }
 
   return (
-    <main className="center admin-page">
-      <header className="admin-head">
-        <Link to="/" className="wordmark home-link">
-          SKY&middot;TEAM
-        </Link>
-        <h1 className="page-title">SkyTeam statistics</h1>
-        <div className="row admin-tools">
-          <label className="seeded-toggle">
+    <AdminLayout
+      title="SkyTeam statistics"
+      actions={
+        <>
+          <label className="adm-check">
             <input type="checkbox" checked={includeSeeded} onChange={(e) => setIncludeSeeded(e.target.checked)} />
             Include same-dice games ({stats?.seededGames ?? 0})
           </label>
           <button disabled={busy} onClick={() => void load(includeSeeded)}>
             Refresh
           </button>
-          {managesUsers && <Link to="/admin/users">Users</Link>}
-        </div>
-        {stats && <p className="muted">Updated {when(stats.generatedAt)}</p>}
-      </header>
-      <Alert error={error} />
+        </>
+      }
+    >
+      {stats && <p className="adm-updated">Updated {when(stats.generatedAt)}</p>}
+      <AdminAlert error={error} />
       {stats && <Dashboard stats={stats} />}
-    </main>
+    </AdminLayout>
   );
-}
-
-/** Keep the admin pages out of search engines. */
-export function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex";
-    document.head.appendChild(meta);
-    return () => meta.remove();
-  }, []);
 }
 
 const pct = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)} %`);
@@ -96,7 +80,7 @@ function Dashboard({ stats }: { stats: Stats }) {
   const winRate = finished ? Math.round((1000 * won) / finished) / 10 : null;
   return (
     <>
-      <section className="panel totals" aria-label="Totals">
+      <section className="adm-kpis" aria-label="Totals">
         <Total value={games} label="games" />
         <Total value={finished} label="finished" />
         <Total value={won} label="won" />
@@ -134,8 +118,8 @@ function Dashboard({ stats }: { stats: Stats }) {
       <Section title="Crash causes" note="Each cause's share of that airport's losses." empty={!stats.crashCauses.length}>
         <Table head={["Airport", "Cause", "Losses", "Share"]}>
           {stats.crashCauses.map((r, i) => (
-            <tr key={`${r.scenario}-${r.cause}`} className={i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "same-group" : undefined}>
-              <td>{i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
+            <tr key={`${r.scenario}-${r.cause}`}>
+              <td className="adm-group">{i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
               <td>{r.cause}</td>
               <Num>{r.losses}</Num>
               <Bar value={r.pct_of_airport_losses} />
@@ -148,7 +132,7 @@ function Dashboard({ stats }: { stats: Stats }) {
         <Table head={["Airport", "Condition", "Times"]}>
           {stats.failedLandings.map((r, i) => (
             <tr key={`${r.scenario}-${r.condition}`}>
-              <td>{i > 0 && stats.failedLandings[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
+              <td className="adm-group">{i > 0 && stats.failedLandings[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
               <td>{r.condition}</td>
               <Num>{r.failed_landings}</Num>
             </tr>
@@ -156,7 +140,7 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <div className="admin-pair">
+      <div className="adm-grid-2">
         <Section title="Special Abilities: win rate" empty={!stats.winRateByAbility.length}>
           <Table head={["Ability", "Finished", "Win rate"]}>
             {stats.winRateByAbility.map((r) => (
@@ -213,7 +197,7 @@ function Dashboard({ stats }: { stats: Stats }) {
               <td>{when(g.ended_at)}</td>
               <td>
                 <Link to={`/games/${g.id}`}>{airportName(g.scenario)}</Link>
-                {g.seeded && <span className="tag">same dice</span>}
+                {g.seeded && <span className="adm-badge">same dice</span>}
               </td>
               <td title={g.loss_reason ?? undefined}>{RESULT_LABELS[g.result] ?? g.result}</td>
               <Num>{g.rounds_reached}</Num>
@@ -229,7 +213,7 @@ function Dashboard({ stats }: { stats: Stats }) {
 
 function Total({ value, label }: { value: number | string; label: string }) {
   return (
-    <div className="total">
+    <div className="adm-kpi">
       <strong>{value}</strong> <span>{label}</span>
     </div>
   );
@@ -238,13 +222,9 @@ function Total({ value, label }: { value: number | string; label: string }) {
 function Section({ title, note, empty, children }: { title: string; note?: string; empty: boolean; children: ReactNode }) {
   const id = useId();
   return (
-    <section className="panel admin-section" aria-labelledby={id}>
-      <h2 id={id} className="setup-label">
-        {title}
-      </h2>
-      {note && <p className="muted">{note}</p>}
-      {empty ? <p className="muted">No games yet.</p> : <div className="table-scroll">{children}</div>}
-    </section>
+    <AdminCard title={title} note={note} labelledBy={id}>
+      {empty ? <p className="adm-card-empty">No games yet.</p> : <div className="adm-table-wrap">{children}</div>}
+    </AdminCard>
   );
 }
 
@@ -253,7 +233,7 @@ const TEXT_COLUMNS = new Set(["Airport", "Cause", "Condition", "Crew", "Result",
 
 function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
-    <table className="data-table">
+    <table className="adm-table">
       <thead>
         <tr>
           {head.map((h, i) => (
@@ -274,9 +254,11 @@ const Num = ({ children }: { children: ReactNode }) => <td className="num">{chil
 function Bar({ value }: { value: number | null }) {
   return (
     <td className="num">
-      <span className="pct">
-        <span className="bar" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} />
-        <span className="pct-num">{pct(value)}</span>
+      <span className="adm-pct">
+        <span className="adm-pct-track" aria-hidden="true">
+          <span className="adm-pct-fill" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} />
+        </span>
+        <span className="adm-pct-num">{pct(value)}</span>
       </span>
     </td>
   );
