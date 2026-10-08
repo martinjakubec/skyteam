@@ -2909,10 +2909,15 @@ ul {
   letter-spacing: 0.08em;
   font-size: 0.78rem;
 }
-.account-chip a,
-.form-links a,
+.account-chip a {
+  color: #26303c;
+}
 .page-links a {
-  color: #dfe8f2;
+  color: #26303c;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
 }
 .center .form-links a {
   color: var(--blue-d);

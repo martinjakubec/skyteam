@@ -29,7 +29,7 @@ export function History() {
 
   if (!user) return null;
   return (
-    <AccountFrame title="My games">
+    <AccountFrame title="My games" wide>
       <Alert error={error} />
       {games && games.length === 0 && <p className="notice">No games yet. Games you play while signed in show up here.</p>}
       {games && games.length > 0 && (
