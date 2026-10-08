@@ -98,6 +98,22 @@ describe("the statistics dashboard", () => {
     expect(within(recent).getByText("same dice")).toBeTruthy();
   });
 
+  test("parts of a whole are pie charts: play rate, how games end, crash causes, unfinished games", async () => {
+    await open("/admin");
+    await screen.findByRole("heading", { name: "SkyTeam statistics" });
+    const chart = (region: RegExp) => within(section(region)).getByRole("img");
+    expect(chart(/Play rate/).getAttribute("aria-label")).toBe("Play rate per airport: YUL Montréal-Trudeau 4 (66.7 %), TGU Toncontín 2 (33.3 %)");
+    // How games end: won and lost (per airport), and the unfinished ones.
+    expect(chart(/How games end/).getAttribute("aria-label")).toBe("How games end: Won 1 (25.0 %), Lost 2 (50.0 %), Left 1 (25.0 %)");
+    expect(chart(/Crash causes/).getAttribute("aria-label")).toBe("Crash causes: Landing failed 2 (100.0 %)");
+    expect(chart(/Unfinished games/).getAttribute("aria-label")).toBe("Unfinished games: Left 1 (100.0 %)");
+    // Each slice is drawn; the legend names it with its count and share.
+    expect(chart(/Play rate/).querySelectorAll("circle.adm-slice")).toHaveLength(2);
+    expect(within(section(/Play rate/)).getAllByText("33.3 %").length).toBeGreaterThan(0);
+    // Win rates aren't parts of a whole: no pie there.
+    expect(within(section(/Win rate per airport/)).queryByRole("img")).toBe(null);
+  });
+
   test("the same-dice switch asks again with them counted", async () => {
     await open("/admin");
     const toggle = await screen.findByRole("checkbox", { name: /Include same-dice games \(2\)/ });
@@ -212,4 +228,14 @@ describe("the users page", () => {
     expect(await screen.findByText("You don't have access to this.")).toBeTruthy();
     expect(calls.some((c) => c.key === "GET /api/admin/users")).toBe(false);
   });
+});
+
+test("a pie with many slices groups the smallest as Other, in grey", async () => {
+  const { groupSlices, sliceColor, MAX_SLICES } = await import("../../packages/client/src/admin/PieChart");
+  const slices = Array.from({ length: 11 }, (_, i) => ({ label: `s${i}`, value: 20 - i }));
+  const grouped = groupSlices([...slices, { label: "none", value: 0 }]);
+  expect(grouped).toHaveLength(MAX_SLICES);
+  expect(grouped.at(-1)).toEqual({ label: "Other", value: 13 + 12 + 11 + 10 });
+  expect(sliceColor(MAX_SLICES - 1, 11)).toBe("#9aa3b2");
+  expect(sliceColor(MAX_SLICES - 1, MAX_SLICES)).not.toBe("#9aa3b2");
 });

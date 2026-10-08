@@ -6,6 +6,7 @@ import { useAccount } from "../account/useAccount";
 import { RESULT_LABELS, airportName, when } from "../history/format";
 import { Link, navigate } from "../router";
 import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
+import { PieChart, Swatch, sliceColor, type Slice } from "./PieChart";
 
 /**
  * The statistics dashboard (view_stats): every query in
@@ -73,11 +74,36 @@ const ability = (id: string) => ABILITY_LABELS[id as AbilityId] ?? id;
 const moduleName = (id: string) => MODULE_LABELS[id as ModuleId] ?? id;
 const seatLabel = (seat: string) => (seat.startsWith("bot:") ? `Bot (${seat.slice(4)})` : "Human");
 
+/** One colour per way a game ends, the same on every chart. */
+const OUTCOME_COLORS: Record<string, string> = {
+  won: "#16a34a",
+  lost: "#dc2626",
+  abandoned: "#f59e0b",
+  exited: "#64748b",
+  reset: "#8b5cf6",
+};
+
 function Dashboard({ stats }: { stats: Stats }) {
   const games = stats.playRate.reduce((n, r) => n + r.games, 0);
   const finished = stats.playRate.reduce((n, r) => n + r.finished, 0);
   const won = stats.winRateByAirport.reduce((n, r) => n + r.won, 0);
   const winRate = finished ? Math.round((1000 * won) / finished) / 10 : null;
+  const lost = stats.winRateByAirport.reduce((n, r) => n + r.lost, 0);
+
+  // How games end: won and lost, then the ways a game is left unfinished.
+  const unfinishedBy = (result: string) => stats.unfinished.filter((r) => r.result === result).reduce((n, r) => n + r.games, 0);
+  const endings: Slice[] = [
+    { label: RESULT_LABELS.won, value: won, color: OUTCOME_COLORS.won },
+    { label: RESULT_LABELS.lost, value: lost, color: OUTCOME_COLORS.lost },
+    ...["abandoned", "exited", "reset"].map((r) => ({ label: RESULT_LABELS[r], value: unfinishedBy(r), color: OUTCOME_COLORS[r] })),
+  ];
+  const unfinished = endings.slice(2);
+  // Every airport's losses together, by cause.
+  const causes = new Map<string, number>();
+  for (const r of stats.crashCauses) causes.set(r.cause, (causes.get(r.cause) ?? 0) + r.losses);
+  const causeSlices = [...causes].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  const plays: Slice[] = stats.playRate.map((r) => ({ label: airportName(r.scenario), value: r.games }));
+
   return (
     <>
       <section className="adm-kpis" aria-label="Totals">
@@ -88,18 +114,46 @@ function Dashboard({ stats }: { stats: Stats }) {
       </section>
 
       <Section title="Play rate per airport" empty={!stats.playRate.length}>
+        <div className="adm-chart-row">
+          <PieChart title="Play rate per airport" slices={plays} legend={false} />
         <Table head={["Airport", "Games", "Share", "Finished", "Share of finished"]}>
-          {stats.playRate.map((r) => (
+          {stats.playRate.map((r, i) => (
             <tr key={r.scenario}>
-              <td>{airportName(r.scenario)}</td>
+              <td>
+                <Swatch color={sliceColor(i, plays.length)} />
+                {airportName(r.scenario)}
+              </td>
               <Num>{r.games}</Num>
-              <Bar value={r.pct_of_all_games} />
+              <Num>{pct(r.pct_of_all_games)}</Num>
               <Num>{r.finished}</Num>
-              <Bar value={r.pct_of_finished_games} />
+              <Num>{pct(r.pct_of_finished_games)}</Num>
             </tr>
           ))}
         </Table>
+        </div>
       </Section>
+
+      <div className="adm-grid-2">
+        <Section title="How games end" note="Every game: finished (won or lost) or left before the end." empty={!games}>
+          <div className="adm-chart-row">
+            <PieChart title="How games end" slices={endings} />
+          </div>
+        </Section>
+        <Section title="Unfinished games" note="Games left before the end: how, and in which round." empty={!stats.unfinished.length}>
+          <div className="adm-chart-row">
+            <PieChart title="Unfinished games" slices={unfinished} />
+          </div>
+          <Table head={["How", "Round", "Games"]}>
+            {stats.unfinished.map((r) => (
+              <tr key={`${r.result}-${r.rounds_reached}`}>
+                <td>{RESULT_LABELS[r.result] ?? r.result}</td>
+                <Num>{r.rounds_reached}</Num>
+                <Num>{r.games}</Num>
+              </tr>
+            ))}
+          </Table>
+        </Section>
+      </div>
 
       <Section title="Win rate per airport" empty={!stats.winRateByAirport.length}>
         <Table head={["Airport", "Finished", "Won", "Lost", "Win rate"]}>
@@ -115,7 +169,10 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <Section title="Crash causes" note="Each cause's share of that airport's losses." empty={!stats.crashCauses.length}>
+      <Section title="Crash causes" note="All losses by cause; then, per airport, each cause's share of that airport's losses." empty={!stats.crashCauses.length}>
+        <div className="adm-chart-row">
+          <PieChart title="Crash causes" slices={causeSlices} />
+        </div>
         <Table head={["Airport", "Cause", "Losses", "Share"]}>
           {stats.crashCauses.map((r, i) => (
             <tr key={`${r.scenario}-${r.cause}`}>
@@ -178,18 +235,6 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <Section title="Unfinished games" note="Games left before the end: how, and in which round." empty={!stats.unfinished.length}>
-        <Table head={["How", "Round", "Games"]}>
-          {stats.unfinished.map((r) => (
-            <tr key={`${r.result}-${r.rounds_reached}`}>
-              <td>{RESULT_LABELS[r.result] ?? r.result}</td>
-              <Num>{r.rounds_reached}</Num>
-              <Num>{r.games}</Num>
-            </tr>
-          ))}
-        </Table>
-      </Section>
-
       <Section title="Recent games" note="The latest 20, same-dice games included." empty={!stats.recentGames.length}>
         <Table head={["When", "Airport", "Result", "Rounds", "Pilot", "Co-Pilot"]}>
           {stats.recentGames.map((g) => (
@@ -223,7 +268,7 @@ function Section({ title, note, empty, children }: { title: string; note?: strin
   const id = useId();
   return (
     <AdminCard title={title} note={note} labelledBy={id}>
-      {empty ? <p className="adm-card-empty">No games yet.</p> : <div className="adm-table-wrap">{children}</div>}
+      {empty ? <p className="adm-card-empty">No games yet.</p> : children}
     </AdminCard>
   );
 }
@@ -233,6 +278,7 @@ const TEXT_COLUMNS = new Set(["Airport", "Cause", "Condition", "Crew", "Result",
 
 function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
+    <div className="adm-table-wrap">
     <table className="adm-table">
       <thead>
         <tr>
@@ -245,6 +291,7 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
       </thead>
       <tbody>{children}</tbody>
     </table>
+    </div>
   );
 }
 
