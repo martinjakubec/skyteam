@@ -784,22 +784,25 @@ button.primary:disabled {
   border-radius: 0 0 10px 10px;
   box-shadow: none;
 }
+/* The shoulders: each covers the top of the tab's side border as well, so the
+   outline runs from the track, round the curve and down the side as one line
+   (no stub of the side border above the curve). */
 .turn-tab::before,
 .turn-tab::after {
   content: "";
   position: absolute;
   top: 0;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   pointer-events: none;
 }
 .turn-tab::before {
   left: -9px;
-  background: radial-gradient(circle at 0 100%, transparent 7px, var(--border) 7px 8px, var(--well) 8px);
+  background: radial-gradient(circle at 0 100%, transparent 8px, var(--border) 8px 9px, var(--well) 9px);
 }
 .turn-tab::after {
   right: -9px;
-  background: radial-gradient(circle at 100% 100%, transparent 7px, var(--border) 7px 8px, var(--well) 8px);
+  background: radial-gradient(circle at 100% 100%, transparent 8px, var(--border) 8px 9px, var(--well) 9px);
 }
 .turn-tab .turn-marks {
   background: var(--surface-2);
