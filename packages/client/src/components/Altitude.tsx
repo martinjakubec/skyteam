@@ -21,8 +21,13 @@ export function Altitude({ game }: { game: Game }) {
             >
               <span className="alt-feet">{feet.toLocaleString()}</span>
               {rerollRounds.includes(r) && (
-                <span className="reroll-dot" title="Reroll token">
-                  ⟳
+                <span className="reroll-dot" title="Reroll token" role="img" aria-label="Reroll token">
+                  {/* An icon, not the ⟳ character: fonts draw that glyph with
+                      uneven side bearings, so it never sits evenly in the corner. */}
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M13.2 8.6A5.3 5.3 0 1 1 11.6 4" />
+                    <path d="M12.3 1.4v3.2H9.1" />
+                  </svg>
                 </span>
               )}
             </div>

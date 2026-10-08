@@ -934,13 +934,25 @@ ul {
   color: #ffd34d;
   font-size: 0.85rem;
 }
-/* Reroll marker tucked into the cell's upper-right corner */
+/* Reroll marker tucked into the cell's upper-right corner, the same distance
+   from the top as from the right. */
 .alt-cell .reroll-dot {
   position: absolute;
-  top: 1px;
-  right: 3px;
-  font-size: 0.75rem;
-  line-height: 1;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  line-height: 0;
+}
+.reroll-dot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Cockpit window — signature: plane banks with live axis tilt */
