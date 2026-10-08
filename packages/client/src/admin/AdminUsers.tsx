@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSignedIn } from "../account/Account";
-import { AccountFrame, Alert } from "../account/AccountPages";
 import { call } from "../account/authApi";
 import { useAccount } from "../account/useAccount";
 import { when } from "../history/format";
-import { Link, navigate } from "../router";
-import { useNoIndex } from "./AdminStats";
+import { navigate } from "../router";
+import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
 
 /**
  * User management (manage_users): find an account, change its role, disable
@@ -36,7 +35,6 @@ export default function AdminUsers() {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<{ username: string; url: string; expiresAt: string } | null>(null);
-  useNoIndex();
 
   /** A refused request: signed out goes to sign in; anything else is shown. */
   const refused = useCallback((r: { status: number; error: string }) => {
@@ -72,9 +70,9 @@ export default function AdminUsers() {
   if (!me) return null;
   if (!allowed) {
     return (
-      <AccountFrame title="Users">
-        <p className="notice">You don't have access to this.</p>
-      </AccountFrame>
+      <AdminLayout title="Users">
+        <p className="adm-empty">You don't have access to this.</p>
+      </AdminLayout>
     );
   }
 
@@ -100,92 +98,91 @@ export default function AdminUsers() {
   };
 
   return (
-    <main className="center admin-page">
-      <header className="admin-head">
-        <Link to="/" className="wordmark home-link">
-          SKY&middot;TEAM
-        </Link>
-        <h1 className="page-title">Users</h1>
-        <div className="row admin-tools">
-          <Link to="/admin">Statistics</Link>
-        </div>
-      </header>
-      <label className="field user-search">
+    <AdminLayout title="Users">
+      <label className="adm-search">
         Search by name
-        <input value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" spellCheck={false} />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" spellCheck={false} placeholder="Username starts with…" />
       </label>
-      <Alert error={error} />
+      <AdminAlert error={error} />
       {link && (
-        <div className="panel reset-link">
-          <label className="field">
+        <section className="adm-card adm-reset">
+          <label>
             {`Reset link for ${link.username}`}
-            <input readOnly value={link.url} onFocus={(e) => e.target.select()} />
+            <input type="text" readOnly value={link.url} onFocus={(e) => e.target.select()} />
           </label>
-          <div className="row">
-            <button onClick={() => void navigator.clipboard?.writeText(link.url)}>Copy</button>
-            <span className="muted">
-              Works once, until {when(link.expiresAt)}. Hand it over yourself — it signs them in.
-            </span>
+          <div className="adm-reset-row">
+            <button className="adm-primary" onClick={() => void navigator.clipboard?.writeText(link.url)}>
+              Copy
+            </button>
+            <span>Works once, until {when(link.expiresAt)}. Hand it over yourself — it signs them in.</span>
           </div>
-        </div>
+        </section>
       )}
-      {users && users.length === 0 && <p className="notice">No users match.</p>}
+      {users && users.length === 0 && <p className="adm-empty">No users match.</p>}
       {users && users.length > 0 && (
-        <div className="panel table-panel">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Joined</th>
-                <th className="num">Games</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const mine = u.id === me.id;
-                return (
-                  <tr key={u.id}>
-                    <td>{u.username}</td>
-                    <td>
-                      {mine ? (
-                        u.role
-                      ) : (
-                        <select aria-label={`Role of ${u.username}`} value={u.role} onChange={(e) => void change(u, { role: e.target.value })}>
-                          {(roles.some((r) => r.name === u.role) ? roles : [...roles, { name: u.role, rank: 0, privileges: [] }]).map((r) => (
-                            <option key={r.name} value={r.name}>
-                              {r.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                    <td>{u.disabled ? "disabled" : "active"}</td>
-                    <td>{when(u.createdAt)}</td>
-                    <td className="num">{u.games}</td>
-                    <td className="actions">
-                      {mine ? (
-                        <span className="muted">you</span>
-                      ) : (
-                        <>
-                          <button onClick={() => void change(u, { disabled: !u.disabled })}>{u.disabled ? "Enable" : "Disable"}</button>
-                          <button onClick={() => void resetLink(u)}>Reset link</button>
-                          <button className="reset-btn" onClick={() => void remove(u)}>
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <AdminCard>
+          <div className="adm-table-wrap">
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th className="num">Games</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => {
+                  const mine = u.id === me.id;
+                  return (
+                    <tr key={u.id}>
+                      <td>{u.username}</td>
+                      <td>
+                        {mine ? (
+                          u.role
+                        ) : (
+                          <select aria-label={`Role of ${u.username}`} value={u.role} onChange={(e) => void change(u, { role: e.target.value })}>
+                            {(roles.some((r) => r.name === u.role) ? roles : [...roles, { name: u.role, rank: 0, privileges: [] }]).map((r) => (
+                              <option key={r.name} value={r.name}>
+                                {r.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td>
+                        <span className={u.disabled ? "adm-status off" : "adm-status"}>{u.disabled ? "disabled" : "active"}</span>
+                      </td>
+                      <td>{when(u.createdAt)}</td>
+                      <td className="num">{u.games}</td>
+                      <td className="adm-row-actions">
+                        {mine ? (
+                          <span className="adm-you">you</span>
+                        ) : (
+                          <>
+                            <button onClick={() => void change(u, { disabled: !u.disabled })}>{u.disabled ? "Enable" : "Disable"}</button>
+                            <button onClick={() => void resetLink(u)}>Reset link</button>
+                            <button className="adm-danger" onClick={() => void remove(u)}>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </AdminCard>
       )}
-      {next && <button onClick={() => void load(q, next)}>Load more</button>}
-    </main>
+      {next && (
+        <button className="adm-more" onClick={() => void load(q, next)}>
+          Load more
+        </button>
+      )}
+    </AdminLayout>
   );
 }

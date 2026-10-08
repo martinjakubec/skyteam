@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { ABILITY_LABELS, MODULE_LABELS, type AbilityId, type AdminStats as Stats, type ModuleId } from "@skyteam/shared";
 import { useSignedIn } from "../account/Account";
-import { AccountFrame, Alert } from "../account/AccountPages";
 import { call } from "../account/authApi";
 import { useAccount } from "../account/useAccount";
 import { RESULT_LABELS, airportName, when } from "../history/format";
 import { Link, navigate } from "../router";
+import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
+import { PieChart, Swatch, sliceColor, type Slice } from "./PieChart";
 
 /**
  * The statistics dashboard (view_stats): every query in
@@ -15,12 +16,10 @@ import { Link, navigate } from "../router";
 export default function AdminStats() {
   const user = useSignedIn("/admin");
   const allowed = useAccount((s) => !!s.user?.privileges.includes("view_stats"));
-  const managesUsers = useAccount((s) => !!s.user?.privileges.includes("manage_users"));
   const [stats, setStats] = useState<Stats | null>(null);
   const [includeSeeded, setIncludeSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useNoIndex();
 
   const load = useCallback(async (withSeeded: boolean) => {
     setBusy(true);
@@ -42,46 +41,32 @@ export default function AdminStats() {
   if (!user) return null;
   if (!allowed) {
     return (
-      <AccountFrame title="Statistics">
-        <p className="notice">You don't have access to this.</p>
-      </AccountFrame>
+      <AdminLayout title="Statistics">
+        <p className="adm-empty">You don't have access to this.</p>
+      </AdminLayout>
     );
   }
 
   return (
-    <main className="center admin-page">
-      <header className="admin-head">
-        <Link to="/" className="wordmark home-link">
-          SKY&middot;TEAM
-        </Link>
-        <h1 className="page-title">SkyTeam statistics</h1>
-        <div className="row admin-tools">
-          <label className="seeded-toggle">
+    <AdminLayout
+      title="SkyTeam statistics"
+      actions={
+        <>
+          <label className="adm-check">
             <input type="checkbox" checked={includeSeeded} onChange={(e) => setIncludeSeeded(e.target.checked)} />
             Include same-dice games ({stats?.seededGames ?? 0})
           </label>
           <button disabled={busy} onClick={() => void load(includeSeeded)}>
             Refresh
           </button>
-          {managesUsers && <Link to="/admin/users">Users</Link>}
-        </div>
-        {stats && <p className="muted">Updated {when(stats.generatedAt)}</p>}
-      </header>
-      <Alert error={error} />
+        </>
+      }
+    >
+      {stats && <p className="adm-updated">Updated {when(stats.generatedAt)}</p>}
+      <AdminAlert error={error} />
       {stats && <Dashboard stats={stats} />}
-    </main>
+    </AdminLayout>
   );
-}
-
-/** Keep the admin pages out of search engines. */
-export function useNoIndex() {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex";
-    document.head.appendChild(meta);
-    return () => meta.remove();
-  }, []);
 }
 
 const pct = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)} %`);
@@ -89,14 +74,39 @@ const ability = (id: string) => ABILITY_LABELS[id as AbilityId] ?? id;
 const moduleName = (id: string) => MODULE_LABELS[id as ModuleId] ?? id;
 const seatLabel = (seat: string) => (seat.startsWith("bot:") ? `Bot (${seat.slice(4)})` : "Human");
 
+/** One colour per way a game ends, the same on every chart. */
+const OUTCOME_COLORS: Record<string, string> = {
+  won: "#16a34a",
+  lost: "#dc2626",
+  abandoned: "#f59e0b",
+  exited: "#64748b",
+  reset: "#8b5cf6",
+};
+
 function Dashboard({ stats }: { stats: Stats }) {
   const games = stats.playRate.reduce((n, r) => n + r.games, 0);
   const finished = stats.playRate.reduce((n, r) => n + r.finished, 0);
   const won = stats.winRateByAirport.reduce((n, r) => n + r.won, 0);
   const winRate = finished ? Math.round((1000 * won) / finished) / 10 : null;
+  const lost = stats.winRateByAirport.reduce((n, r) => n + r.lost, 0);
+
+  // How games end: won and lost, then the ways a game is left unfinished.
+  const unfinishedBy = (result: string) => stats.unfinished.filter((r) => r.result === result).reduce((n, r) => n + r.games, 0);
+  const endings: Slice[] = [
+    { label: RESULT_LABELS.won, value: won, color: OUTCOME_COLORS.won },
+    { label: RESULT_LABELS.lost, value: lost, color: OUTCOME_COLORS.lost },
+    ...["abandoned", "exited", "reset"].map((r) => ({ label: RESULT_LABELS[r], value: unfinishedBy(r), color: OUTCOME_COLORS[r] })),
+  ];
+  const unfinished = endings.slice(2);
+  // Every airport's losses together, by cause.
+  const causes = new Map<string, number>();
+  for (const r of stats.crashCauses) causes.set(r.cause, (causes.get(r.cause) ?? 0) + r.losses);
+  const causeSlices = [...causes].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  const plays: Slice[] = stats.playRate.map((r) => ({ label: airportName(r.scenario), value: r.games }));
+
   return (
     <>
-      <section className="panel totals" aria-label="Totals">
+      <section className="adm-kpis" aria-label="Totals">
         <Total value={games} label="games" />
         <Total value={finished} label="finished" />
         <Total value={won} label="won" />
@@ -104,18 +114,46 @@ function Dashboard({ stats }: { stats: Stats }) {
       </section>
 
       <Section title="Play rate per airport" empty={!stats.playRate.length}>
+        <div className="adm-chart-row">
+          <PieChart title="Play rate per airport" slices={plays} legend={false} />
         <Table head={["Airport", "Games", "Share", "Finished", "Share of finished"]}>
-          {stats.playRate.map((r) => (
+          {stats.playRate.map((r, i) => (
             <tr key={r.scenario}>
-              <td>{airportName(r.scenario)}</td>
+              <td>
+                <Swatch color={sliceColor(i, plays.length)} />
+                {airportName(r.scenario)}
+              </td>
               <Num>{r.games}</Num>
-              <Bar value={r.pct_of_all_games} />
+              <Num>{pct(r.pct_of_all_games)}</Num>
               <Num>{r.finished}</Num>
-              <Bar value={r.pct_of_finished_games} />
+              <Num>{pct(r.pct_of_finished_games)}</Num>
             </tr>
           ))}
         </Table>
+        </div>
       </Section>
+
+      <div className="adm-grid-2">
+        <Section title="How games end" note="Every game: finished (won or lost) or left before the end." empty={!games}>
+          <div className="adm-chart-row">
+            <PieChart title="How games end" slices={endings} />
+          </div>
+        </Section>
+        <Section title="Unfinished games" note="Games left before the end: how, and in which round." empty={!stats.unfinished.length}>
+          <div className="adm-chart-row">
+            <PieChart title="Unfinished games" slices={unfinished} />
+          </div>
+          <Table head={["How", "Round", "Games"]}>
+            {stats.unfinished.map((r) => (
+              <tr key={`${r.result}-${r.rounds_reached}`}>
+                <td>{RESULT_LABELS[r.result] ?? r.result}</td>
+                <Num>{r.rounds_reached}</Num>
+                <Num>{r.games}</Num>
+              </tr>
+            ))}
+          </Table>
+        </Section>
+      </div>
 
       <Section title="Win rate per airport" empty={!stats.winRateByAirport.length}>
         <Table head={["Airport", "Finished", "Won", "Lost", "Win rate"]}>
@@ -131,11 +169,14 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <Section title="Crash causes" note="Each cause's share of that airport's losses." empty={!stats.crashCauses.length}>
+      <Section title="Crash causes" note="All losses by cause; then, per airport, each cause's share of that airport's losses." empty={!stats.crashCauses.length}>
+        <div className="adm-chart-row">
+          <PieChart title="Crash causes" slices={causeSlices} />
+        </div>
         <Table head={["Airport", "Cause", "Losses", "Share"]}>
           {stats.crashCauses.map((r, i) => (
-            <tr key={`${r.scenario}-${r.cause}`} className={i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "same-group" : undefined}>
-              <td>{i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
+            <tr key={`${r.scenario}-${r.cause}`}>
+              <td className="adm-group">{i > 0 && stats.crashCauses[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
               <td>{r.cause}</td>
               <Num>{r.losses}</Num>
               <Bar value={r.pct_of_airport_losses} />
@@ -148,7 +189,7 @@ function Dashboard({ stats }: { stats: Stats }) {
         <Table head={["Airport", "Condition", "Times"]}>
           {stats.failedLandings.map((r, i) => (
             <tr key={`${r.scenario}-${r.condition}`}>
-              <td>{i > 0 && stats.failedLandings[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
+              <td className="adm-group">{i > 0 && stats.failedLandings[i - 1].scenario === r.scenario ? "" : airportName(r.scenario)}</td>
               <td>{r.condition}</td>
               <Num>{r.failed_landings}</Num>
             </tr>
@@ -156,7 +197,7 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <div className="admin-pair">
+      <div className="adm-grid-2">
         <Section title="Special Abilities: win rate" empty={!stats.winRateByAbility.length}>
           <Table head={["Ability", "Finished", "Win rate"]}>
             {stats.winRateByAbility.map((r) => (
@@ -194,18 +235,6 @@ function Dashboard({ stats }: { stats: Stats }) {
         </Table>
       </Section>
 
-      <Section title="Unfinished games" note="Games left before the end: how, and in which round." empty={!stats.unfinished.length}>
-        <Table head={["How", "Round", "Games"]}>
-          {stats.unfinished.map((r) => (
-            <tr key={`${r.result}-${r.rounds_reached}`}>
-              <td>{RESULT_LABELS[r.result] ?? r.result}</td>
-              <Num>{r.rounds_reached}</Num>
-              <Num>{r.games}</Num>
-            </tr>
-          ))}
-        </Table>
-      </Section>
-
       <Section title="Recent games" note="The latest 20, same-dice games included." empty={!stats.recentGames.length}>
         <Table head={["When", "Airport", "Result", "Rounds", "Pilot", "Co-Pilot"]}>
           {stats.recentGames.map((g) => (
@@ -213,7 +242,7 @@ function Dashboard({ stats }: { stats: Stats }) {
               <td>{when(g.ended_at)}</td>
               <td>
                 <Link to={`/games/${g.id}`}>{airportName(g.scenario)}</Link>
-                {g.seeded && <span className="tag">same dice</span>}
+                {g.seeded && <span className="adm-badge">same dice</span>}
               </td>
               <td title={g.loss_reason ?? undefined}>{RESULT_LABELS[g.result] ?? g.result}</td>
               <Num>{g.rounds_reached}</Num>
@@ -229,7 +258,7 @@ function Dashboard({ stats }: { stats: Stats }) {
 
 function Total({ value, label }: { value: number | string; label: string }) {
   return (
-    <div className="total">
+    <div className="adm-kpi">
       <strong>{value}</strong> <span>{label}</span>
     </div>
   );
@@ -238,13 +267,9 @@ function Total({ value, label }: { value: number | string; label: string }) {
 function Section({ title, note, empty, children }: { title: string; note?: string; empty: boolean; children: ReactNode }) {
   const id = useId();
   return (
-    <section className="panel admin-section" aria-labelledby={id}>
-      <h2 id={id} className="setup-label">
-        {title}
-      </h2>
-      {note && <p className="muted">{note}</p>}
-      {empty ? <p className="muted">No games yet.</p> : <div className="table-scroll">{children}</div>}
-    </section>
+    <AdminCard title={title} note={note} labelledBy={id}>
+      {empty ? <p className="adm-card-empty">No games yet.</p> : children}
+    </AdminCard>
   );
 }
 
@@ -253,7 +278,8 @@ const TEXT_COLUMNS = new Set(["Airport", "Cause", "Condition", "Crew", "Result",
 
 function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
-    <table className="data-table">
+    <div className="adm-table-wrap">
+    <table className="adm-table">
       <thead>
         <tr>
           {head.map((h, i) => (
@@ -265,6 +291,7 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
       </thead>
       <tbody>{children}</tbody>
     </table>
+    </div>
   );
 }
 
@@ -274,9 +301,11 @@ const Num = ({ children }: { children: ReactNode }) => <td className="num">{chil
 function Bar({ value }: { value: number | null }) {
   return (
     <td className="num">
-      <span className="pct">
-        <span className="bar" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} />
-        <span className="pct-num">{pct(value)}</span>
+      <span className="adm-pct">
+        <span className="adm-pct-track" aria-hidden="true">
+          <span className="adm-pct-fill" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} />
+        </span>
+        <span className="adm-pct-num">{pct(value)}</span>
       </span>
     </td>
   );
