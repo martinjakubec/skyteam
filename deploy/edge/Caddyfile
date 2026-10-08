@@ -1,0 +1,2 @@
+# The edge proxy's configuration: every site in sites/ (one file per app).
+import sites/*.caddy

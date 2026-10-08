@@ -1,6 +1,11 @@
 # VPS Deployment Implementation Plan
 
-> **Status:** Parked until the MVP is done. Pick this up afterwards.
+> **Status:** Done, and superseded by the code in `deploy/`, `.github/workflows/deploy.yml` and [docs/deployment.md](../../deployment.md) (2026-10-08). Differences from this plan:
+> - Caddy is a compose stack in the repository, deployed by the workflow.
+> - A script sets up the VPS.
+> - PostgreSQL and nightly backups are added.
+> - A username/password gates the site.
+> - Every secret comes from GitHub.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Tasks marked **(VPS)** or **(GitHub UI)** are done by the user by hand; guide them through those steps, don't attempt them yourself.
 

@@ -29,8 +29,11 @@ their games and a step-by-step replay of each. A game's page can be shared, and
 privileges: ADMIN sees the statistics dashboard (`/admin`), and SUPERADMIN also
 manages users (`/admin/users`). See [docs/accounts.md](docs/accounts.md).
 
-**Production settings.** Secrets and settings live in GitHub. The list of what
-to set (and what not to) is
+**Deployment.** Every push to `main` is tested, built and deployed to
+https://skyteam.mjakubec.eu by GitHub Actions. The VPS needs only Docker: Caddy
+(HTTPS, and a username/password in front of the whole site) and the app are
+compose files in `deploy/`. See [docs/deployment.md](docs/deployment.md).
+Secrets and settings live in GitHub; the list is
 [docs/production-variables.md](docs/production-variables.md).
 
 **Between rounds (debrief).** As in the board game, the crew may talk between

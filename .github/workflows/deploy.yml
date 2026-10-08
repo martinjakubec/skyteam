@@ -1,0 +1,188 @@
+# Test, build and deploy SkyTeam to https://skyteam.mjakubec.eu on every push to
+# main (or by hand: Actions → Deploy → Run workflow). See docs/deployment.md.
+#
+# The VPS only pulls images and runs them: the edge proxy (deploy/edge) and the
+# app (deploy/app) are copied there, with their settings written from GitHub
+# secrets and variables, and started with docker compose.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-skyteam
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/martinjakubec
+  SITE: skyteam.mjakubec.eu
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # The SQL tests (tests/pg-real.test.mjs) run against a real PostgreSQL.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: skyteam
+          POSTGRES_PASSWORD: skyteam-ci
+          POSTGRES_DB: skyteam
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U skyteam" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://skyteam:skyteam-ci@localhost:5432/skyteam
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # A few bot tests assert wall-clock budgets: on a busy runner, a second try.
+      - run: npm test -- --retry=2
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [server, client]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/${{ matrix.app }}/Dockerfile
+          push: true
+          # No server URL baked in: a production build talks to its own origin.
+          build-args: |
+            VITE_SERVER_URL=
+          tags: |
+            ${{ env.REGISTRY }}/skyteam-${{ matrix.app }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/skyteam-${{ matrix.app }}:latest
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VPS_HOST: ${{ secrets.DEPLOY_HOST }}
+      VPS_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Until the VPS is set up (no DEPLOY_HOST secret yet), test and build, but
+      # skip the deploy instead of failing every push.
+      - name: Is there a VPS to deploy to?
+        id: vps
+        run: |
+          if [ -n "$VPS_HOST" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::No DEPLOY_HOST secret yet: deploy skipped (see docs/deployment.md)."; fi
+
+      - name: SSH access to the VPS
+        if: steps.vps.outputs.ready == 'true'
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: The app's settings (.env) from GitHub secrets and variables
+        if: steps.vps.outputs.ready == 'true'
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SUPERADMIN_INITIAL_PASSWORD: ${{ secrets.SUPERADMIN_INITIAL_PASSWORD }}
+          SUPERADMIN_USERNAME: ${{ vars.SUPERADMIN_USERNAME }}
+          NPC_WORKERS: ${{ vars.NPC_WORKERS }}
+          RECONNECT_GRACE_MS: ${{ vars.RECONNECT_GRACE_MS }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          for name in JWT_SECRET SESSION_SECRET POSTGRES_PASSWORD; do
+            eval "value=\${$name}"
+            test -n "$value" || { echo "::error::Set the $name secret (docs/production-variables.md)."; exit 1; }
+          done
+          : > app.env
+          for name in JWT_SECRET SESSION_SECRET POSTGRES_PASSWORD SUPERADMIN_USERNAME SUPERADMIN_INITIAL_PASSWORD NPC_WORKERS RECONNECT_GRACE_MS IMAGE_TAG; do
+            eval "value=\${$name}"
+            test -n "$value" || continue
+            # Single quotes: compose reads the value as it is. So a quote can't be in it.
+            case "$value" in *"'"*) echo "::error::$name may not contain a single quote."; exit 1 ;; esac
+            printf "%s='%s'\n" "$name" "$value" >> app.env
+          done
+
+      - name: The site's username and password (Caddy's basic_auth)
+        if: steps.vps.outputs.ready == 'true'
+        env:
+          SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: |
+          if [ -n "$SITE_USERNAME" ] && [ -n "$SITE_PASSWORD" ]; then
+            case "$SITE_USERNAME" in *[!A-Za-z0-9._-]*) echo "::error::SITE_USERNAME: letters, digits, . _ - only."; exit 1 ;; esac
+            # Only the bcrypt hash leaves the runner.
+            HASH=$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "$SITE_PASSWORD")
+            printf 'basic_auth @gated {\n\t%s %s\n}\n' "$SITE_USERNAME" "$HASH" > skyteam-auth.caddy
+          else
+            echo "::warning::SITE_USERNAME / SITE_PASSWORD are not set: the site is open to everyone."
+            echo "# No username/password set: the site is open." > skyteam-auth.caddy
+          fi
+
+      - name: Copy the stacks and settings
+        if: steps.vps.outputs.ready == 'true'
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" 'mkdir -p /srv/edge/sites /srv/edge/auth /srv/apps/skyteam/backups'
+          scp deploy/edge/compose.yml deploy/edge/Caddyfile "$VPS_USER@$VPS_HOST:/srv/edge/"
+          scp deploy/edge/sites/*.caddy "$VPS_USER@$VPS_HOST:/srv/edge/sites/"
+          scp skyteam-auth.caddy "$VPS_USER@$VPS_HOST:/srv/edge/auth/skyteam.caddy"
+          scp deploy/app/compose.yml "$VPS_USER@$VPS_HOST:/srv/apps/skyteam/compose.yml"
+          scp app.env "$VPS_USER@$VPS_HOST:/srv/apps/skyteam/.env"
+          ssh "$VPS_USER@$VPS_HOST" 'chmod 600 /srv/apps/skyteam/.env /srv/edge/auth/skyteam.caddy'
+          rm app.env skyteam-auth.caddy
+
+      - name: Start the new version
+        if: steps.vps.outputs.ready == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # The images may be private: log in for the pull with this run's token, then out.
+          printf '%s' "$TOKEN" | ssh "$VPS_USER@$VPS_HOST" "docker login ghcr.io -u '$ACTOR' --password-stdin"
+          ssh "$VPS_USER@$VPS_HOST" 'set -e
+            docker network inspect edge >/dev/null 2>&1 || docker network create edge
+            cd /srv/apps/skyteam
+            docker compose pull --quiet
+            docker compose up -d --remove-orphans
+            docker logout ghcr.io
+            cd /srv/edge
+            docker compose up -d --remove-orphans
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+            docker image prune -f'
+
+      - name: Smoke test
+        if: steps.vps.outputs.ready == 'true'
+        run: |
+          curl -fsS --retry 20 --retry-delay 3 --retry-all-errors "https://$SITE/health"
+          echo
+          # The rest of the site asks for the password when one is set.
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://$SITE/")
+          echo "GET / without a password: $code"

@@ -6,6 +6,7 @@ dist/
 sim-output/
 .env
 .env.local
+.env.production
 .DS_Store
 
 # Local editor/agent settings
