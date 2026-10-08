@@ -87,7 +87,7 @@ export function App() {
         </nav>
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <p className="muted">Land the plane together. One Pilot, one Co-Pilot, no talking.</p>
-        <button disabled={busy} onClick={() => onCreate()}>
+        <button className="primary" disabled={busy} onClick={() => onCreate()}>
           Create a room
         </button>
         <p className="muted">Open an invite link to join an existing room.</p>
@@ -103,7 +103,7 @@ export function App() {
               </label>
             ))}
           </fieldset>
-          <button disabled={busy} onClick={() => onCreate({ crew: soloCrew })}>
+          <button className="primary" disabled={busy} onClick={() => onCreate({ crew: soloCrew })}>
             Play solo
           </button>
         </section>

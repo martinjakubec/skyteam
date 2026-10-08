@@ -63,9 +63,11 @@ export function Lobby({
       )}
       <SetupPicker setup={snapshot.setup} editable={isHost && !snapshot.sameDice} solo={snapshot.seats.some((s) => !!s.bot)} onChange={onSetup} />
       <div className="row">
-        <button onClick={() => onReady(!me?.ready)}>{me?.ready ? "Unready" : "Ready up"}</button>
+        <button className={me?.ready ? undefined : "primary"} onClick={() => onReady(!me?.ready)}>
+          {me?.ready ? "Unready" : "Ready up"}
+        </button>
         {isHost && (
-          <button disabled={!canStart} onClick={onStart}>
+          <button className="primary" disabled={!canStart} onClick={onStart}>
             Start game
           </button>
         )}
