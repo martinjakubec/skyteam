@@ -643,3 +643,132 @@ button.primary:disabled {
 .log li {
   border-bottom-color: var(--border);
 }
+
+/* ---- Modules and Special Abilities ------------------------------------------- */
+
+/* Special Ability chips in the tray: flat, in words; an action is a small primary button. */
+.ability-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.7rem;
+}
+.ability-chip.active {
+  padding-right: 0.25rem;
+}
+.ability-chip button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+}
+.ability-chip button:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.ability-used {
+  color: var(--muted);
+  opacity: 1;
+  text-transform: none;
+}
+
+/* Wind: slate segments with light numbers; the printed start space light, the
+   current one yellow; a flat blue disc with a white plane. */
+.wind-space path {
+  fill: #232c3d;
+  stroke: #3a465c;
+  stroke-width: 1;
+}
+.wind-space text {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0;
+  fill: #cbd5e1;
+}
+.wind-space.start path {
+  fill: #dbe2ec;
+  stroke: #dbe2ec;
+}
+.wind-space.start text {
+  fill: #0f172a;
+}
+.wind-space.current path {
+  fill: #facc15;
+  stroke: #facc15;
+}
+.wind-space.current text {
+  fill: #2d2205;
+}
+.wind-disc {
+  fill: #1d4ed8;
+  stroke: none;
+}
+.wind-plane path {
+  fill: #ffffff;
+  stroke: none;
+}
+.wind-speed {
+  font-family: var(--font-body);
+  font-weight: 800;
+}
+.wind-speed.tail {
+  color: #fb923c;
+}
+.wind-speed.head {
+  color: #93c5fd;
+}
+.wind-hint {
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Ice Brakes: each pair on a thin icy outline instead of a frosted, glowing plate. */
+.ice-step {
+  background: rgba(125, 211, 252, 0.06);
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  box-shadow: none;
+}
+.ice-step.done {
+  opacity: 1;
+  border-color: rgba(34, 197, 94, 0.7);
+}
+.ice-caption {
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: #7dd3fc;
+}
+
+/* Spaces either crew may use (Concentration, Intern, Kerosene, the lower Ice
+   Brakes): both crews' colours, clearly, so the halves and the icon read. */
+.slot.neutral {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0 50%, rgba(245, 158, 11, 0.28) 50% 100%), var(--surface-2);
+  border-color: #3b4862;
+}
+.slot.neutral .slot-face {
+  color: #fff;
+}
+
+/* Small labels around the modules, in the same type as the rest. */
+.kerosene-hint,
+.intern-foot,
+.kg-label {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 1;
+}
