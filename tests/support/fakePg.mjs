@@ -153,6 +153,38 @@ Pool.prototype.tags = {
     };
     return rows([{ ...g, has_seed: !!g.seed, seeded_from: g.seeded_from ?? null, pilot_name: name("pilot"), copilot_name: name("copilot") }]);
   },
+  "users.list"(pattern, after) {
+    // LIKE with "!" as the escape: "!_" is a literal "_", a trailing "%" anything.
+    const prefix = pattern.replace(/%$/, "").replace(/!(.)/g, "$1");
+    const list = this.users
+      .filter((u) => u.username.startsWith(prefix) && u.username > after)
+      .sort((a, b) => (a.username < b.username ? -1 : 1))
+      .map((u) => ({ ...u, games: this.gamePlayers.filter((p) => p.user_id === u.id).length }));
+    return rows(list.slice(0, 51));
+  },
+  "users.one"(id) {
+    const u = this.user(id);
+    return rows(u ? [{ ...u, games: this.gamePlayers.filter((p) => p.user_id === id).length }] : []);
+  },
+  "roles.list"() {
+    return rows(
+      [...this.roles].sort((a, b) => a.rank - b.rank).map((r) => ({
+        ...r,
+        privileges: this.rolePrivileges.filter((p) => p.role === r.name).map((p) => p.privilege).sort(),
+      })),
+    );
+  },
+  "users.otherManagers"(id) {
+    const managers = new Set(this.rolePrivileges.filter((p) => p.privilege === "manage_users").map((p) => p.role));
+    return rows([{ n: this.users.filter((u) => u.id !== id && !u.disabled_at && managers.has(u.role)).length }]);
+  },
+  "users.setDisabled"(id, disabledAt, sessionsAfter) {
+    const u = this.user(id);
+    if (!u) return changed(0);
+    u.disabled_at = disabledAt;
+    if (sessionsAfter) u.sessions_after = sessionsAfter;
+    return changed(1);
+  },
   "resets.dropUnused"(userId) {
     this.resets = this.resets.filter((r) => r.user_id !== userId || r.used_at);
     return changed(1);

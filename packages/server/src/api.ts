@@ -1,5 +1,5 @@
 import express, { type Router } from "express";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import {
   ChangePasswordPayload,
   LoginPayload,
@@ -24,6 +24,7 @@ import {
 import { db } from "./db";
 import { gameRecord, myGames, parseCursor } from "./history";
 import { loadStats } from "./stats";
+import { deleteUser, listRoles, listUsers, resetLinkFor, updateUser } from "./adminUsers";
 import { clearedCookie, currentUser, issueSession, requirePrivilege, sessionCookie } from "./sessions";
 import { failureLimiter, limit, route } from "./routing";
 
@@ -176,6 +177,34 @@ export function apiRouter(): Router {
 
   r.get("/admin/stats", requirePrivilege("view_stats"), route(async (req, res) => {
     res.json(await loadStats({ includeSeeded: req.query.includeSeeded === "1" }));
+  }));
+
+  const manage = requirePrivilege("manage_users");
+  const UserChange = z
+    .object({ role: z.string().min(1).max(40).optional(), disabled: z.boolean().optional() })
+    .refine((c) => c.role !== undefined || c.disabled !== undefined, "Nothing to change.");
+
+  r.get("/admin/users", manage, route(async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const after = typeof req.query.after === "string" ? req.query.after : "";
+    res.json(await listUsers(q, after));
+  }));
+
+  r.get("/admin/roles", manage, route(async (_req, res) => void res.json({ roles: await listRoles() })));
+
+  r.patch("/admin/users/:id", manage, route(async (req, res) => {
+    const change = parse(UserChange, req.body, res);
+    if (!change) return;
+    res.json({ user: await updateUser(me(res)!.id, req.params.id, change) });
+  }));
+
+  r.post("/admin/users/:id/reset-link", manage, route(async (req, res) => {
+    res.json(await resetLinkFor(me(res)!.id, req.params.id));
+  }));
+
+  r.delete("/admin/users/:id", manage, route(async (req, res) => {
+    await deleteUser(me(res)!.id, req.params.id);
+    res.status(204).end();
   }));
 
   // An account error the route didn't answer: its status and message.
