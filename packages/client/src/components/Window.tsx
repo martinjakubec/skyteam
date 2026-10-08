@@ -50,13 +50,31 @@ export function Window({
             )),
           )}
         </div>
+        {/* The airplane seen from behind, banking with the Axis: its tail fin
+            points where the nose of a top-down plane would, so it tracks the
+            bank pips the same way. Centred on (50, 50), the pivot. */}
         <svg className="plane-svg" viewBox="0 0 100 100" style={{ transform: `rotate(${bank}deg)` }} aria-hidden="true">
-          <path
-            d="M50 5 L56 38 L94 60 L94 69 L56 56 L54 85 L68 93 L68 98 L50 91 L32 98 L32 93 L46 85 L44 56 L6 69 L6 60 L44 38 Z"
-            fill="#f6f8f3"
-            stroke="rgba(0,0,0,0.25)"
-            strokeWidth="1.5"
-          />
+          <g fill="#f6f8f3" stroke="rgba(0,0,0,0.28)" strokeWidth="1.2" strokeLinejoin="round">
+            {/* tail fin, then the small tail wings at its base */}
+            <path d="M47.6 43 L49 15.5 Q50 14 51 15.5 L52.4 43 Z" />
+            <path d="M46 45.6 L29 42 Q28 43.6 29.4 44.4 L46 48.6 Z" />
+            <path d="M54 45.6 L71 42 Q72 43.6 70.6 44.4 L54 48.6 Z" />
+            {/* wings, swept slightly up to the tips (dihedral) */}
+            <path d="M42 51 L6.5 45.4 Q5 46.6 6.4 47.8 L42 56.8 Z" />
+            <path d="M58 51 L93.5 45.4 Q95 46.6 93.6 47.8 L58 56.8 Z" />
+            {/* engines under the wings, on short pylons */}
+            <path d="M26.6 51 v3.2 M73.4 51 v3.2" fill="none" />
+            <circle cx="26.6" cy="58.6" r="5.2" />
+            <circle cx="73.4" cy="58.6" r="5.2" />
+            {/* the fuselage, tail-on */}
+            <ellipse cx="50" cy="50" rx="9" ry="9.6" />
+          </g>
+          {/* the engines' exhausts and the tail cone */}
+          <g fill="#64748b">
+            <circle cx="26.6" cy="58.6" r="2.6" />
+            <circle cx="73.4" cy="58.6" r="2.6" />
+            <circle cx="50" cy="50.4" r="2.4" />
+          </g>
         </svg>
       </div>
     </div>
