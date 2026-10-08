@@ -23,6 +23,7 @@ import {
 } from "./accounts";
 import { db } from "./db";
 import { gameRecord, myGames, parseCursor } from "./history";
+import { loadStats } from "./stats";
 import { clearedCookie, currentUser, issueSession, requirePrivilege, sessionCookie } from "./sessions";
 import { failureLimiter, limit, route } from "./routing";
 
@@ -169,6 +170,12 @@ export function apiRouter(): Router {
     const record = await gameRecord(req.params.id);
     if (!record) return void res.status(404).json({ error: "No game with that id." });
     res.json(record);
+  }));
+
+  // --- the admin pages ------------------------------------------------------------------
+
+  r.get("/admin/stats", requirePrivilege("view_stats"), route(async (req, res) => {
+    res.json(await loadStats({ includeSeeded: req.query.includeSeeded === "1" }));
   }));
 
   // An account error the route didn't answer: its status and message.

@@ -29,6 +29,7 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       env: (await import("../packages/server/src/env.ts")).env,
       history: await import("../packages/server/src/history.ts"),
       gameLog: await import("../packages/server/src/gameLog.ts"),
+      stats: await import("../packages/server/src/stats.ts"),
     };
   });
 
@@ -182,6 +183,74 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       // Deleting the account removes the link, keeps the game.
       expect(await mod.acc.deleteOwnAccount(user.id, "ten chars!")).toBe(true);
       expect((await mod.history.gameRecord(gid("n1"))).crews.pilot).toBe("Guest");
+    });
+  });
+
+  describe("statistics", () => {
+    const game = (id, extra) => {
+      const row = { id: id.padEnd(21, "x"), room_id: "r", format: 1, build: "dev", scenario: "YUL", modules: [], abilities: [], intern_order: "",
+        pilot: "human", copilot: "human", result: "won", loss_reason: null, rounds_reached: 7, moves: "D11112222",
+        started_at: "2026-10-06T10:00:00Z", ended_at: "2026-10-06T10:00:00Z", seed: "ab".repeat(16), seeded_from: null, ...extra };
+      const cols = Object.keys(row);
+      return q(`INSERT INTO games (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")})`, Object.values(row));
+    };
+
+    test("an empty database: every section empty, nothing divided by zero", async () => {
+      await q("DELETE FROM games");
+      const st = await mod.stats.loadStats();
+      expect(st.seededGames).toBe(0);
+      for (const key of Object.keys(mod.stats.STAT_QUERIES)) expect(st[key], key).toEqual([]);
+      expect(st.recentGames).toEqual([]);
+    });
+
+    test("the numbers, with same-dice games left out and then counted", async () => {
+      await game("s1", { result: "won", abilities: ["mastery"], modules: ["intern"], ended_at: "2026-10-06T10:01:00Z" });
+      await game("s2", { result: "lost", loss_reason: "Landing failed: Speed too high; Flaps not deployed.", abilities: ["mastery"], ended_at: "2026-10-06T10:02:00Z" });
+      await game("s3", { result: "lost", loss_reason: "Missed the turn: the airplane wasn't turned in time.", pilot: "bot:aviator", ended_at: "2026-10-06T10:03:00Z" });
+      await game("s4", { result: "abandoned", rounds_reached: 3, ended_at: "2026-10-06T10:04:00Z" });
+      await game("s5", { scenario: "KEF", result: "exited", rounds_reached: 2, ended_at: "2026-10-06T10:05:00Z" });
+      await game("s6", { scenario: "KEF", result: "reset", rounds_reached: 1, ended_at: "2026-10-06T10:06:00Z" });
+      await game("s7", { result: "won", seeded_from: "s1".padEnd(21, "x"), ended_at: "2026-10-06T10:07:00Z" });
+
+      const st = await mod.stats.loadStats();
+      expect(st.seededGames).toBe(1);
+      expect(st.playRate).toEqual([
+        { scenario: "YUL", games: 4, pct_of_all_games: 66.7, finished: 3, pct_of_finished_games: 100 },
+        { scenario: "KEF", games: 2, pct_of_all_games: 33.3, finished: 0, pct_of_finished_games: 0 },
+      ]);
+      expect(st.crashCauses).toEqual([
+        { scenario: "YUL", cause: "Landing failed", losses: 1, pct_of_airport_losses: 50 },
+        { scenario: "YUL", cause: "Missed the turn", losses: 1, pct_of_airport_losses: 50 },
+      ]);
+      expect(st.failedLandings).toEqual([
+        { scenario: "YUL", condition: "Flaps not deployed", failed_landings: 1 },
+        { scenario: "YUL", condition: "Speed too high", failed_landings: 1 },
+      ]);
+      expect(st.winRateByAirport).toEqual([{ scenario: "YUL", finished: 3, won: 1, lost: 2, win_pct: 33.3 }]);
+      expect(st.winRateByAbility).toEqual([{ ability: "mastery", finished: 2, win_pct: 50 }]);
+      expect(st.winRateByModule).toEqual([{ module: "intern", finished: 1, win_pct: 100 }]);
+      expect(st.humansVsBot).toEqual([
+        { scenario: "YUL", crew: "two humans", finished: 2, win_pct: 50 },
+        { scenario: "YUL", crew: "with the bot", finished: 1, win_pct: 0 },
+      ]);
+      expect(st.unfinished).toEqual([
+        { result: "abandoned", rounds_reached: 3, games: 1 },
+        { result: "exited", rounds_reached: 2, games: 1 },
+        { result: "reset", rounds_reached: 1, games: 1 },
+      ]);
+      expect(st.recentGames.map((g) => [g.id.slice(0, 2), g.seeded])).toEqual([["s7", true], ["s6", false], ["s5", false], ["s4", false], ["s3", false], ["s2", false], ["s1", false]]);
+      expect(st.recentGames[0].ended_at).toBe("2026-10-06T10:07:00.000Z");
+
+      const all = await mod.stats.loadStats({ includeSeeded: true });
+      expect(all.playRate[0]).toMatchObject({ scenario: "YUL", games: 5 });
+      expect(all.winRateByAirport).toEqual([{ scenario: "YUL", finished: 4, won: 2, lost: 2, win_pct: 50 }]);
+    });
+
+    test("every game seeded: the sections are empty, not an error", async () => {
+      await q("UPDATE games SET seeded_from = 'x'");
+      const st = await mod.stats.loadStats();
+      for (const key of Object.keys(mod.stats.STAT_QUERIES)) expect(st[key], key).toEqual([]);
+      expect(st.recentGames).toHaveLength(7);
     });
   });
 });
