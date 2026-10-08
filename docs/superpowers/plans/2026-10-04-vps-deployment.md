@@ -16,7 +16,7 @@ Internet ─► Caddy (80/443, Docker network "edge")
 
 - **Edge proxy:** a single Caddy container owns ports 80/443 and gets and renews Let's Encrypt certificates on its own. Each app gets one site file under `/srv/edge/sites/`. We picked Caddy over nginx at the edge so there's no certbot, no renewal cron and no manual WebSocket config.
 - **Apps:** each app is its own compose project in `/srv/apps/<app>/`. Only the app's entry container joins the external `edge` network, under a unique alias (`skyteam-web`). Everything else (`server`, `redis`) stays on the app's private default network, so service names never clash between apps.
-- **Same-origin API:** in production the browser talks to its own origin. SkyTeam's client nginx forwards `/rooms`, `/identity`, `/health` and `/socket.io/` to `server:3001`, so CORS doesn't come into play and the edge needs one upstream per app.
+- **Same-origin API:** in production the browser talks to its own origin. SkyTeam's client nginx forwards `/rooms`, `/identity`, `/health`, `/api` and `/socket.io/` to `server:3001`, so CORS doesn't come into play and the edge needs one upstream per app.
 - **Images:** GitHub Actions builds and pushes `ghcr.io/martinjakubec/skyteam-{server,client}:{<sha>,latest}`. The VPS only pulls; it never builds.
 - **Secrets:** `JWT_SECRET` lives only in `/srv/apps/skyteam/.env` on the VPS. GitHub holds only the SSH deploy credentials.
 
@@ -70,7 +70,7 @@ Internet ─► Caddy (80/443, Docker network "edge")
     # the server's rate limits key on it (TRUST_PROXY=2).
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
-    location ~ ^/(rooms|identity|health)(/|$) {
+    location ~ ^/(rooms|identity|health|api)(/|$) {
       proxy_pass $api;
     }
 
