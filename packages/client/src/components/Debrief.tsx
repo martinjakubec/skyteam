@@ -3,6 +3,7 @@ import type { Crew, RoomSnapshot } from "@skyteam/shared";
 import { useGame } from "../store";
 import { label } from "../util";
 import { seatNames } from "./Seats";
+import { Dot } from "./icons";
 
 const CREWS: Crew[] = ["pilot", "copilot"];
 
@@ -34,7 +35,7 @@ export function DebriefPanel({ snapshot, onReady }: { snapshot: RoomSnapshot; on
           <li key={crew} className={crew}>
             {/* The lobby's lights: green ready, red not yet. */}
             <span className="debrief-light" aria-hidden="true">
-              {debrief.ready[crew] ? "🟢" : "🔴"}
+              <Dot color={debrief.ready[crew] ? "#22c55e" : "#ef4444"} />
             </span>{" "}
             <span className="debrief-name">{names[crew] ?? label(crew)}</span>{" "}
             <span className="debrief-state">{debrief.ready[crew] ? "ready" : "not ready"}</span>

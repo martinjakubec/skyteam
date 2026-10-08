@@ -934,13 +934,25 @@ ul {
   color: #ffd34d;
   font-size: 0.85rem;
 }
-/* Reroll marker tucked into the cell's upper-right corner */
+/* Reroll marker tucked into the cell's upper-right corner, the same distance
+   from the top as from the right. */
 .alt-cell .reroll-dot {
   position: absolute;
-  top: 1px;
-  right: 3px;
-  font-size: 0.75rem;
-  line-height: 1;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  line-height: 0;
+}
+.reroll-dot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Cockpit window — signature: plane banks with live axis tilt */
@@ -1057,6 +1069,7 @@ ul {
 .plane-svg {
   position: absolute;
   inset: 6%;
+  overflow: visible; /* the bank pointer sits past the box, by the glass's edge */
   z-index: 2;
   transition: transform 0.5s ease;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
@@ -2086,7 +2099,8 @@ ul {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, calc(-50% - 3px)); /* the ✈ glyph sits low in its box */
+  transform: translate(-50%, -50%);
+  display: flex; /* the plane icon, centred in its cell */
   line-height: 1;
   color: #f6f8f3;
   font-size: 2.3rem;
@@ -3134,3 +3148,75 @@ ul {
 }
 
 
+
+
+/* ---- Icons (components/icons.tsx) ---------------------------------------------
+   SVGs in place of emoji and symbol characters: each is one text-size square
+   that sits on the text's line, so it can stand where a character stood. */
+.ico {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.14em;
+}
+.slot-icon .ico {
+  width: 100%;
+  height: 100%;
+  vertical-align: 0;
+}
+.coffee-count {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 1.15rem;
+}
+.reroll .ico,
+.ability-chip .ico {
+  margin: 0 0.15em;
+}
+.info-btn .ico {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.pick-caret .ico {
+  vertical-align: middle;
+}
+.pick-extras .ico {
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 1px;
+  color: #facc15;
+}
+.flight-log-close .ico,
+.tutorial-close .ico {
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: middle;
+}
+.pip--x .ico {
+  vertical-align: middle;
+}
+.traffic-plane .ico {
+  display: block;
+}
+.appr-cell .rwy .ico {
+  display: block;
+  width: 1.3rem;
+  height: 1.3rem;
+}
+.replay-controls button .ico {
+  width: 1.15rem;
+  height: 1.15rem;
+  vertical-align: middle;
+}
+.conn .ico {
+  vertical-align: -0.12em;
+}
+.seats .ico {
+  margin-right: 1px;
+}
+.kg-x {
+  stroke: var(--ink);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}

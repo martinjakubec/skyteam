@@ -142,10 +142,10 @@ describe("landing page", () => {
     const sock = await inRoom();
     expect(sock.last("room:join")!.args[0]).toMatchObject({ roomId: "room-1", token: "tok-1" });
     expect(window.location.search).toBe("?join=INVITE01");
-    expect(screen.getByText("● linked")).toBeTruthy();
+    expect(screen.getByText("linked")).toBeTruthy();
     expect(screen.getByDisplayValue(/\?join=INVITE01$/)).toBeTruthy(); // the invite box
     sock.serve("disconnect");
-    expect(screen.getByText("○ reconnecting")).toBeTruthy();
+    expect(screen.getByText("reconnecting")).toBeTruthy();
   });
 
   test("play solo: sends the chosen seat", async () => {
@@ -198,12 +198,16 @@ describe("landing page", () => {
 describe("lobby", () => {
   test("seats: who flies what, who's ready, who's watching", async () => {
     const sock = await inRoom(snapshot({ seats: [{ playerId: ME, role: "host", ready: false, connection: "connected", name: "Ann" }], observerCount: 2 }));
-    expect(screen.getByText(/Pilot: 👑 Ann \(you\)/)).toBeTruthy();
+    expect(screen.getByText(/Pilot: Ann \(you\)/)).toBeTruthy();
+    expect(within(screen.getByText(/Pilot: Ann/).closest("li")!).getByRole("img", { name: "Host" })).toBeTruthy();
     expect(screen.getByText("Waiting for a second player…")).toBeTruthy();
     expect(screen.getByText("2 watching")).toBeTruthy();
     sock.serve("room:state", snapshot({ seats: [{ playerId: ME, role: "host", ready: false, connection: "connected" }, { ...guest, connection: "disconnected" }], hostCrew: "copilot" }));
-    expect(screen.getByText(/Co-Pilot: 👑/)).toBeTruthy();
-    expect(screen.getByText("🔴 ready")).toBeTruthy();
+    const coPilot = screen.getByText(/Co-Pilot:/).closest("li")!;
+    expect(within(coPilot).getByRole("img", { name: "Host" })).toBeTruthy();
+    const pilot = screen.getByText(/^Pilot:/).closest("li")!;
+    expect(within(pilot).getByRole("img", { name: "Disconnected" })).toBeTruthy();
+    expect(within(pilot).getByText("ready")).toBeTruthy();
   });
 
   test("name: saved through the socket and remembered in the browser; a refusal is shown", async () => {
@@ -259,7 +263,7 @@ describe("lobby", () => {
     expect(screen.getByText("This airport has no Special Abilities.")).toBeTruthy();
   });
 
-  test("ℹ️ opens a module's tutorial; the lobby notice and solo rooms show no invite box", async () => {
+  test("the info button opens a module's tutorial; the lobby notice and solo rooms show no invite box", async () => {
     const sock = await inRoom();
     fireEvent.click(screen.getByRole("button", { name: "How Wind works" }));
     expect(within(screen.getByRole("dialog")).getByRole("heading", { level: 2 }).textContent).toMatch(/Wind/);
@@ -268,7 +272,7 @@ describe("lobby", () => {
     sock.serve("room:state", snapshot({ notice: "The Co-Pilot ended the game.", seats: [{ playerId: ME, role: "host", ready: false, connection: "connected" }, { ...guest, bot: "aviator" }] }));
     expect(screen.getByText("The Co-Pilot ended the game.")).toBeTruthy();
     expect(screen.queryByDisplayValue(/\?join=/)).toBe(null);
-    expect(screen.getByText(/🤖/)).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Bot" })).toBeTruthy();
   });
 
   test("a refusal is shown; storage down from the socket shows the 500 page", async () => {
@@ -448,8 +452,9 @@ describe("between rounds", () => {
     expect(sock.last("round:ready")!.args[0]).toEqual({ ready: true });
     sock.serve("room:state", between({ ready: { pilot: true, copilot: false } }));
     // Each crew: a green or red light, the name in full, and the word for it.
-    const marks = within(panel()).getAllByRole("listitem").map((li) => li.textContent);
-    expect(marks).toEqual(["🟢 Ann ready", "🔴 Bob not ready"]);
+    const items = within(panel()).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent!.trim())).toEqual(["Ann ready", "Bob not ready"]);
+    expect(items.map((li) => li.querySelector(".debrief-light circle")!.getAttribute("fill"))).toEqual(["#22c55e", "#ef4444"]);
     fireEvent.click(within(panel()).getByRole("button", { name: "Wait" }));
     expect(sock.last("round:ready")!.args[0]).toEqual({ ready: false });
     // The dice are dealt: the panel goes, the tray is back.

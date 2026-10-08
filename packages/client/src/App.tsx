@@ -11,6 +11,7 @@ import { Seats } from "./components/Seats";
 import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
 import { AccountChip } from "./account/AccountChip";
+import { Dot } from "./components/icons";
 
 export function App() {
   const {
@@ -87,7 +88,7 @@ export function App() {
         </nav>
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <p className="muted">Land the plane together. One Pilot, one Co-Pilot, no talking.</p>
-        <button disabled={busy} onClick={() => onCreate()}>
+        <button className="primary" disabled={busy} onClick={() => onCreate()}>
           Create a room
         </button>
         <p className="muted">Open an invite link to join an existing room.</p>
@@ -103,7 +104,7 @@ export function App() {
               </label>
             ))}
           </fieldset>
-          <button disabled={busy} onClick={() => onCreate({ crew: soloCrew })}>
+          <button className="primary" disabled={busy} onClick={() => onCreate({ crew: soloCrew })}>
             Play solo
           </button>
         </section>
@@ -130,7 +131,7 @@ export function App() {
           {/* In a room the account pages open in a new tab: the game here goes on. */}
           {!inGame && <AccountChip newTab />}
           <span className={`conn ${connected ? "on" : "off"}`}>
-            {connected ? "● linked" : "○ reconnecting"}
+            <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
           </span>
           {inGame && snapshot?.you.kind === "player" && (
             <button

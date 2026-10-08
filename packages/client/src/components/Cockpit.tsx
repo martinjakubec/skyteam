@@ -27,6 +27,7 @@ import { SpeedGauge } from "./SpeedGauge";
 import { Window } from "./Window";
 import type { CockpitSection } from "./cockpitSections";
 import { seatNames } from "./Seats";
+import { Coffee, Dice } from "./icons";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
@@ -600,14 +601,15 @@ export function Cockpit({
                     dice
                     target={{ kind: "concentration", slot: i }}
                     taken={filled}
-                    label={filled ? face(cell.value) : "☕"}
+                    label={filled ? face(cell.value) : ""}
+                    icon={<Coffee />}
                     onClick={() => place({ kind: "concentration", slot: i })}
                     enabled={canFree(!filled) && !holdingToken}
                   />
                 );
               })}
               <span className="coffee-count" title="Coffee tokens">
-                {"☕".repeat(game.coffee) || "—"}
+                {game.coffee ? Array.from({ length: game.coffee }, (_, i) => <Coffee key={i} />) : "—"}
               </span>
             </div>
           </Module>
@@ -805,12 +807,12 @@ export function Cockpit({
                     </span>
                     {iMustRespond ? (
                       <button className="reroll" onClick={confirmReroll}>
-                        {rerollPick.length ? `Reroll ${rerollPick.length} 🎲` : "Skip"}
+                        {rerollPick.length ? <>Reroll {rerollPick.length} <Dice /></> : "Skip"}
                       </button>
                     ) : (
                       <>
                         <button className="reroll" disabled={rerollPick.length === 0} onClick={confirmReroll}>
-                          Reroll {rerollPick.length} 🎲
+                          Reroll {rerollPick.length} <Dice />
                         </button>
                         <button onClick={cancelReroll}>Cancel</button>
                       </>
@@ -830,7 +832,7 @@ export function Cockpit({
                     )}
                     {vis("reroll") && (
                       <button className="reroll" disabled={game.rerollTokens <= 0 || !myTurn || myDice.every((d) => d.placed)} onClick={startReroll}>
-                        Reroll 🎲 ×{game.rerollTokens}
+                        Reroll <Dice /> ×{game.rerollTokens}
                       </button>
                     )}
                   </>

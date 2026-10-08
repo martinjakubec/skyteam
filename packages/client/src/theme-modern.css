@@ -1,0 +1,852 @@
+/*
+ * The modern theme: a flat, dark look over the cockpit's layout. Loaded after
+ * styles.css, it changes only colours, surfaces, shadows and type — never
+ * positions or sizes, which styles.css tunes to the pixel. The tokens on :root
+ * carry most of it; the rules below replace the old material (gradients,
+ * bevels, rivets, the condensed display font) where a rule hard-codes it.
+ */
+
+:root {
+  color-scheme: dark;
+  /* Surfaces, from the page back to the raised panels. */
+  --bg: #0b0f17;
+  --surface: #131a27;
+  --surface-2: #19212f;
+  --well: #0e1420;
+  --border: #232c3d;
+  --border-strong: #2f3a4f;
+  --text: #e6e9f0;
+  --muted: #8b93a7;
+  --focus: #facc15;
+  /* The crews. */
+  --pilot: #3b82f6;
+  --pilot-soft: rgba(59, 130, 246, 0.16);
+  --pilot-line: rgba(96, 165, 250, 0.55);
+  --copilot: #f59e0b;
+  --copilot-soft: rgba(245, 158, 11, 0.16);
+  --copilot-line: rgba(251, 191, 36, 0.55);
+  /* The old tokens, re-pointed (styles.css reads these). */
+  --panel: var(--surface);
+  --panel-2: var(--surface);
+  --panel-edge: var(--border);
+  --recess: var(--well);
+  --recess-2: var(--well);
+  --metal: var(--text);
+  --metal-2: var(--muted);
+  --blue: var(--pilot);
+  --blue-d: #1d4ed8;
+  --orange: var(--copilot);
+  --orange-d: #b45309;
+  --green: #22c55e;
+  --warn: #ef4444;
+  --ink: var(--text);
+  --paper: var(--text);
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --die-bevel: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Type ---------------------------------------------------------------- */
+
+.wordmark {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #fff;
+  text-shadow: none;
+}
+label,
+.setup-label,
+.module-title,
+.window-cap,
+.dial-cap,
+.kg-label,
+.intern-foot,
+.ice-caption,
+.wind-hint,
+.kerosene-hint,
+.log-divider,
+.debrief-crew li,
+.opp,
+.ability-chip,
+.picker-band,
+.tutorial-count {
+  font-family: var(--font-body);
+  letter-spacing: 0.04em;
+  text-shadow: none;
+}
+label {
+  color: var(--muted);
+  opacity: 1;
+  font-weight: 500;
+  font-size: 0.72rem;
+}
+.setup-label,
+.module-title {
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 1;
+}
+.tone-blue .module-title {
+  color: #93c5fd;
+}
+.tone-orange .module-title {
+  color: #fcd34d;
+}
+.muted,
+.center .muted {
+  color: var(--muted);
+  opacity: 1;
+}
+.conn {
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.8rem;
+}
+
+/* ---- Surfaces ------------------------------------------------------------- */
+
+.riveted::before {
+  display: none;
+}
+.material,
+.panel,
+.flight-log,
+.axis-dial,
+.rail .module,
+.deck .module,
+.hand,
+.tray .log,
+.debrief,
+.tutorial-panel,
+.tutorial-confirm {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.panel,
+.flight-log,
+.hand,
+.tray .log,
+.debrief {
+  border-radius: 14px;
+}
+.rail .module,
+.deck .module {
+  border-radius: 12px;
+}
+.notice {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.seats li {
+  border-bottom-color: var(--border);
+}
+
+/* ---- Controls ------------------------------------------------------------- */
+
+button {
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+button:hover:not(:disabled) {
+  filter: none;
+  background: #212b3d;
+  border-color: #3b4862;
+}
+button:focus-visible {
+  outline-color: var(--focus);
+}
+.reset-btn,
+.exit-btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.reset-btn {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+.reset-btn:hover {
+  filter: none;
+  background: rgba(239, 68, 68, 0.24);
+}
+.exit-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+input {
+  background: var(--well);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+}
+input:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+
+/* ---- Lobby ---------------------------------------------------------------- */
+
+.flight-log-lines {
+  background: var(--well);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.log-who {
+  font-family: var(--font-body);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.picker-trigger {
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  box-shadow: inset 5px 0 0 var(--diff-solid);
+}
+.pick-code {
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+.picker-frame {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.picker-band {
+  box-shadow: none;
+}
+
+/* ---- The approach and altitude tracks --------------------------------------- */
+
+.approach-tag,
+.alt-tag {
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  box-shadow: none;
+  border-radius: 6px;
+}
+.approach-tag {
+  background: #a3e635;
+  color: #1a2e05;
+}
+.approach-tag.rt-tag {
+  background: #fb923c;
+}
+.alt-tag {
+  background: #60a5fa;
+  color: #0b1a33;
+}
+.approach-track {
+  background: var(--well);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.appr-cell {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.appr-cell.here {
+  border-color: #60a5fa;
+  box-shadow: inset 0 0 0 1px #60a5fa;
+}
+.appr-cell.airport {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.7);
+}
+.appr-cell.alt-cell {
+  background: #111a2b;
+}
+.appr-cell.alt-cell.now {
+  background: var(--pilot);
+  box-shadow: none;
+}
+.alt-feet {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.turn-tab {
+  box-shadow: none;
+}
+.turn-tab .turn-marks {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.appr-cell .me,
+.traffic-dice {
+  text-shadow: none;
+  box-shadow: none;
+}
+
+/* ---- The window, the Axis dial and the speed gauge ---------------------------- */
+
+.window {
+  box-shadow: 0 0 0 2px var(--border-strong);
+}
+.window.danger {
+  box-shadow: 0 0 0 2px var(--warn);
+}
+.horizon {
+  background: linear-gradient(180deg, #7cc4f0 0 50%, #d9b26c 50% 100%);
+}
+.plane-glyph {
+  text-shadow: none;
+}
+.pip--dot,
+.pip--center {
+  box-shadow: none;
+}
+.pip--x {
+  text-shadow: none;
+}
+.dial-face {
+  background:
+    repeating-conic-gradient(from -90deg, rgba(15, 23, 42, 0.35) 0 1deg, transparent 1deg 15deg),
+    #dfe4ec;
+  box-shadow: none;
+}
+.axis-dial.danger .dial-face {
+  box-shadow: inset 0 0 0 2px var(--warn);
+}
+.dial-plane {
+  text-shadow: none;
+}
+.dial-read {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+.gauge-track {
+  stroke: #263044;
+  filter: none;
+}
+.gauge-num {
+  font-family: var(--font-body);
+  font-weight: 600;
+  fill: #cbd5e1;
+}
+.aero-dot {
+  filter: none;
+}
+.engine-plus {
+  font-family: var(--font-body);
+}
+
+/* ---- Spaces: empty wells, the crews' tiles, and seated dice ---------------- */
+
+.slot {
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: none;
+  color: var(--text);
+}
+.slot.blue {
+  background: var(--pilot-soft);
+  border-color: var(--pilot-line);
+  color: #dbeafe;
+}
+.slot.orange {
+  background: var(--copilot-soft);
+  border-color: var(--copilot-line);
+  color: #fef3c7;
+}
+.slot.neutral {
+  background:
+    linear-gradient(90deg, var(--pilot-soft) 0 50%, var(--copilot-soft) 50% 100%),
+    var(--well);
+  border-color: var(--border-strong);
+}
+.slot-face {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.slot-icon {
+  color: rgba(255, 255, 255, 0.55);
+}
+.slot.green {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.75);
+  box-shadow: none;
+}
+.slot.taken:not(.green):not(.dice) {
+  box-shadow: none;
+}
+.slot.open {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.slot:disabled {
+  box-shadow: none;
+}
+/* Dice: flat, solid, crisp numbers. */
+.die,
+.drag-die,
+.slot.dice.taken,
+.slot.held {
+  font-family: var(--font-body);
+  font-weight: 800;
+  border: none;
+  border-radius: 12px;
+  text-shadow: none;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.slot.dice.taken .slot-face,
+.slot.held .slot-face {
+  font-family: var(--font-body);
+  font-weight: 800;
+  text-shadow: none;
+}
+.die.pilot,
+.drag-die.pilot,
+.slot.dice.taken.blue,
+.slot.held.blue {
+  background: var(--pilot);
+}
+.die.copilot,
+.drag-die.copilot,
+.slot.dice.taken.orange,
+.slot.held.orange {
+  background: var(--copilot);
+}
+.die.facedown {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+}
+.die.intern-die,
+.drag-die.intern,
+.intern-token,
+.slot.taken.intern:not(.dice) {
+  background: #f3ecd8;
+  box-shadow: none;
+}
+.die.traffic-die,
+.drag-die.traffic,
+.slot.taken.traffic:not(.dice) {
+  background: #eef2f7;
+  box-shadow: none;
+}
+.intern-token.next-pilot {
+  box-shadow: 0 0 0 3px var(--pilot);
+}
+.intern-token.next-copilot {
+  box-shadow: 0 0 0 3px var(--copilot);
+}
+.intern-token.next-pilot.next-copilot {
+  box-shadow: 0 0 0 3px var(--pilot), 0 0 0 6px var(--copilot);
+}
+.die.sel {
+  outline-color: var(--focus);
+}
+.drop-ring {
+  box-shadow: inset 0 0 0 3px var(--focus);
+}
+
+/* Switches under the spaces: a slim pill, green when on. */
+.switch {
+  background: #273146;
+  box-shadow: none;
+}
+.switch::after {
+  background: #cbd5e1;
+  box-shadow: none;
+}
+.switch.on {
+  background: var(--green);
+  box-shadow: none;
+}
+
+/* ---- The callout, the timer, the debrief ------------------------------------ */
+
+.callout {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  color: var(--text);
+}
+.callout.good {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.6);
+  color: #bbf7d0;
+}
+.callout.bad {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fecaca;
+}
+.rt-bar {
+  background: var(--green);
+}
+.realtime.low .rt-bar {
+  background: #facc15;
+}
+.realtime.critical .rt-bar {
+  background: var(--warn);
+}
+.rt-text {
+  font-family: var(--font-body);
+  text-shadow: none;
+}
+.debrief-count {
+  font-family: var(--font-body);
+}
+.debrief-ready {
+  background: var(--green);
+  color: #052e16;
+}
+.ice-step {
+  box-shadow: none;
+}
+
+/* ---- Pages beside the game (accounts, history) on the dark background -------- */
+
+.account-chip a,
+.page-links a,
+.center .form-links a {
+  color: #93c5fd;
+}
+.page-title {
+  color: var(--text);
+}
+.data-table a {
+  color: #93c5fd;
+}
+.account-chip,
+.page-links a,
+.page-title,
+.data-table th,
+.tag,
+.replay-pos,
+.server-down-code,
+.tutorial-head h2,
+.tutorial-confirm h3 {
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+.account-menu {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+}
+.tag {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+/* ---- Second pass ------------------------------------------------------------- */
+
+/* The main action on a screen. */
+button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+button.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+button.primary:disabled {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+/* Options read as text, not as engraved labels. */
+.setup-modules label,
+.setup-abilities label,
+.solo-options label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.setup-modules input[type="checkbox"],
+.setup-abilities input[type="checkbox"],
+.solo-options input[type="radio"] {
+  accent-color: #3b82f6;
+}
+.account-chip {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+.account-chip a {
+  text-decoration: none;
+}
+.account-chip a:hover {
+  text-decoration: underline;
+}
+
+/* The co-pilot's tiles: a clearer amber than a muddy brown. */
+:root {
+  --copilot-soft: rgba(245, 158, 11, 0.2);
+  --copilot-line: rgba(251, 191, 36, 0.7);
+  --pilot-soft: rgba(59, 130, 246, 0.2);
+  --pilot-line: rgba(96, 165, 250, 0.7);
+}
+
+/* Tray dice: a placed die leaves an empty spot; while it isn't your turn your
+   dice are outlined in your crew's colour instead of fading to a murky brown. */
+.die.spent {
+  opacity: 1;
+  background: var(--surface-2);
+  color: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.die.pilot:disabled:not(.spent) {
+  opacity: 1;
+  background: transparent;
+  color: #93c5fd;
+  box-shadow: inset 0 0 0 2px var(--pilot);
+}
+.die.copilot:disabled:not(.spent) {
+  opacity: 1;
+  background: transparent;
+  color: #fcd34d;
+  box-shadow: inset 0 0 0 2px var(--copilot);
+}
+/* Lighter tints read as the crews' colours, not as brown or navy. */
+:root {
+  --pilot-soft: rgba(59, 130, 246, 0.13);
+  --copilot-soft: rgba(251, 191, 36, 0.1);
+}
+.log li {
+  border-bottom-color: var(--border);
+}
+
+/* ---- Modules and Special Abilities ------------------------------------------- */
+
+/* Special Ability chips in the tray: flat, in words; an action is a small primary button. */
+.ability-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.7rem;
+}
+.ability-chip.active {
+  padding-right: 0.25rem;
+}
+.ability-chip button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+}
+.ability-chip button:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.ability-used {
+  color: var(--muted);
+  opacity: 1;
+  text-transform: none;
+}
+
+/* Wind: slate segments with light numbers; the printed start space light, the
+   current one yellow; a flat blue disc with a white plane. */
+.wind-space path {
+  fill: #232c3d;
+  stroke: #3a465c;
+  stroke-width: 1;
+}
+.wind-space text {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0;
+  fill: #cbd5e1;
+}
+.wind-space.start path {
+  fill: #dbe2ec;
+  stroke: #dbe2ec;
+}
+.wind-space.start text {
+  fill: #0f172a;
+}
+.wind-space.current path {
+  fill: #facc15;
+  stroke: #facc15;
+}
+.wind-space.current text {
+  fill: #2d2205;
+}
+.wind-disc {
+  fill: #1d4ed8;
+  stroke: none;
+}
+.wind-plane path {
+  fill: #ffffff;
+  stroke: none;
+}
+.wind-speed {
+  font-family: var(--font-body);
+  font-weight: 800;
+}
+.wind-speed.tail {
+  color: #fb923c;
+}
+.wind-speed.head {
+  color: #93c5fd;
+}
+.wind-hint {
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Ice Brakes: each pair on a thin icy outline instead of a frosted, glowing plate. */
+.ice-step {
+  background: rgba(125, 211, 252, 0.06);
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  box-shadow: none;
+}
+.ice-step.done {
+  opacity: 1;
+  border-color: rgba(34, 197, 94, 0.7);
+}
+.ice-caption {
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: #7dd3fc;
+}
+
+/* Spaces either crew may use (Concentration, Intern, Kerosene, the lower Ice
+   Brakes): both crews' colours, clearly, so the halves and the icon read. */
+.slot.neutral {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0 50%, rgba(245, 158, 11, 0.28) 50% 100%), var(--surface-2);
+  border-color: #3b4862;
+}
+.slot.neutral .slot-face {
+  color: #fff;
+}
+
+/* Small labels around the modules, in the same type as the rest. */
+.kerosene-hint,
+.intern-foot,
+.kg-label {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Turns: tabs that grow out of the bottom of the approach track — the track's
+   own fill and outline, no top edge, and curved shoulders where they meet it. */
+.turn-tab {
+  margin-top: -1px; /* over the track's bottom border, which it replaces */
+  padding: 3px 5px 5px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  box-shadow: none;
+}
+/* The shoulders: each covers the top of the tab's side border as well, so the
+   outline runs from the track, round the curve and down the side as one line
+   (no stub of the side border above the curve). */
+.turn-tab::before,
+.turn-tab::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+}
+.turn-tab::before {
+  left: -9px;
+  background: radial-gradient(circle at 0 100%, transparent 8px, var(--border) 8px 9px, var(--well) 9px);
+}
+.turn-tab::after {
+  right: -9px;
+  background: radial-gradient(circle at 100% 100%, transparent 8px, var(--border) 8px 9px, var(--well) 9px);
+}
+.turn-tab .turn-marks {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: none;
+}
+.turn-ok {
+  stroke: #4ade80;
+}
+.turn-ok.level {
+  fill: #4ade80;
+}
+.turn-no {
+  stroke: #f87171;
+}
+
+/* Altitude cells: one even outline (no leftover blue top edge); the reroll icon
+   in the theme's yellow. */
+.appr-cell.alt-cell {
+  border-color: var(--border);
+}
+.appr-cell.alt-cell.now {
+  border-color: #60a5fa;
+}
+.reroll-dot {
+  color: #facc15;
+}
+.alt-cell.now .reroll-dot {
+  color: #fef08a;
+}
+
+/* Icons in the theme's colours. */
+.info-btn {
+  color: #93c5fd;
+}
+.ice-caption .ico {
+  color: #7dd3fc;
+}
+.kg-x {
+  stroke: var(--muted);
+}
+
+/* The window's plane: a light, flat shadow — just enough against the sky. */
+.plane-svg {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
+}

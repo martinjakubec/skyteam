@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Warning } from "./icons";
 
 export function Module({
   title,
@@ -18,7 +19,7 @@ export function Module({
     <div className={`module tone-${tone}${className ? ` ${className}` : ""}`}>
       <span className="module-title">
         {title}
-        {mandatory && <span className="req" title="Mandatory each round">⚠</span>}
+        {mandatory && <span className="req" title="Mandatory each round"><Warning /></span>}
       </span>
       {children}
     </div>

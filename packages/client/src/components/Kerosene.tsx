@@ -4,6 +4,7 @@ import type { Crew } from "../types";
 import { face } from "../util";
 import { Module } from "./Module";
 import { Slot } from "./Slot";
+import { FuelPump } from "./icons";
 
 /**
  * Kerosene module (advanced). On wide screens it runs down the left of the
@@ -48,7 +49,8 @@ export function Kerosene({
               noSwitch
               dice
               taken={seated !== null}
-              label={seated ? face(seated.value) : "⛽"}
+              label={seated ? face(seated.value) : ""}
+              icon={<FuelPump />}
               target={{ kind: "kerosene" }}
               onClick={onClick}
               enabled={enabled}
@@ -91,7 +93,7 @@ function KeroseneGauge({
   const H = vertical ? LEN : 44;
   const tubeW = 14;
   const tubeAt = vertical ? 14 : 4; // the tube's cross-axis offset (x if vertical, y if horizontal)
-  const start = vertical ? LEN - 8 : 8; // track position of 0 (✕)
+  const start = vertical ? LEN - 8 : 8; // track position of 0 (the empty mark)
   const end = vertical ? 6 : LEN - 10; // track position of KEROSENE_START
 
   const lvl = Math.max(0, Math.min(KEROSENE_START, level));
@@ -156,17 +158,31 @@ function KeroseneGauge({
             {v > 0 && v < KEROSENE_START && <line className="kg-rung" {...across(p(v), tubeAt + 2, tubeAt + tubeW - 2)} />}
             {major &&
               (vertical ? (
-                <text className="kg-label" x={W - 2} y={p(v)} textAnchor="end" dominantBaseline="central">
-                  {v === 0 ? "✕" : v}
-                </text>
+                v === 0 ? (
+                  <EmptyMark x={W - 6} y={p(v)} />
+                ) : (
+                  <text className="kg-label" x={W - 2} y={p(v)} textAnchor="end" dominantBaseline="central">
+                    {v}
+                  </text>
+                )
               ) : (
-                <text className="kg-label" x={p(v)} y={H - 2} textAnchor="middle">
-                  {v === 0 ? "✕" : v}
-                </text>
+                v === 0 ? (
+                  <EmptyMark x={p(v)} y={H - 5.5} />
+                ) : (
+                  <text className="kg-label" x={p(v)} y={H - 2} textAnchor="middle">
+                    {v}
+                  </text>
+                )
               ))}
           </g>
         );
       })}
     </svg>
   );
+}
+
+/** The gauge's "empty" mark: a small cross drawn in the gauge's own SVG (a ✕
+ *  character would come from whatever font has it, at its own size). */
+function EmptyMark({ x, y }: { x: number; y: number }) {
+  return <path className="kg-x" d={`M${x - 3} ${y - 3}l6 6M${x + 3} ${y - 3}l-6 6`} />;
 }

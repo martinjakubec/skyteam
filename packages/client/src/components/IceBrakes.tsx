@@ -2,6 +2,7 @@ import { ICE_BRAKE_VALUES } from "@skyteam/shared";
 import type { Crew } from "../types";
 import { face } from "../util";
 import { Slot } from "./Slot";
+import { Snowflake } from "./icons";
 
 /** One Ice Brakes step this round: the Pilot's top die and the bottom die (either crew). */
 export interface IceBrakeStep {
@@ -78,7 +79,7 @@ export function IceBrakes({
           );
         })}
       </div>
-      <span className="ice-caption">❄ Ice Brakes — pairs of the same value</span>
+      <span className="ice-caption"><Snowflake /> Ice Brakes — pairs of the same value</span>
     </div>
   );
 }

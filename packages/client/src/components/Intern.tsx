@@ -3,6 +3,7 @@ import type { Crew } from "../types";
 import { face } from "../util";
 import { Module } from "./Module";
 import { Slot } from "./Slot";
+import { GradCap } from "./icons";
 
 /**
  * Intern module (advanced) — sits under Concentration. A row of face-up Intern
@@ -37,7 +38,8 @@ export function Intern({
       dice
       taken={trainers[crew] !== null}
       target={{ kind: "intern", side: crew }}
-      label={trainers[crew] !== null ? face(trainers[crew]) : "🎓"}
+      label={trainers[crew] !== null ? face(trainers[crew]) : ""}
+      icon={<GradCap />}
       onClick={() => onTrain(crew)}
       enabled={canTrain(crew)}
     />
