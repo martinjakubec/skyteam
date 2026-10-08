@@ -64,6 +64,10 @@ export function Window({
             <path d="M48.8 44 L49.45 30.8 A0.6 0.6 0 0 1 50.55 30.8 L51.2 44 Z" />
             {/* the fuselage, tail-on */}
             <ellipse cx="50" cy="50.6" rx="8" ry="7.6" />
+            {/* the bank pointer: just inside the glass's top edge (above the
+                pitch ladder, past the drawing's box — the window clips it),
+                turning with the plane, so the tilt reads at a glance */}
+            <path d="M50 -4 L53.8 2.4 Q54.2 3.2 53.3 3.2 L46.7 3.2 Q45.8 3.2 46.2 2.4 Z" />
           </g>
         </svg>
       </div>

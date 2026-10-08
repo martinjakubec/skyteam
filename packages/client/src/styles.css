@@ -1069,6 +1069,7 @@ ul {
 .plane-svg {
   position: absolute;
   inset: 6%;
+  overflow: visible; /* the bank pointer sits past the box, by the glass's edge */
   z-index: 2;
   transition: transform 0.5s ease;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
