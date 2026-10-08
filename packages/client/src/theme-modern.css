@@ -772,3 +772,47 @@ button.primary:disabled {
   color: var(--muted);
   opacity: 1;
 }
+
+/* Turns: tabs that grow out of the bottom of the approach track — the track's
+   own fill and outline, no top edge, and curved shoulders where they meet it. */
+.turn-tab {
+  margin-top: -1px; /* over the track's bottom border, which it replaces */
+  padding: 3px 5px 5px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  box-shadow: none;
+}
+.turn-tab::before,
+.turn-tab::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.turn-tab::before {
+  left: -9px;
+  background: radial-gradient(circle at 0 100%, transparent 7px, var(--border) 7px 8px, var(--well) 8px);
+}
+.turn-tab::after {
+  right: -9px;
+  background: radial-gradient(circle at 100% 100%, transparent 7px, var(--border) 7px 8px, var(--well) 8px);
+}
+.turn-tab .turn-marks {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: none;
+}
+.turn-ok {
+  stroke: #4ade80;
+}
+.turn-ok.level {
+  fill: #4ade80;
+}
+.turn-no {
+  stroke: #f87171;
+}
