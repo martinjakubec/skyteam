@@ -3112,3 +3112,23 @@ ul {
   font-size: 0.85rem;
   color: inherit;
 }
+.same-dice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.same-dice p {
+  margin: 0;
+}
+.same-dice a {
+  color: #ffd38a;
+}
+.fly-same {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 28rem;
+}
+.fly-same p {
+  margin: 0;
+}

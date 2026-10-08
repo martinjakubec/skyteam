@@ -23,6 +23,7 @@ export function App() {
     setReady,
     setName,
     setSetup,
+    freshDice,
     startGame,
     resetGame,
     exitGame,
@@ -165,7 +166,7 @@ export function App() {
             {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
             <Seats snapshot={snapshot} />
             {snapshot && inLobby && (
-              <Lobby snapshot={snapshot} onReady={setReady} onName={setName} onSetup={setSetup} onStart={startGame} />
+              <Lobby snapshot={snapshot} onReady={setReady} onName={setName} onSetup={setSetup} onStart={startGame} onFreshDice={freshDice} />
             )}
           </div>
           {/* The crew's chat — not in a solo room: the bot doesn't talk. */}
