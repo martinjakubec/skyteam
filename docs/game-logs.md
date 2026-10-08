@@ -13,6 +13,10 @@ the end are logged too, flagged `abandoned`, `exited` or `reset`.
 | `exited` | Exit to lobby during a game. |
 | `reset` | The host restarted the game. |
 
+Each row also has a `seed` (the game's secret seed, written when it ends) and a
+`seeded_from` (the game whose dice it was flown on, or null). `game_players`
+links a game to the accounts that flew it. See [accounts.md](accounts.md).
+
 The design and the full format are in
 [the spec](superpowers/specs/2026-10-07-game-logs-design.md). The code list
 (the pairing table) is `MOVE_CODES` in `packages/shared/src/log/codes.ts`, and
@@ -62,6 +66,11 @@ A full game is about 300 characters.
 5. **Win rate per Special Ability and per module.**
 6. **Two humans against crews with the bot.**
 7. **Where unfinished games stop.**
+
+They're also on the statistics dashboard (`/admin`, for accounts with the
+`view_stats` privilege). There, games flown on an earlier game's dice are left out
+unless asked for. `packages/server/src/stats.ts` holds the queries, and a test
+keeps them in step with the `.sql` file.
 
 To run them all against the dev database:
 

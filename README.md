@@ -22,6 +22,13 @@ and win rate per airport, and more). `npm run logs:export` writes JSONL for
 training bots, and `npm run logs:replay` steps through one game. See
 [docs/game-logs.md](docs/game-logs.md).
 
+**Accounts, history and the admin pages.** Playing needs no account. Registered
+players (username and password, with a one-time recovery code) get a history of
+their games and a step-by-step replay of each. A game's page can be shared, and
+"Fly the same dice" starts a new game on its seed. Roles in the database grant
+privileges: ADMIN sees the statistics dashboard (`/admin`), and SUPERADMIN also
+manages users (`/admin/users`). See [docs/accounts.md](docs/accounts.md).
+
 **Production settings.** Secrets and settings live in GitHub. The list of what
 to set (and what not to) is
 [docs/production-variables.md](docs/production-variables.md).
@@ -209,6 +216,8 @@ Copy `.env.example` to `.env` and adjust. Key knobs:
 | `NPC_THINK_MS` | How long the Aviator bot may search for a move | `600` |
 | `NPC_WORKERS` | Search worker threads for the bot (a decision fans out to the idle ones). Set it to the CPUs the container may really use | a spare core each, at most 4 |
 | `JWT_SECRET` | Secret for signing anonymous identity tokens. **Required in production** (32+ characters, not a placeholder) | dev placeholder |
+| `SESSION_SECRET` | Signs sign-in sessions; must differ from `JWT_SECRET`. **Required in production** | dev placeholder |
+| `SUPERADMIN_USERNAME` / `SUPERADMIN_INITIAL_PASSWORD` | The site owner's account, created as SUPERADMIN on first start (see docs/accounts.md) | none |
 | `CLIENT_ORIGIN` | Allowed CORS origins: a comma-separated allowlist, or `*` to reflect any origin (LAN/dev). **Required in production**, and `*` is refused there | `http://localhost:8080` |
 | `TRUST_PROXY` | Reverse proxies in front of the server, so the per-client rate limits see the real address in `X-Forwarded-For` (2 behind Caddy + the client's nginx) | `0` |
 | `VITE_SERVER_URL` | Pins the server URL baked into the client bundle; leave unset to derive it from the page's own host | derived |
