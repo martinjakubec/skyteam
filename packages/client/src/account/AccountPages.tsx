@@ -11,9 +11,9 @@ import { useAccount } from "./useAccount";
  */
 
 /** The frame every account page shares: the wordmark (home) and a panel. */
-export function AccountFrame({ title, children }: { title: string; children: ReactNode }) {
+export function AccountFrame({ title, wide, children }: { title: string; wide?: boolean; children: ReactNode }) {
   return (
-    <main className="center">
+    <main className={wide ? "center wide-page" : "center"}>
       <Link to="/" className="wordmark home-link">
         SKY&middot;TEAM
       </Link>

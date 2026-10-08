@@ -272,6 +272,8 @@ export interface RoomSnapshot {
   /** The server's clock when this was sent (epoch ms), so a client can map a
    *  Real-Time deadline onto its own clock. */
   serverTime: number;
+  /** The game that just ended (won or lost), logged: its replay is at /games/<id>. */
+  lastGameId?: string | null;
 }
 
 /** Incremental notification that a command was applied. Includes the full game

@@ -28,6 +28,7 @@ import {
   type Dice,
   type GameCommand,
   type GameState,
+  type PublicUser,
   type Rand,
   type ServerToClientEvents,
   type SocketData,
@@ -43,6 +44,7 @@ import { guard, rateLimiter, SERVER_ERROR, type Ack } from "./guard";
 import type { Room } from "./types";
 import { endGameLog, recorder, startGameLog } from "./gameLog";
 import { newSeedState, seededRand } from "./seededRand";
+import { readCookie, SESSION_COOKIE, sessionUser } from "./sessions";
 
 // No server-to-server events in a single-server deployment (default map).
 export type IOServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
@@ -147,6 +149,14 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   const seat = room.seats.find((s) => s.playerId === playerId);
   if (seat) {
     seat.connected = true;
+    // Signed in (the cookie on this socket), the seat is linked to the account
+    // as it is now; signed out, it's a guest's again.
+    const account = await accountOf(socket);
+    if (account) Object.assign(seat, { accountId: account.id, username: account.username });
+    else {
+      delete seat.accountId;
+      delete seat.username;
+    }
     // The name the player kept from earlier rooms; a bad one is just ignored.
     const name = PlayerName.safeParse(parsed.data.name);
     if (name.success && name.data && canRename(room)) seat.name = name.data;
@@ -161,6 +171,17 @@ async function onJoin(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   await syncClock(io, room); // Real-Time: resume once both seats are back
   await syncDebrief(io, room); // after a server restart, the 3-2-1 picks up where it was
   scheduleNpc(io, room.id); // after a server restart, the bot picks up where it was
+}
+
+/** The account this socket is signed in with (its handshake's cookie), or null.
+ *  A database hiccup makes a guest, not a failed join. */
+async function accountOf(socket: IOSocket): Promise<PublicUser | null> {
+  try {
+    return await sessionUser(readCookie(socket.handshake.headers.cookie, SESSION_COOKIE));
+  } catch (e) {
+    console.error("[accounts] reading a socket's session failed:", (e as Error).message);
+    return null;
+  }
 }
 
 async function onReady(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
@@ -379,6 +400,7 @@ function gameDice(room: Room): { deal: Dice; play: Dice } {
  *  are shuffled and round 1 is dealt. */
 function dealNewGame(room: Room, pilotId: string, copilotId: string): void {
   const s = (room.seedState = newSeedState());
+  room.lastGameId = null;
   startGameLog(room);
   room.game = newGame(room.setup, pilotId, copilotId, seededRand(s, () => "d1"), Date.now(), {
     realTimeSeconds: env.REAL_TIME_SECONDS,

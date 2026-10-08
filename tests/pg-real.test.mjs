@@ -27,6 +27,8 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       acc: await import("../packages/server/src/accounts.ts"),
       sessions: await import("../packages/server/src/sessions.ts"),
       env: (await import("../packages/server/src/env.ts")).env,
+      history: await import("../packages/server/src/history.ts"),
+      gameLog: await import("../packages/server/src/gameLog.ts"),
     };
   });
 
@@ -109,6 +111,69 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       expect(await mod.acc.bootstrapSuperadmin()).toBe("promoted");
       expect(await mod.acc.login("admin", "admin")).toMatchObject({ role: "SUPERADMIN" });
       mod.env.SUPERADMIN_USERNAME = undefined;
+    });
+  });
+
+  describe("history", () => {
+    /** A games row (the columns the log writes), straight in. */
+    const insertGame = (id, endedAt, extra = {}) => {
+      const row = { id, room_id: "r", format: 1, build: "dev", scenario: "YUL", modules: [], abilities: [], intern_order: "", pilot: "human", copilot: "human",
+        result: "won", loss_reason: null, rounds_reached: 7, moves: "D11112222", started_at: endedAt, ended_at: endedAt, seed: "ab".repeat(16), seeded_from: null, ...extra };
+      const cols = Object.keys(row);
+      return q(`INSERT INTO games (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")})`, Object.values(row));
+    };
+    const link = (gameId, userId, crew) => q(mod.gameLog.SQL_LINK_PLAYER, [gameId, userId, crew]);
+    const gid = (s) => s.padEnd(21, "x");
+
+    test("my games: newest first, partners named, and 20 a page", async () => {
+      const { user: kim } = await mod.acc.register("kimiko", "ten chars!");
+      const { user: leo } = await mod.acc.register("leonardo", "ten chars!");
+      await insertGame(gid("k1"), "2026-10-01T10:00:00Z");
+      await link(gid("k1"), kim.id, "pilot");
+      await insertGame(gid("k2"), "2026-10-02T10:00:00Z", { copilot: "bot:aviator" });
+      await link(gid("k2"), kim.id, "pilot");
+      await insertGame(gid("k3"), "2026-10-03T10:00:00Z", { seeded_from: gid("k1") });
+      await link(gid("k3"), kim.id, "copilot");
+      await link(gid("k3"), leo.id, "pilot");
+      await link(gid("k3"), "no-such-user", "pilot"); // a deleted account: skipped, no error
+      const { games, next } = await mod.history.myGames(kim.id);
+      expect(next).toBe(null);
+      expect(games.map((g) => [g.id.slice(0, 2), g.crew, g.partner, g.seeded])).toEqual([
+        ["k3", "copilot", "leonardo", true],
+        ["k2", "pilot", "Bot (aviator)", false],
+        ["k1", "pilot", "Guest", false],
+      ]);
+      expect(games[0].endedAt).toBe("2026-10-03T10:00:00.000Z");
+
+      const { user: m } = await mod.acc.register("marta", "ten chars!");
+      for (let i = 0; i < 45; i++) {
+        await insertGame(gid(`m${i}`), new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString());
+        await link(gid(`m${i}`), m.id, "pilot");
+      }
+      const sizes = [];
+      let before;
+      for (let page = 0; page < 4; page++) {
+        const r = await mod.history.myGames(m.id, before);
+        sizes.push(r.games.length);
+        if (!r.next) break;
+        before = mod.history.parseCursor(r.next);
+      }
+      expect(sizes).toEqual([20, 20, 5]);
+    });
+
+    test("a game's record names its crews and never shows the seed", async () => {
+      const { user } = await mod.acc.register("nora", "ten chars!");
+      await insertGame(gid("n1"), "2026-10-04T10:00:00Z", { copilot: "bot:aviator", intern_order: "123456" });
+      await link(gid("n1"), user.id, "pilot");
+      const rec = await mod.history.gameRecord(gid("n1"));
+      expect(rec).toMatchObject({ crews: { pilot: "nora", copilot: "Bot (aviator)" }, internTokens: [1, 2, 3, 4, 5, 6], sameDiceAvailable: true, seededFrom: null, roundsReached: 7 });
+      expect(JSON.stringify(rec)).not.toContain("ab".repeat(16));
+      await insertGame(gid("n2"), "2026-10-04T11:00:00Z", { seed: null });
+      expect(await mod.history.gameRecord(gid("n2"))).toMatchObject({ sameDiceAvailable: false, crews: { pilot: "Guest", copilot: "Guest" } });
+      expect(await mod.history.gameRecord(gid("nope"))).toBe(null);
+      // Deleting the account removes the link, keeps the game.
+      expect(await mod.acc.deleteOwnAccount(user.id, "ten chars!")).toBe(true);
+      expect((await mod.history.gameRecord(gid("n1"))).crews.pilot).toBe("Guest");
     });
   });
 });

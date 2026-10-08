@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import type { RequestHandler } from "express";
 import type { Privilege, PublicUser } from "@skyteam/shared";
 import { userById } from "./accounts";
+import { db } from "./db";
 import { env } from "./env";
 
 /**
@@ -35,7 +36,7 @@ export function issueSession(userId: string): string {
 /** The signed-in user, or null: no token, a bad, expired or foreign one, a
  *  missing or disabled account, or a session that was ended. */
 export async function sessionUser(token: string | undefined): Promise<PublicUser | null> {
-  if (!token) return null;
+  if (!token || !db()) return null;
   let claims: jwt.JwtPayload & Partial<SessionClaims>;
   try {
     claims = jwt.verify(token, env.SESSION_SECRET, { algorithms: ["HS256"], audience: AUDIENCE }) as jwt.JwtPayload;

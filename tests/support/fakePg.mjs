@@ -118,6 +118,38 @@ Pool.prototype.tags = {
     this.gamePlayers = this.gamePlayers.filter((p) => p.user_id !== id);
     return changed(before - this.users.length);
   },
+  "gamePlayers.insert"(game_id, user_id, crew) {
+    if (!this.user(user_id) || this.gamePlayers.some((p) => p.game_id === game_id && p.crew === crew)) return changed(0);
+    this.gamePlayers.push({ game_id, user_id, crew });
+    return changed(1);
+  },
+  "history.mine"(userId, beforeEndedAt, beforeId) {
+    const key = (g) => `${new Date(g.ended_at).toISOString()}|${g.id}`;
+    const cursor = beforeEndedAt ? `${new Date(beforeEndedAt).toISOString()}|${beforeId}` : null;
+    const out = this.gamePlayers
+      .filter((p) => p.user_id === userId)
+      .map((mine) => {
+        const g = this.games.find((x) => x.id === mine.game_id);
+        const other = this.gamePlayers.find((p) => p.game_id === g.id && p.crew !== mine.crew);
+        return {
+          ...g, crew: mine.crew, seeded: !!g.seeded_from,
+          partner_name: other ? this.user(other.user_id)?.username ?? null : null,
+          partner_seat: mine.crew === "pilot" ? g.copilot : g.pilot,
+        };
+      })
+      .filter((g) => !cursor || key(g) < cursor)
+      .sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : a.crew.localeCompare(b.crew)));
+    return rows(out.slice(0, 21));
+  },
+  "games.byId"(id) {
+    const g = this.games.find((x) => x.id === id);
+    if (!g) return rows([]);
+    const name = (crew) => {
+      const p = this.gamePlayers.find((x) => x.game_id === id && x.crew === crew);
+      return p ? this.user(p.user_id)?.username ?? null : null;
+    };
+    return rows([{ ...g, has_seed: !!g.seed, seeded_from: g.seeded_from ?? null, pilot_name: name("pilot"), copilot_name: name("copilot") }]);
+  },
   "resets.dropUnused"(userId) {
     this.resets = this.resets.filter((r) => r.user_id !== userId || r.used_at);
     return changed(1);

@@ -22,7 +22,8 @@ import {
   type AccountErrorCode,
 } from "./accounts";
 import { db } from "./db";
-import { clearedCookie, currentUser, issueSession, sessionCookie } from "./sessions";
+import { gameRecord, myGames, parseCursor } from "./history";
+import { clearedCookie, currentUser, issueSession, requirePrivilege, sessionCookie } from "./sessions";
 import { failureLimiter, limit, route } from "./routing";
 
 /**
@@ -154,6 +155,21 @@ export function apiRouter(): Router {
     res.set("Set-Cookie", clearedCookie()).status(204).end();
   }));
   r.use("/account", account);
+
+  // --- game history and game pages -----------------------------------------------------
+
+  r.get("/me/games", requirePrivilege("history"), route(async (req, res) => {
+    const before = req.query.before === undefined ? undefined : parseCursor(req.query.before);
+    if (before === null) return void res.status(400).json({ error: "That page doesn't exist." });
+    res.json(await myGames(me(res)!.id, before));
+  }));
+
+  // Public: anyone with a game's link may watch its replay.
+  r.get("/games/:id", limit(120), route(async (req, res) => {
+    const record = await gameRecord(req.params.id);
+    if (!record) return void res.status(404).json({ error: "No game with that id." });
+    res.json(record);
+  }));
 
   // An account error the route didn't answer: its status and message.
   r.use(((err, _req, res, next) => {
