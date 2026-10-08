@@ -30,6 +30,7 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       history: await import("../packages/server/src/history.ts"),
       gameLog: await import("../packages/server/src/gameLog.ts"),
       stats: await import("../packages/server/src/stats.ts"),
+      admin: await import("../packages/server/src/adminUsers.ts"),
     };
   });
 
@@ -251,6 +252,32 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       const st = await mod.stats.loadStats();
       for (const key of Object.keys(mod.stats.STAT_QUERIES)) expect(st[key], key).toEqual([]);
       expect(st.recentGames).toHaveLength(7);
+    });
+  });
+
+  describe("user management", () => {
+    test("list by name start (with _ a letter), roles, disabling, the last manager, deleting", async () => {
+      const { user: boss } = await mod.acc.register("um_boss", "ten chars!");
+      const { user: two } = await mod.acc.register("um_two", "ten chars!");
+      await mod.acc.register("umxthree", "ten chars!");
+      await q(`UPDATE users SET role = 'SUPERADMIN' WHERE id = $1`, [boss.id]);
+      await q(`UPDATE users SET role = 'USER' WHERE username = 'admin'`); // the bootstrap test's owner
+      const listed = await mod.admin.listUsers("um_");
+      expect(listed.users.map((u) => [u.username, u.role, u.disabled, u.games])).toEqual([["um_boss", "SUPERADMIN", false, 0], ["um_two", "USER", false, 0]]);
+      expect((await mod.admin.listUsers("um", "um_boss")).users.map((u) => u.username)).toEqual(["um_two", "umxthree"]);
+      expect((await mod.admin.listRoles()).map((r) => r.name)).toEqual(["USER", "ADMIN", "SUPERADMIN"]);
+
+      expect(await mod.admin.updateUser(boss.id, two.id, { role: "ADMIN", disabled: true })).toMatchObject({ role: "ADMIN", disabled: true });
+      await expect(mod.acc.login("um_two", "ten chars!")).rejects.toMatchObject({ code: "disabled" });
+      expect(await mod.admin.updateUser(boss.id, two.id, { disabled: false })).toMatchObject({ disabled: false });
+
+      // The backstop: with boss the only manager, taking manage_users from boss is refused (even by "someone else").
+      await expect(mod.admin.updateUser(two.id, boss.id, { role: "USER" })).rejects.toMatchObject({ message: "Someone must be left who can manage users." });
+
+      await mod.admin.deleteUser(boss.id, two.id);
+      expect(await mod.acc.userById(two.id)).toBe(null);
+      const link = await mod.admin.resetLinkFor(boss.id, (await mod.admin.listUsers("umx")).users[0].id);
+      expect(link.path).toMatch(/^\/reset\?token=[A-Za-z0-9_-]{43}$/);
     });
   });
 });

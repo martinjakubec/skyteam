@@ -121,3 +121,95 @@ describe("the statistics dashboard", () => {
     expect(totals).toMatch(/0\s*games/);
   });
 });
+
+describe("the users page", () => {
+  const ROLES = [
+    { name: "USER", rank: 1, privileges: ["history"] },
+    { name: "ADMIN", rank: 2, privileges: ["history", "view_stats"] },
+    { name: "SUPERADMIN", rank: 3, privileges: ["history", "manage_users", "view_stats"] },
+  ];
+  const managed = (username: string, over = {}) => ({ id: `id-${username}`, username, role: "USER", disabled: false, createdAt: "2026-10-01T10:00:00.000Z", games: 3, ...over });
+  let users: ReturnType<typeof managed>[];
+  beforeEach(() => {
+    users = [managed("alice"), managed("bob", { role: "ADMIN" }), managed("superadmin", { id: SUPER.id, role: "SUPERADMIN" })];
+    routes["GET /api/auth/me"] = () => ({ body: { user: SUPER } });
+    routes["GET /api/admin/roles"] = () => ({ body: { roles: ROLES } });
+    routes["GET /api/admin/users"] = (url) => ({ body: { users: users.filter((u) => u.username.startsWith(url.searchParams.get("q") ?? "")), next: null } });
+    routes["PATCH /api/admin/users/*"] = (url, body) => {
+      const u = users.find((x) => url.pathname.endsWith(x.id))!;
+      Object.assign(u, body);
+      return { body: { user: u } };
+    };
+  });
+  const rowOf = (name: string) => screen.getByRole("row", { name: new RegExp(`^${name}\\b`) });
+
+  test("lists users; search asks the server", async () => {
+    await open("/admin/users");
+    expect(await screen.findByRole("heading", { name: "Users" })).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(4));
+    fireEvent.change(screen.getByLabelText("Search by name"), { target: { value: "al" } });
+    await waitFor(() => expect(calls.some((c) => c.key === "GET /api/admin/users" && c.url.searchParams.get("q") === "al")).toBe(true));
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+  });
+
+  test("a new role", async () => {
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("alice")).toBeTruthy());
+    fireEvent.change(within(rowOf("alice")).getByRole("combobox", { name: "Role of alice" }), { target: { value: "ADMIN" } });
+    await waitFor(() => expect(calls.find((c) => c.key.startsWith("PATCH"))?.body).toEqual({ role: "ADMIN" }));
+    expect(calls.find((c) => c.key.startsWith("PATCH"))!.url.pathname).toBe("/api/admin/users/id-alice");
+  });
+
+  test("disable and enable", async () => {
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("bob")).toBeTruthy());
+    fireEvent.click(within(rowOf("bob")).getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(within(rowOf("bob")).getByRole("button", { name: "Enable" })).toBeTruthy());
+    expect(within(rowOf("bob")).getByText("disabled")).toBeTruthy();
+  });
+
+  test("a reset link to hand over, with Copy", async () => {
+    routes["POST /api/admin/users/*"] = () => ({ body: { path: `/reset?token=${"t".repeat(43)}`, expiresAt: "2026-10-09T10:00:00.000Z" } });
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("alice")).toBeTruthy());
+    fireEvent.click(within(rowOf("alice")).getByRole("button", { name: "Reset link" }));
+    const box = (await screen.findByLabelText("Reset link for alice")) as HTMLInputElement;
+    expect(box.value).toBe(`${window.location.origin}/reset?token=${"t".repeat(43)}`);
+    expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+  });
+
+  test("delete: only after typing the name", async () => {
+    routes["DELETE /api/admin/users/*"] = () => ({ status: 204 });
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("wrong");
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("alice")).toBeTruthy());
+    fireEvent.click(within(rowOf("alice")).getByRole("button", { name: "Delete" }));
+    expect(calls.some((c) => c.key.startsWith("DELETE"))).toBe(false);
+    prompt.mockReturnValue("alice");
+    fireEvent.click(within(rowOf("alice")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("row", { name: /^alice\b/ })).toBe(null));
+    expect(calls.find((c) => c.key.startsWith("DELETE"))!.url.pathname).toBe("/api/admin/users/id-alice");
+  });
+
+  test("the server's refusal shows", async () => {
+    routes["PATCH /api/admin/users/*"] = () => ({ status: 409, body: { error: "This is the site owner's account (SUPERADMIN_USERNAME)." } });
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("bob")).toBeTruthy());
+    fireEvent.click(within(rowOf("bob")).getByRole("button", { name: "Disable" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("This is the site owner's account (SUPERADMIN_USERNAME).");
+  });
+
+  test("my own row has no actions", async () => {
+    await open("/admin/users");
+    await waitFor(() => expect(rowOf("superadmin")).toBeTruthy());
+    expect(within(rowOf("superadmin")).queryByRole("button")).toBe(null);
+    expect(within(rowOf("superadmin")).getByText("you")).toBeTruthy();
+  });
+
+  test("an ADMIN without manage_users may not see it", async () => {
+    routes["GET /api/auth/me"] = () => ({ body: { user: ADMIN } });
+    await open("/admin/users");
+    expect(await screen.findByText("You don't have access to this.")).toBeTruthy();
+    expect(calls.some((c) => c.key === "GET /api/admin/users")).toBe(false);
+  });
+});
