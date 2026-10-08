@@ -28,7 +28,7 @@ const RETRY_MS = 30_000;
 /** The `games` columns, in insert order. */
 const COLUMNS = [
   "id", "room_id", "format", "build", "scenario", "modules", "abilities", "intern_order",
-  "pilot", "copilot", "result", "loss_reason", "rounds_reached", "moves", "started_at", "ended_at", "seed",
+  "pilot", "copilot", "result", "loss_reason", "rounds_reached", "moves", "started_at", "ended_at", "seed", "seeded_from",
 ] as const;
 /** A `games` row, and the accounts that flew it (into game_players). */
 type Row = Record<(typeof COLUMNS)[number], unknown> & { players?: { crew: Crew; user_id: string }[] };
@@ -54,7 +54,7 @@ export async function initGameLogs(): Promise<void> {
 /** Begin a new game's log (call before dealing it, so the first deal is recorded,
  *  and after giving the room its seed, which the log keeps). */
 export function startGameLog(room: Room): void {
-  room.gameLog = { id: nanoid(), startedAt: Date.now(), setup: structuredClone(room.setup), internTokens: [], moves: "", seed: room.seedState?.seed ?? null };
+  room.gameLog = { id: nanoid(), startedAt: Date.now(), setup: structuredClone(room.setup), internTokens: [], moves: "", seed: room.seedState?.seed ?? null, seededFrom: room.sameDice?.gameId ?? null };
 }
 
 /** Records the room's game into its log (pass to newGame / settle, and call for each command). */
@@ -103,6 +103,7 @@ export function endGameLog(room: Room, result: GameResult): void {
     started_at: new Date(log.startedAt).toISOString(),
     ended_at: new Date().toISOString(),
     seed: log.seed ?? null,
+    seeded_from: log.seededFrom ?? null,
     players,
   };
   void write(row);

@@ -43,10 +43,13 @@ export interface Room {
   debrief?: Debrief | null;
   /** The game in progress, as its log so far (see gameLog.ts). Written and
    *  cleared when the game ends or is left. */
-  gameLog?: { id: string; startedAt: number; setup: GameSetup; internTokens: DieValue[]; moves: string; seed?: string | null } | null;
+  gameLog?: { id: string; startedAt: number; setup: GameSetup; internTokens: DieValue[]; moves: string; seed?: string | null; seededFrom?: string | null } | null;
   /** The game's secret seed and how far each of its dice streams has drawn
    *  (seededRand.ts). Never sent to a client. Absent for a game an older build began. */
   seedState?: SeedState | null;
+  /** Flying an earlier game's dice: every game here uses its seed, and is
+   *  logged as seeded from it. The setup stays the original's. */
+  sameDice?: { gameId: string; seed: string } | null;
   /** The game that ended last (won or lost) and was logged — its replay's id. */
   lastGameId?: string | null;
   updatedAt: number;

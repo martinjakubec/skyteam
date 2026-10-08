@@ -1,4 +1,4 @@
-import type { GameRecord, GameSummary } from "@skyteam/shared";
+import { SetSetupPayload, type GameRecord, type GameSetup, type GameSummary } from "@skyteam/shared";
 import { db } from "./db";
 import { ensureSchema } from "./schema";
 
@@ -86,4 +86,18 @@ export async function gameRecord(id: string): Promise<GameRecord | null> {
     sameDiceAvailable: !!r.has_seed,
     seededFrom: r.seeded_from ?? null,
   };
+}
+
+export const SQL_SEED_OF = `/* games.seedOf */ SELECT seed, scenario, modules, abilities FROM games WHERE id = $1`;
+
+/** What a room needs to fly a logged game's dice again: its seed and setup.
+ *  Null when the game is unknown, was logged before seeds, or its setup no
+ *  longer exists in this build. */
+export async function sameDiceSource(gameId: string): Promise<{ seed: string; setup: GameSetup } | null> {
+  if (!GAME_ID.test(gameId)) return null;
+  await ensureSchema();
+  const r = (await db()!.query(SQL_SEED_OF, [gameId])).rows[0];
+  if (!r?.seed) return null;
+  const setup = SetSetupPayload.safeParse({ scenarioId: r.scenario, modules: r.modules, abilities: r.abilities });
+  return setup.success ? { seed: r.seed, setup: setup.data } : null;
 }

@@ -274,6 +274,9 @@ export interface RoomSnapshot {
   serverTime: number;
   /** The game that just ended (won or lost), logged: its replay is at /games/<id>. */
   lastGameId?: string | null;
+  /** This room flies an earlier game's dice (its setup is locked until the host
+   *  drops them). Never the seed itself. */
+  sameDice?: { gameId: string } | null;
 }
 
 /** Incremental notification that a command was applied. Includes the full game
@@ -316,6 +319,8 @@ export interface ClientToServerEvents {
   /** End the game for both players and return the room to its lobby. */
   "game:exit": (ack: (res: Ack) => void) => void;
   "game:command": (payload: GameCommandPayload, ack: (res: Ack) => void) => void;
+  /** Lobby, host only: stop flying an earlier game's dice (unlocks the setup). */
+  "room:freshDice": (ack: (res: Ack) => void) => void;
 }
 
 /** Per-connection state the server attaches to each socket. */

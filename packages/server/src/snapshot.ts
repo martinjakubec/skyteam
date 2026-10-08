@@ -29,5 +29,6 @@ export function toSnapshot(room: Room, viewerId: PlayerId): RoomSnapshot {
     you: { playerId: viewerId, kind, role: seat?.role },
     serverTime: Date.now(),
     lastGameId: room.status === "finished" ? (room.lastGameId ?? null) : null,
+    sameDice: room.sameDice ? { gameId: room.sameDice.gameId } : null,
   };
 }
