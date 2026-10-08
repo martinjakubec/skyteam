@@ -9,6 +9,7 @@ import { usePath } from "./router";
 // Pages most players never open: loaded only when they do.
 const GamePage = lazy(() => import("./history/GamePage"));
 const AdminStats = lazy(() => import("./admin/AdminStats"));
+const AdminUsers = lazy(() => import("./admin/AdminUsers"));
 
 /** The page for the current path: the game (the default), or one of the pages beside it. */
 export function Root() {
@@ -49,6 +50,12 @@ export function Root() {
       return (
         <Suspense fallback={null}>
           <AdminStats />
+        </Suspense>
+      );
+    case "/admin/users":
+      return (
+        <Suspense fallback={null}>
+          <AdminUsers />
         </Suspense>
       );
     default:

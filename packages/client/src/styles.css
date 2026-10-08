@@ -3238,3 +3238,30 @@ ul {
 .pct .pct-num {
   position: relative;
 }
+.user-search {
+  max-width: 22rem;
+  color: #26303c;
+}
+.reset-link {
+  gap: 0.5rem;
+}
+.center .reset-link .muted {
+  color: var(--ink);
+  margin: 0;
+}
+.data-table td.actions {
+  white-space: nowrap;
+  text-align: right;
+}
+.data-table td.actions button {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.55rem;
+  margin-left: 0.3rem;
+}
+.data-table select {
+  background: var(--recess);
+  color: var(--paper);
+  border: 1px solid #0c1016;
+  border-radius: 6px;
+  padding: 0.2rem 0.3rem;
+}
