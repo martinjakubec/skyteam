@@ -3,6 +3,11 @@
 --
 -- results: won | lost (a crash or a failed landing) | abandoned | exited | reset.
 -- "Finished" games are won or lost; the others were left before the end.
+--
+-- Games flown on an earlier game's dice ("Fly the same dice") have seeded_from
+-- set; their crews may have known the dice. The dashboard (/admin) leaves them
+-- out unless asked: to do the same here, read every "FROM games" below as
+-- "FROM (SELECT * FROM games WHERE seeded_from IS NULL) games".
 
 -- 1. Play rate: each airport's share of all logged games, and of finished games.
 SELECT scenario,

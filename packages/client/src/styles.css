@@ -3132,3 +3132,109 @@ ul {
 .fly-same p {
   margin: 0;
 }
+
+/* Admin pages: the statistics dashboard and the users page. */
+.center.admin-page {
+  max-width: 1040px;
+}
+.admin-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.admin-head .muted {
+  margin: 0;
+}
+.admin-tools {
+  gap: 0.8rem;
+}
+.admin-tools a {
+  color: #26303c;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+.seeded-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+  color: #26303c;
+  opacity: 1;
+}
+/* The page's muted grey is for the dark background: on the light page and on
+   the panels, use ink. */
+.center .admin-head .muted {
+  color: #3a4450;
+}
+.center .admin-section .muted,
+.center .table-panel .muted {
+  color: var(--ink);
+  opacity: 0.72;
+  margin: 0;
+}
+.seeded-toggle input {
+  flex: none;
+}
+.totals {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  gap: 1rem;
+}
+.total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.total strong {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  line-height: 1.1;
+}
+.total span {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+.admin-section h2 {
+  margin: 0;
+}
+.admin-section > .muted {
+  margin: 0;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.admin-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 760px) {
+  .admin-pair {
+    grid-template-columns: 1fr;
+  }
+}
+.pct {
+  position: relative;
+  display: inline-block;
+  min-width: 7.5rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  text-align: right;
+}
+.pct .bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(47, 111, 176, 0.45);
+}
+.pct .pct-num {
+  position: relative;
+}

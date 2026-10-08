@@ -81,3 +81,32 @@ export interface GameRecord {
   /** The game whose dice this one was flown on, if any. */
   seededFrom: string | null;
 }
+
+/** The statistics dashboard (docs/game-log-queries.sql, queries 1–7, and the
+ *  latest games). Rates are percentages with one decimal. */
+export interface AdminStats {
+  generatedAt: string;
+  /** Games flown on an earlier game's dice are counted too. */
+  includeSeeded: boolean;
+  /** How many games were flown on an earlier game's dice. */
+  seededGames: number;
+  playRate: { scenario: string; games: number; pct_of_all_games: number; finished: number; pct_of_finished_games: number | null }[];
+  crashCauses: { scenario: string; cause: string; losses: number; pct_of_airport_losses: number }[];
+  failedLandings: { scenario: string; condition: string; failed_landings: number }[];
+  winRateByAirport: { scenario: string; finished: number; won: number; lost: number; win_pct: number }[];
+  winRateByAbility: { ability: string; finished: number; win_pct: number }[];
+  winRateByModule: { module: string; finished: number; win_pct: number }[];
+  humansVsBot: { scenario: string; crew: string; finished: number; win_pct: number }[];
+  unfinished: { result: string; rounds_reached: number; games: number }[];
+  recentGames: {
+    id: string;
+    scenario: string;
+    result: string;
+    loss_reason: string | null;
+    rounds_reached: number;
+    pilot: string;
+    copilot: string;
+    ended_at: string;
+    seeded: boolean;
+  }[];
+}
