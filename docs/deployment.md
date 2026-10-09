@@ -1,7 +1,8 @@
 # Deployment: skyteam.mjakubec.eu
 
 SkyTeam runs on a VPS, deployed by GitHub Actions whenever a release is
-published. Pushing to `main` deploys nothing.
+published. Pre-releases don't deploy. Pushing to `main` only runs the tests
+(`.github/workflows/test.yml`).
 Everything on the VPS is code in this repository; the VPS itself only needs
 Docker:
 
@@ -9,7 +10,8 @@ Docker:
 |---|---|---|
 | HTTPS, certificates, the site's username/password | `deploy/edge/` (Caddy) | container `edge-caddy-1` |
 | The game: client (nginx), server, Redis, PostgreSQL, nightly backups | `deploy/app/compose.yml` | containers `skyteam-*` |
-| Build, test, deploy | `.github/workflows/deploy.yml` | GitHub Actions |
+| Test on every push to `main` | `.github/workflows/test.yml` | GitHub Actions |
+| Test, build, deploy a release | `.github/workflows/deploy.yml` | GitHub Actions |
 | One-time VPS setup (Docker, firewall, deploy user) | `deploy/bootstrap-vps.sh` | you, once |
 
 ```

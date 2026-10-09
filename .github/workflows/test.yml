@@ -1,0 +1,42 @@
+# Typecheck and test SkyTeam on every push to main. The deploy workflow
+# (deploy.yml) runs the same job before it builds a release.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: test-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # The SQL tests (tests/pg-real.test.mjs) run against a real PostgreSQL.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: skyteam
+          POSTGRES_PASSWORD: skyteam-ci
+          POSTGRES_DB: skyteam
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U skyteam" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://skyteam:skyteam-ci@localhost:5432/skyteam
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # A few bot tests assert wall-clock budgets: on a busy runner, a second try.
+      - run: npm test -- --retry=2
