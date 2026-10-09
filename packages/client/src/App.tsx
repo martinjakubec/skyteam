@@ -28,6 +28,7 @@ export function App() {
     startGame,
     resetGame,
     exitGame,
+    leaveRoom,
     sendCommand,
     setRoundReady,
   } = useGame();
@@ -133,6 +134,21 @@ export function App() {
           <span className={`conn ${connected ? "on" : "off"}`}>
             <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
           </span>
+          {/* Out of a game (the lobby, an abandoned game, watching): leave for good. */}
+          {!inGame && snapshot && (
+            <button
+              className="reset-btn exit-btn"
+              onClick={() => {
+                if (window.confirm("Leave this room?"))
+                  leaveRoom(() => {
+                    setRoom(null);
+                    window.history.replaceState(null, "", "/");
+                  });
+              }}
+            >
+              Leave room
+            </button>
+          )}
           {inGame && snapshot?.you.kind === "player" && (
             <button
               className="reset-btn exit-btn"

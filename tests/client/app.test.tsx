@@ -33,6 +33,11 @@ class FakeSocket {
   last(event: string) {
     return [...this.sent].reverse().find((s) => s.event === event);
   }
+  disconnected = false;
+  disconnect() {
+    this.disconnected = true;
+    return this;
+  }
 }
 const sockets: FakeSocket[] = [];
 vi.mock("socket.io-client", () => ({
@@ -521,6 +526,39 @@ describe("between rounds", () => {
     expect(within(panel()).queryByRole("button")).toBe(null);
     expect(screen.getByText("Between rounds.")).toBeTruthy();
     expect(screen.queryByRole("log")).toBe(null);
+  });
+});
+
+// --- leaving the room -----------------------------------------------------------------------
+describe("leaving the room", () => {
+  test("Leave room asks first, then leaves and goes back to the start page", async () => {
+    const sock = await inRoom();
+    expect(window.location.search).toBe("?join=INVITE01");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+    expect(sock.last("room:leave")).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+    expect(sock.last("room:leave")).toBeTruthy();
+    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create a room" })).toBeTruthy());
+    expect(sock.disconnected).toBe(true);
+    expect(useGame.getState()).toMatchObject({ socket: null, snapshot: null });
+    expect(window.location.search).toBe("");
+  });
+
+  test("a refused leave keeps the room and says why", async () => {
+    const sock = await inRoom();
+    sock.reply = (event) => (event === "room:leave" ? { ok: false, error: "Exit the game first." } : { ok: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+    await waitFor(() => expect(screen.getByText("Exit the game first.")).toBeTruthy());
+    expect(sock.disconnected).toBe(false);
+    expect(screen.getByRole("button", { name: "Leave room" })).toBeTruthy();
+  });
+
+  test("in a game there's Exit to lobby, not Leave room", async () => {
+    await inRoom(inGame());
+    expect(screen.queryByRole("button", { name: "Leave room" })).toBe(null);
   });
 });
 

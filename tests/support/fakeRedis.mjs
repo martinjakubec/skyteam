@@ -54,9 +54,10 @@ export default class FakeRedis {
     const ops = [];
     const chain = {
       set: (key, value) => (ops.push([key, value]), chain),
+      del: (key) => (ops.push([key, undefined]), chain),
       exec: async () => {
         this.check();
-        for (const [k, v] of ops) this.data.set(k, v);
+        for (const [k, v] of ops) v === undefined ? this.data.delete(k) : this.data.set(k, v);
         return ops.map(() => [null, "OK"]);
       },
     };

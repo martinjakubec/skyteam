@@ -48,6 +48,12 @@ export async function saveRoom(room: Room): Promise<void> {
     .exec();
 }
 
+/** Close a room: it and its invite are gone, as if expired. */
+export async function deleteRoom(room: Room): Promise<void> {
+  cache.delete(room.id);
+  await redis.multi().del(roomKey(room.id)).del(inviteKey(room.inviteCode)).exec();
+}
+
 export async function getRoom(id: string): Promise<Room | null> {
   return cache.get(id) ?? loadRoom(id);
 }

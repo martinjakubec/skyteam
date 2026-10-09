@@ -48,6 +48,8 @@ interface GameStore {
   startGame: () => void;
   resetGame: () => void;
   exitGame: () => void;
+  /** Leave the room for good (not mid-game); `onLeft` runs once the server let go. */
+  leaveRoom: (onLeft: () => void) => void;
   sendCommand: (command: GameCommand) => void;
   serverIsDown: () => void;
 }
@@ -152,6 +154,14 @@ export const useGame = create<GameStore>((set, get) => {
 
     exitGame: () =>
       get().socket?.emit("game:exit", refused),
+
+    leaveRoom: (onLeft) =>
+      get().socket?.emit("room:leave", (res) => {
+        if (!res.ok) return refused(res);
+        get().socket?.disconnect();
+        set({ socket: null, connected: false, snapshot: null, lastError: null, chatReadAt: null });
+        onLeft();
+      }),
 
     sendCommand: (command) =>
       get().socket?.emit("game:command", { commandId: uuid(), command }, refused),

@@ -318,6 +318,9 @@ export interface ClientToServerEvents {
   "game:reset": (ack: (res: Ack) => void) => void;
   /** End the game for both players and return the room to its lobby. */
   "game:exit": (ack: (res: Ack) => void) => void;
+  /** Leave the room for good (the lobby; a spectator any time). The seat is
+   *  freed; a host hands the room to the other player, or closes it if alone. */
+  "room:leave": (ack: (res: Ack) => void) => void;
   "game:command": (payload: GameCommandPayload, ack: (res: Ack) => void) => void;
   /** Lobby, host only: stop flying an earlier game's dice (unlocks the setup). */
   "room:freshDice": (ack: (res: Ack) => void) => void;

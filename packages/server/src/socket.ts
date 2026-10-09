@@ -35,7 +35,7 @@ import {
 } from "@skyteam/shared";
 import { env } from "./env";
 import { corsOptions } from "./cors";
-import { getRoom, saveRoom, storageUp, UNAVAILABLE_ERROR } from "./store";
+import { deleteRoom, getRoom, saveRoom, storageUp, UNAVAILABLE_ERROR } from "./store";
 import { toSnapshot } from "./snapshot";
 import { verifyToken } from "./identity";
 import { cancelNpc, scheduleNpc } from "./npc";
@@ -118,6 +118,7 @@ export function attachSocket(server: http.Server): IOServer {
     on("game:start", (_payload, ack) => onStart(io, socket, ack));
     on("game:reset", (_payload, ack) => onReset(io, socket, ack));
     on("game:exit", (_payload, ack) => onExit(io, socket, ack));
+    on("room:leave", (_payload, ack) => onLeave(io, socket, ack));
     on("game:command", (payload, ack) => onCommand(io, socket, payload, ack));
     socket.on("disconnect", () => void onDisconnect(io, socket).catch(logFailure("disconnect")));
   });
@@ -390,6 +391,54 @@ async function onExit(io: IOServer, socket: IOSocket, ack: Ack) {
   room.version = 0;
   room.seats = unreadyOthers(room.seats, null); // a bot seat stays ready
   room.notice = `The ${crewOf(room, playerId) === "pilot" ? "Pilot" : "Co-Pilot"} ended the game.`;
+  await saveRoom(room);
+
+  ack({ ok: true });
+  broadcastState(io, room);
+}
+
+/**
+ * Leave the room for good: from the lobby (or an abandoned room), or as a
+ * spectator at any time. A guest's seat is freed for whoever opens the invite
+ * next. A host hands the room to the other player, who keeps flying their own
+ * seat; a host with nobody to hand it to (alone, or with the bot) closes it.
+ */
+async function onLeave(io: IOServer, socket: IOSocket, ack: Ack) {
+  const { room, playerId } = await context(socket);
+  if (!room) return ack({ ok: false, error: "Not in a room." });
+  const seat = room.seats.find((s) => s.playerId === playerId);
+  if (seat && (room.status === "in_progress" || room.status === "finished"))
+    return ack({ ok: false, error: "Exit the game first." });
+
+  const crew = crewOf(room, playerId); // before the seat goes
+  clearGrace(room.id, playerId);
+  void socket.leave(room.id);
+  socket.data.roomId = undefined;
+  socket.data.playerId = undefined;
+
+  if (room.status === "abandoned") return ack({ ok: true }); // over already: nothing to hand on
+  if (!seat) {
+    room.observers = room.observers.filter((id) => id !== playerId);
+  } else {
+    const others = room.seats.filter((s) => s.playerId !== playerId);
+    const human = others.find((s) => !s.bot);
+    if (seat.role === "host" && !human) {
+      cancelNpc(room.id);
+      await deleteRoom(room);
+      return ack({ ok: true });
+    }
+    const name = (c: Crew | null) => (c === "copilot" ? "Co-Pilot" : "Pilot");
+    if (seat.role === "host" && human) {
+      human.role = "host";
+      room.hostPlayerId = human.playerId;
+      room.hostCrew = crew === "pilot" ? "copilot" : "pilot"; // the new host keeps their seat
+      room.notice = `The ${name(crew)} left the room: the ${name(room.hostCrew)} is the host now.`;
+    } else {
+      room.notice = `The ${name(crew)} left the room.`;
+    }
+    room.seats = others;
+    room.status = lobbyStatus(room.seats);
+  }
   await saveRoom(room);
 
   ack({ ok: true });

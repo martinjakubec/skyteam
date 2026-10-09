@@ -297,7 +297,7 @@ describe("socket lobby", () => {
 
   test("before joining a room, every action is refused", async () => {
     const s = await client();
-    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["chat:send", { text: "hi" }], ["round:ready", { ready: true }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"]]) {
+    for (const [event, payload] of [["seat:ready", { ready: true }], ["seat:name", { name: "x" }], ["chat:send", { text: "hi" }], ["round:ready", { ready: true }], ["room:setup", { scenarioId: "YUL", modules: [], abilities: [] }], ["game:start"], ["game:reset"], ["game:exit"], ["room:leave"]]) {
       expect((await emit(s, event, payload)).error, event).toBe("Not in a room.");
     }
     expect((await emit(s, "game:command", { commandId: "c", command: { type: "reroll", dieIds: [] } })).error).toBe("No active game.");
@@ -362,6 +362,63 @@ describe("socket lobby", () => {
     expect((await emit(w, "seat:name", { name: "Eve" })).error).toBe("Observers have no seat to name.");
     expect((await emit(w, "game:command", { commandId: "c", command: nextMove({ h, g }).command })).error).toBe("Observers cannot act.");
     expect((await emit(w, "game:exit")).error).toBe("Only the crew can end the game.");
+  });
+});
+
+describe("leaving a room", () => {
+  test("the guest leaves the lobby: the seat is free again, and the invite takes someone new", async () => {
+    const { h, g, roomId, invite } = await twoPlayerRoom();
+    await emit(h, "seat:ready", { ready: true });
+    expect(await emit(g, "room:leave")).toEqual({ ok: true });
+    await until(() => latest(h).seats.length === 1, 2000, "seat freed");
+    expect(latest(h).notice).toBe("The Co-Pilot left the room.");
+    expect(latest(h).status).toBe("lobby");
+    // Gone from the room: its events are refused, and dropping the socket changes nothing.
+    expect((await emit(g, "seat:ready", { ready: true })).error).toBe("Not in a room.");
+    const next = await post(`/rooms/${invite}/join`, {});
+    const n = await client();
+    expect(await emit(n, "room:join", { roomId, token: next.body.token })).toEqual({ ok: true });
+    await until(() => latest(n), 2000, "newcomer snapshot");
+    expect(latest(n).you).toMatchObject({ kind: "player", role: "guest" });
+  });
+
+  test("the host leaves: the guest becomes the host, flying the same seat", async () => {
+    const { h, g, invite } = await twoPlayerRoom();
+    await until(() => latest(g)?.seats.length === 2, 2000, "both seated");
+    const guestId = latest(g).you.playerId;
+    expect(latest(g).hostCrew).toBe("pilot"); // the guest flies the Co-Pilot
+    expect(await emit(h, "room:leave")).toEqual({ ok: true });
+    await until(() => latest(g).seats.length === 1, 2000, "host gone");
+    expect(latest(g).hostPlayerId).toBe(guestId);
+    expect(latest(g).you.role).toBe("host");
+    expect(latest(g).hostCrew).toBe("copilot");
+    expect(latest(g).notice).toBe("The Pilot left the room: the Co-Pilot is the host now.");
+    // The room stays open on the same invite.
+    expect((await post(`/rooms/${invite}/join`, {})).status).toBe(200);
+  });
+
+  test("the host leaves alone, or a solo room: the room is closed", async () => {
+    for (const body of [{}, { solo: { crew: "pilot", level: "aviator" } }]) {
+      const room = await post("/rooms", body);
+      const h = await client();
+      expect(await emit(h, "room:join", { roomId: room.body.roomId, token: room.body.token })).toEqual({ ok: true });
+      expect(await emit(h, "room:leave")).toEqual({ ok: true });
+      expect((await post(`/rooms/${room.body.inviteCode}/join`, {})).status, JSON.stringify(body)).toBe(404);
+      const again = await client();
+      expect((await emit(again, "room:join", { roomId: room.body.roomId, token: room.body.token })).error).toBe("Room not found.");
+    }
+  });
+
+  test("not during a game; a spectator may leave any time", async () => {
+    const { h, roomId, invite } = await startedGame();
+    expect((await emit(h, "room:leave")).error).toBe("Exit the game first.");
+    const watcher = await post(`/rooms/${invite}/join`, {});
+    const w = await client();
+    expect(await emit(w, "room:join", { roomId, token: watcher.body.token })).toEqual({ ok: true });
+    await until(() => latest(h).observerCount === 1, 2000, "spectator seen");
+    expect(await emit(w, "room:leave")).toEqual({ ok: true });
+    await until(() => latest(h).observerCount === 0, 2000, "spectator gone");
+    expect(latest(h).status).toBe("in_progress");
   });
 });
 
