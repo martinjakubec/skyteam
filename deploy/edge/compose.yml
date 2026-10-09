@@ -1,0 +1,33 @@
+# The edge proxy: the only thing on the VPS reachable from the internet (ports
+# 80 and 443). Caddy gets and renews the HTTPS certificates by itself and sends
+# each site to its app over the shared "edge" network. In /srv/edge on the VPS,
+# copied there by the deploy workflow.
+#
+# Each app has a site file in sites/. auth/ holds the username/password gates,
+# written by the deploy workflow from GitHub secrets (never committed).
+name: edge
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - ./auth:/etc/caddy/auth:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  caddy-data:
+  caddy-config:

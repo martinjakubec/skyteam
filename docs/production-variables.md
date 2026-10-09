@@ -1,36 +1,67 @@
 # Production variables
 
-Production secrets and settings live in GitHub, under the repo's Settings →
-Secrets and variables → Actions:
+Production secrets and settings live in GitHub, in the repository's **Settings →
+Environments → `production`**:
 
 - **secrets** for anything that must stay hidden;
 - **variables** for plain settings.
 
-The copy the server runs with is the `.env` beside `docker-compose.yml`. It is
-git-ignored and must never be committed. Keep this list current whenever a new
-setting is added.
+Each deploy writes them to the VPS: the app's settings go to
+`/srv/apps/skyteam/.env`, and the site password's hash to
+`/srv/edge/auth/skyteam.caddy`. Nothing secret is ever in the repository.
 
-## Set these for production
+**Getting the values.** Your git-ignored `.env.production` holds a generated
+value for each one, ready to copy. When adding a new setting, put it here, in
+`.env.production`, and in the deploy workflow.
 
-| Name | GitHub | Required | Production value | Status |
-|---|---|---|---|---|
-| `JWT_SECRET` | secret | yes | 64 hex characters (`openssl rand -hex 32`). Anyone who has it can take over any seat. The server refuses to start with a placeholder or anything under 32 characters. | generated into local `.env` 2026-10-07 · ☐ in GitHub |
-| `POSTGRES_PASSWORD` | secret | yes | 48 hex characters (`openssl rand -hex 24`). Hex, so it fits in `DATABASE_URL` unescaped. Compose refuses to start without it. | generated into local `.env` 2026-10-07 · ☐ in GitHub |
-| `SESSION_SECRET` | secret | yes | 64 hex characters (`openssl rand -hex 32`), different from `JWT_SECRET`. Signs sign-in sessions; anyone who has it can sign in as anyone. The server refuses to start with a placeholder, anything under 32 characters, or a copy of `JWT_SECRET`. | generated into local `.env` 2026-10-08 · ☐ in GitHub |
-| `SUPERADMIN_USERNAME` | variable | recommended | The site owner's username (3–24 of `a-z 0-9 . _ -`). On start, the server creates this account as SUPERADMIN if it doesn't exist, or makes it SUPERADMIN again if it does. Nobody can register this name. | local `.env`: `admin` · ☐ |
-| `SUPERADMIN_INITIAL_PASSWORD` | secret | with `SUPERADMIN_USERNAME` | The owner account's first password, at least 10 characters in production (`openssl rand -base64 18`). Used only when the account is created; sign in and change it right away. | local `.env`: `admin` (dev only) · ☐ in GitHub |
-| `CLIENT_ORIGIN` | variable | yes | The site's public origin, e.g. `https://skyteam.example`. A comma-separated list is allowed. `*` is refused in production. | ☐ |
-| `VITE_SERVER_URL` | variable | yes | The server's public URL as browsers reach it, e.g. `https://skyteam.example` behind the proxy. It is built into the client at build time, so rebuild the client after changing it. | ☐ |
-| `TRUST_PROXY` | variable | behind a proxy | `2` behind Caddy plus the client's nginx (the VPS plan), so rate limits see real client addresses. Too high a number lets clients fake their address. | ☐ |
-| `NPC_WORKERS` | variable | recommended | The CPUs the server may use for the bot's search, e.g. `1` on a 2-vCPU VPS. Unset, it counts the host's cores, which can exceed the container's limit. | ☐ |
-| `GIT_SHA` | set by the deploy | recommended | `$(git rev-parse --short HEAD)` at deploy time. It is stamped on every logged game. Unset, it is `dev`. | ☐ |
-| `RECONNECT_GRACE_MS` | variable | no | How long a dropped player's seat is held. The default, `60000` (60 s), is fine. | default |
+## Secrets
+
+| Name | Required | Value | Status |
+|---|---|---|---|
+| `JWT_SECRET` | yes | 64 hex characters (`openssl rand -hex 32`). Signs the players' identity tokens: anyone who has it can take over any seat. The server refuses to start with a placeholder or anything under 32 characters. | in `.env.production` · ☐ in GitHub |
+| `SESSION_SECRET` | yes | 64 hex characters, different from `JWT_SECRET`. Signs sign-in sessions: anyone who has it can sign in as anyone. | in `.env.production` · ☐ in GitHub |
+| `POSTGRES_PASSWORD` | yes | 48 hex characters (`openssl rand -hex 24`). Hex, so it fits in the database URL unescaped. | in `.env.production` · ☐ in GitHub |
+| `SUPERADMIN_INITIAL_PASSWORD` | with `SUPERADMIN_USERNAME` | The owner account's first password, at least 10 characters. Used only when the account is created: sign in and change it right away. | in `.env.production` · ☐ in GitHub |
+| `SITE_USERNAME` | recommended | The username of the password gate in front of the whole site (letters, digits, `. _ -`). | in `.env.production` (`skyteam`) · ☐ in GitHub |
+| `SITE_PASSWORD` | recommended | Its password. With either of the two unset, the site is open to everyone. | in `.env.production` · ☐ in GitHub |
+| `DEPLOY_HOST` | yes | The VPS's IP address or host name. | ☐ |
+| `DEPLOY_SSH_KEY` | yes | The private deploy key (`skyteam-deploy`, see [deployment.md](deployment.md)). | ☐ |
+| `DEPLOY_KNOWN_HOSTS` | yes | The VPS's host keys: the output of `ssh-keyscan <vps-ip>`. | ☐ |
+| `DEPLOY_USER` | no | The SSH user. Default `deploy`, which is what `bootstrap-vps.sh` creates. | default |
+
+None of the values may contain a single quote (`'`). The workflow refuses them.
+
+## Variables
+
+| Name | Required | Value | Status |
+|---|---|---|---|
+| `SUPERADMIN_USERNAME` | recommended | The site owner's username. On start, the server creates this account as SUPERADMIN if it doesn't exist, or makes it SUPERADMIN again if it does. Nobody can register this name. | `.env.production`: `admin` · ☐ |
+| `NPC_WORKERS` | recommended | The CPUs the bot's search may use: the VPS's vCPUs minus one, at least `1`. | `.env.production`: `1` · ☐ |
+| `RECONNECT_GRACE_MS` | no | How long a dropped player's seat is held. The default, `60000` (60 s), is fine. | default |
+
+## Set by the deployment itself
+
+`deploy/app/compose.yml` and the workflow set these, so don't put them in GitHub:
+
+| Name | Value |
+|---|---|
+| `CLIENT_ORIGIN` | `https://skyteam.mjakubec.eu` |
+| `TRUST_PROXY` | `2`: Caddy, then the client's nginx |
+| `DATABASE_URL`, `REDIS_URL`, `PORT` | the containers' own addresses |
+| `GIT_SHA` / `IMAGE_TAG` | the deployed commit |
+
+`VITE_SERVER_URL` isn't needed any more: a production build talks to its own
+origin.
 
 ## Don't set these
 
-- **`DATABASE_URL`, `REDIS_URL`, `PORT`:** `docker-compose.yml` builds them from
-  the values above.
 - **`REAL_TIME_SECONDS`, `DEBRIEF_COUNTDOWN_MS`, `NPC_DELAY_MS`, `NPC_THINK_MS`:**
   test and tuning knobs. In production they would shorten Real-Time rounds or
   the countdown between rounds, or change how the bot plays.
-- **`VITE_SERVER_PORT`:** only used when `VITE_SERVER_URL` is unset (dev and LAN).
+- **`VITE_SERVER_PORT`:** only used in development.
+
+## Locally
+
+The git-ignored `.env` holds the values `docker-compose.yml` and
+`docker-compose.dev.yml` use on your machine, including the local owner account
+admin / admin. Production never uses it.

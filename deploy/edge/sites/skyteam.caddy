@@ -1,0 +1,16 @@
+skyteam.mjakubec.eu {
+	encode zstd gzip
+
+	# The whole site behind a username and password (HTTP Basic Auth, like
+	# .htaccess), except:
+	# - /health, so the deploy and monitors can check the site;
+	# - /socket.io/*, because some browsers (Safari) don't send the password on
+	#   a WebSocket. The socket is no way in: it only serves rooms created
+	#   through the protected pages, to players holding their tokens.
+	# The deploy writes auth/skyteam.caddy from the SITE_USERNAME and
+	# SITE_PASSWORD secrets (empty when they aren't set: then the site is open).
+	@gated not path /health /socket.io/*
+	import /etc/caddy/auth/skyteam.caddy
+
+	reverse_proxy skyteam-web:80
+}

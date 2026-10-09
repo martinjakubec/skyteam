@@ -22,5 +22,6 @@ RUN npm run build -w @skyteam/shared && npm run build -w @skyteam/client
 # --- runtime stage ---
 FROM nginx:alpine AS runtime
 COPY packages/client/nginx.conf /etc/nginx/conf.d/default.conf
+COPY packages/client/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/packages/client/dist /usr/share/nginx/html
 EXPOSE 80
