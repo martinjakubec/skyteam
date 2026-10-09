@@ -314,6 +314,21 @@ describe("cockpit views", () => {
     }
   });
 
+  test("Brakes: a deployed space shows its die for the rest of the round, as Gear and Flaps do", () => {
+    const face = (g: GameState, i: number) => {
+      const { container } = render(<Cockpit snapshot={snapshotOf(g, g.turn)} onCommand={() => {}} />);
+      const text = container.querySelector(`[data-target='${JSON.stringify({ kind: "brakes", slot: i })}'] .slot-face`)?.textContent;
+      cleanup();
+      return text;
+    };
+    const g = dealt();
+    // Brakes 1 (a 2) deployed this round; Brakes 2 still waits for a 4.
+    expect(face({ ...g, brakesDeployed: 1, brakeSlots: [true, false, false] }, 0)).toBe("2");
+    expect(face({ ...g, brakesDeployed: 1, brakeSlots: [true, false, false] }, 1)).toBe("4");
+    // A later round: deployed and green, the space is free again, so no die on it.
+    expect(face({ ...g, brakesDeployed: 1, brakeSlots: [false, false, false] }, 0)).toBe("");
+  });
+
   test("Real-Time: a disconnected seat shows who the paused clock waits for", () => {
     let g = dealt(["realTime"]);
     g = { ...g, timerEndsAt: null, timerRemainingMs: 30_000 };

@@ -563,7 +563,7 @@ export function Cockpit({
                 {game.brakeSlots.map((taken, i) => (
                   <Fragment key={i}>
                     {i > 0 && <span className="slot-arrow" aria-hidden="true" />}
-                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(mine("pilot") && i <= game.brakesDeployed && !taken) && valOk([BRAKE_VAL[i]])} />
+                    <Slot tone="blue" green={i < game.brakesDeployed} target={{ kind: "brakes", slot: i }} taken={taken} held={taken ? BRAKE_VAL[i] : null} label={`${BRAKE_VAL[i]}`} onClick={() => place({ kind: "brakes", slot: i })} enabled={canFree(mine("pilot") && i <= game.brakesDeployed && !taken) && valOk([BRAKE_VAL[i]])} />
                   </Fragment>
                 ))}
               </div>
