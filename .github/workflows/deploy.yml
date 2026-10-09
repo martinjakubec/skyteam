@@ -116,6 +116,11 @@ jobs:
             eval "value=\${$name}"
             test -n "$value" || { echo "::error::Set the $name secret (docs/production-variables.md)."; exit 1; }
           done
+          # It goes into the database URL as it is: a / # ? or % there breaks the
+          # URL, and every sign-in fails with "Invalid URL".
+          case "$POSTGRES_PASSWORD" in *[!A-Za-z0-9._~-]*)
+            echo "::error::POSTGRES_PASSWORD may contain only letters, digits and . _ ~ - (use openssl rand -hex 24)."; exit 1 ;;
+          esac
           : > app.env
           for name in JWT_SECRET SESSION_SECRET POSTGRES_PASSWORD SUPERADMIN_USERNAME SUPERADMIN_INITIAL_PASSWORD NPC_WORKERS RECONNECT_GRACE_MS IMAGE_TAG; do
             eval "value=\${$name}"

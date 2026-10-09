@@ -20,7 +20,7 @@ value for each one, ready to copy. When adding a new setting, put it here, in
 |---|---|---|---|
 | `JWT_SECRET` | yes | 64 hex characters (`openssl rand -hex 32`). Signs the players' identity tokens: anyone who has it can take over any seat. The server refuses to start with a placeholder or anything under 32 characters. | in `.env.production` · ☐ in GitHub |
 | `SESSION_SECRET` | yes | 64 hex characters, different from `JWT_SECRET`. Signs sign-in sessions: anyone who has it can sign in as anyone. | in `.env.production` · ☐ in GitHub |
-| `POSTGRES_PASSWORD` | yes | 48 hex characters (`openssl rand -hex 24`). Hex, so it fits in the database URL unescaped. | in `.env.production` · ☐ in GitHub |
+| `POSTGRES_PASSWORD` | yes | 48 hex characters (`openssl rand -hex 24`). It goes into the database URL unescaped, so only letters, digits and `. _ ~ -`: no base64, whose `/` breaks the URL. The deploy refuses anything else. PostgreSQL keeps the password it was first started with, so changing it later also takes an `ALTER USER` (see deployment.md). | in `.env.production` · ☐ in GitHub |
 | `SUPERADMIN_INITIAL_PASSWORD` | with `SUPERADMIN_USERNAME` | The owner account's first password, at least 10 characters. Used only when the account is created: sign in and change it right away. | in `.env.production` · ☐ in GitHub |
 | `SITE_USERNAME` | recommended | The username of the password gate in front of the whole site (letters, digits, `. _ -`). | in `.env.production` (`skyteam`) · ☐ in GitHub |
 | `SITE_PASSWORD` | recommended | Its password. With either of the two unset, the site is open to everyone. | in `.env.production` · ☐ in GitHub |

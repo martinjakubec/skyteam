@@ -106,6 +106,14 @@ then sign in as `SUPERADMIN_USERNAME` with `SUPERADMIN_INITIAL_PASSWORD`, and
 
 - **Deploy:** publish a release (a new tag, e.g. `v1.1.0`, on `main`).
 - **Change a setting or secret:** edit it in GitHub, then re-run the workflow.
+- **Change `POSTGRES_PASSWORD`:** PostgreSQL keeps the password it was first
+  started with. After the deploy with the new one, set it in the database too,
+  then restart the server:
+  ```sh
+  cd /srv/apps/skyteam
+  docker compose exec postgres sh -c 'psql -U skyteam -c "ALTER USER skyteam PASSWORD '\''$POSTGRES_PASSWORD'\''"'
+  docker compose restart server
+  ```
 - **Roll back:** Actions → Deploy → Run workflow, with "Use workflow from" set
   to an older release's tag. Or on the VPS: set `IMAGE_TAG='<older sha>'` in
   `/srv/apps/skyteam/.env`, then
