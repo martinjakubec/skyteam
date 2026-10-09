@@ -42,10 +42,15 @@ export function DebriefPanel({ snapshot, onReady }: { snapshot: RoomSnapshot; on
           </li>
         ))}
       </ul>
+      {/* A small box in the middle of the screen, over the board. It doesn't
+         catch clicks, so Wait (below) still takes the Ready back. */}
       {left !== null && (
-        <p className="debrief-count" role="timer" aria-live="assertive">
-          {left}
-        </p>
+        <div className="debrief-count-box">
+          <span className="debrief-count-label">Round {next} in</span>
+          <span className="debrief-count" role="timer" aria-live="assertive">
+            {left}
+          </span>
+        </div>
       )}
       {me && (
         <button type="button" className={debrief.ready[me] ? "debrief-wait" : "debrief-ready"} onClick={() => onReady(!debrief.ready[me])}>

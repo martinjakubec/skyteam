@@ -516,8 +516,18 @@ input:focus {
   font-family: var(--font-body);
   text-shadow: none;
 }
+.debrief-count-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+.debrief-count-label {
+  color: var(--muted);
+  opacity: 1;
+}
 .debrief-count {
   font-family: var(--font-body);
+  font-weight: 700;
 }
 .debrief-ready {
   background: var(--green);

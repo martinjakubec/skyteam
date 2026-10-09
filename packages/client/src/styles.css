@@ -2218,13 +2218,36 @@ ul {
 .debrief-crew li.copilot {
   border-left-color: var(--orange);
 }
+/* The 3-2-1 before the next round: a small box in the middle of the screen. It
+   lets clicks through, so Wait stays in reach. */
+.debrief-count-box {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 950;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 9rem;
+  padding: 0.9rem 1.6rem 1.1rem;
+  border-radius: 14px;
+  background: var(--recess);
+  color: var(--paper);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+.debrief-count-label {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
 .debrief-count {
-  align-self: center;
-  margin: 0;
   font-family: var(--font-display);
-  font-size: 3rem;
+  font-size: 3.5rem;
   line-height: 1;
-  color: var(--recess);
   font-variant-numeric: tabular-nums;
 }
 .debrief-ready {
