@@ -1,6 +1,7 @@
 # Deployment: skyteam.mjakubec.eu
 
-SkyTeam runs on a VPS, deployed by GitHub Actions on every push to `main`.
+SkyTeam runs on a VPS, deployed by GitHub Actions whenever a release is
+published. Pushing to `main` deploys nothing.
 Everything on the VPS is code in this repository; the VPS itself only needs
 Docker:
 
@@ -81,11 +82,12 @@ closing the first.** Running the script again is harmless.
 
 Then delete `skyteam-deploy` from your computer, or keep it somewhere safe.
 
-**6. Deploy.** Push to `main`, or run Actions → Deploy → Run workflow. The
-workflow:
+**6. Deploy.** Publish a release: Releases → Draft a new release, a new tag
+such as `v1.0.0` on `main`, then Publish. Or run Actions → Deploy → Run
+workflow. The workflow:
 1. tests;
 2. builds and pushes `ghcr.io/martinjakubec/skyteam-{server,client}` (tagged
-   with the commit);
+   with the commit, and with the release's tag);
 3. copies `deploy/` to the VPS and writes the settings;
 4. pulls the images and starts everything;
 5. checks `https://skyteam.mjakubec.eu/health`.
@@ -98,10 +100,11 @@ then sign in as `SUPERADMIN_USERNAME` with `SUPERADMIN_INITIAL_PASSWORD`, and
 
 ## Everyday
 
-- **Deploy:** push to `main`.
+- **Deploy:** publish a release (a new tag, e.g. `v1.1.0`, on `main`).
 - **Change a setting or secret:** edit it in GitHub, then re-run the workflow.
-- **Roll back:** Actions → Deploy → run it on an older commit. Or on the VPS:
-  set `IMAGE_TAG='<older sha>'` in `/srv/apps/skyteam/.env`, then
+- **Roll back:** Actions → Deploy → Run workflow, with "Use workflow from" set
+  to an older release's tag. Or on the VPS: set `IMAGE_TAG='<older sha>'` in
+  `/srv/apps/skyteam/.env`, then
   `docker compose up -d` in `/srv/apps/skyteam`.
 - **Logs:** `ssh deploy@<vps>`, then `cd /srv/apps/skyteam && docker compose
   logs -f server` (or `/srv/edge` for Caddy).
