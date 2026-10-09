@@ -80,7 +80,9 @@ closing the first.** Running the script again is harmless.
 - **Deploy access:**
   - `DEPLOY_HOST`: the VPS's IP or name;
   - `DEPLOY_SSH_KEY`: the contents of `skyteam-deploy`, the private key;
-  - `DEPLOY_KNOWN_HOSTS`: the output of `ssh-keyscan <vps-ip>`.
+
+The VPS's host keys aren't a secret: they're in `deploy/vps-host-keys`. After
+reinstalling the VPS, its keys change: update that file (it says how).
 
 Then delete `skyteam-deploy` from your computer, or keep it somewhere safe.
 

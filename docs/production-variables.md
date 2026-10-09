@@ -26,7 +26,6 @@ value for each one, ready to copy. When adding a new setting, put it here, in
 | `SITE_PASSWORD` | recommended | Its password. With either of the two unset, the site is open to everyone. | in `.env.production` · ☐ in GitHub |
 | `DEPLOY_HOST` | yes | The VPS's IP address or host name. | ☐ |
 | `DEPLOY_SSH_KEY` | yes | The private deploy key (`skyteam-deploy`, see [deployment.md](deployment.md)). | ☐ |
-| `DEPLOY_KNOWN_HOSTS` | yes | The VPS's host keys: the output of `ssh-keyscan <vps-ip>`. | ☐ |
 | `DEPLOY_USER` | no | The SSH user. Default `deploy`, which is what `bootstrap-vps.sh` creates. | default |
 
 None of the values may contain a single quote (`'`). The workflow refuses them.

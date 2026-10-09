@@ -82,7 +82,6 @@ jobs:
         if: steps.vps.outputs.ready == 'true'
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           # Secrets pasted in a browser can carry stray spaces or Windows line
           # endings, which SSH rejects: strip them.
@@ -90,17 +89,16 @@ jobs:
           echo "VPS=$VPS_USER@$host" >> "$GITHUB_ENV"
           install -d -m 700 ~/.ssh
           printf '%s\n' "$KEY" | tr -d '\r' > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          # A bare key line ("ssh-ed25519 AAAA…", no host in front) is for DEPLOY_HOST.
-          printf '%s\n' "$KNOWN_HOSTS" | tr -d '\r' | sed -E 's/^[[:space:]]+//; /^$/d' \
-            | sed -E "s/^(ssh-|ecdsa-)/$host \\1/" > ~/.ssh/known_hosts
+          # The VPS's host keys are public, so they're in the repository: trust
+          # them, and only them, for DEPLOY_HOST.
+          grep -E '^(ssh-|ecdsa-)' deploy/vps-host-keys | sed "s/^/$host /" > ~/.ssh/known_hosts
 
           # Say what's wrong instead of SSH's bare "Host key verification failed".
           # Fingerprints aren't secret; the host shows as *** in the log.
-          echo "Host keys in DEPLOY_KNOWN_HOSTS:"
-          ssh-keygen -lf ~/.ssh/known_hosts || { echo "::error::DEPLOY_KNOWN_HOSTS has no valid key line (expected: <host> ssh-ed25519 AAAA…)."; exit 1; }
-          ssh-keygen -F "$host" >/dev/null || { echo "::error::DEPLOY_KNOWN_HOSTS has no key for DEPLOY_HOST: the host at the start of its line must be exactly DEPLOY_HOST (the IP or name)."; exit 1; }
+          echo "Trusted host keys (deploy/vps-host-keys):"
+          ssh-keygen -lf ~/.ssh/known_hosts || { echo "::error::deploy/vps-host-keys has no valid key line."; exit 1; }
           ssh-keygen -yf ~/.ssh/id_ed25519 >/dev/null || { echo "::error::DEPLOY_SSH_KEY isn't a valid private key: paste the whole file, with its BEGIN/END lines and line breaks."; exit 1; }
-          ssh -o BatchMode=yes "$VPS_USER@$host" true || { echo "::error::Can't log in to the VPS as $VPS_USER with DEPLOY_SSH_KEY (see the SSH error above)."; exit 1; }
+          ssh -o BatchMode=yes "$VPS_USER@$host" true || { echo "::error::Can't log in to the VPS as $VPS_USER with DEPLOY_SSH_KEY (see the SSH error above). \"Host key verification failed\": DEPLOY_HOST isn't the VPS whose keys are in deploy/vps-host-keys."; exit 1; }
 
       - name: The app's settings (.env) from GitHub secrets and variables
         if: steps.vps.outputs.ready == 'true'

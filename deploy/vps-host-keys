@@ -1,0 +1,6 @@
+# The VPS's SSH host keys (public: the server shows them to anyone who connects).
+# The deploy trusts only these, for the host in the DEPLOY_HOST secret. After
+# reinstalling the VPS, replace them with the output of
+#   ssh-keyscan -t ed25519 <vps-ip> | cut -d' ' -f2-
+# and check its fingerprint (ssh-keygen -lf) against the VPS console's.
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFwRmvEj1NIi1VwKU6a9POK7BuCax2qcZuc01vr6rZ7s
