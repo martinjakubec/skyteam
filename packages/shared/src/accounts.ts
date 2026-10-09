@@ -90,7 +90,7 @@ export interface AdminStats {
   includeSeeded: boolean;
   /** How many games were flown on an earlier game's dice. */
   seededGames: number;
-  playRate: { scenario: string; games: number; pct_of_all_games: number; finished: number; pct_of_finished_games: number | null }[];
+  playRate: { scenario: string; games: number; pct_of_all_games: number; finished: number; finish_pct: number; pct_of_finished_games: number | null }[];
   crashCauses: { scenario: string; cause: string; losses: number; pct_of_airport_losses: number }[];
   failedLandings: { scenario: string; condition: string; failed_landings: number }[];
   winRateByAirport: { scenario: string; finished: number; won: number; lost: number; win_pct: number }[];

@@ -14,6 +14,8 @@ export const STAT_QUERIES = {
        count(*)                                                             AS games,
        round(100.0 * count(*) / sum(count(*)) OVER (), 1)                    AS pct_of_all_games,
        count(*) FILTER (WHERE result IN ('won', 'lost'))                     AS finished,
+       round(100.0 * count(*) FILTER (WHERE result IN ('won', 'lost')) / count(*), 1)
+                                                                             AS finish_pct,
        round(100.0 * count(*) FILTER (WHERE result IN ('won', 'lost'))
              / nullif(sum(count(*) FILTER (WHERE result IN ('won', 'lost'))) OVER (), 0), 1)
                                                                              AS pct_of_finished_games
@@ -100,7 +102,7 @@ export function forStats(sql: string, includeSeeded: boolean): string {
 
 /** pg reads count() and numeric as strings: these columns become numbers. */
 const NUMERIC = new Set([
-  "games", "pct_of_all_games", "finished", "pct_of_finished_games", "losses", "pct_of_airport_losses",
+  "games", "pct_of_all_games", "finished", "finish_pct", "pct_of_finished_games", "losses", "pct_of_airport_losses",
   "failed_landings", "won", "lost", "win_pct", "rounds_reached",
 ]);
 const numeric = (row: Record<string, unknown>) =>

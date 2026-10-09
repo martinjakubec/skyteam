@@ -51,13 +51,13 @@ describe("statistics", () => {
   test("numbers arrive as numbers; same-dice games are left out unless asked for", async () => {
     const admin = await as("ada", "ADMIN");
     const db = FakePg.last;
-    db.results.set(forStats(STAT_QUERIES.playRate, false), [{ scenario: "YUL", games: "3", pct_of_all_games: "75.0", finished: "2", pct_of_finished_games: "100.0" }]);
+    db.results.set(forStats(STAT_QUERIES.playRate, false), [{ scenario: "YUL", games: "3", pct_of_all_games: "75.0", finished: "2", finish_pct: "66.7", pct_of_finished_games: "100.0" }]);
     db.results.set(forStats(STAT_QUERIES.playRate, true), [{ scenario: "YUL", games: "4", pct_of_all_games: "80.0", finished: "2", pct_of_finished_games: null }]);
     db.results.set(forStats(STAT_QUERIES.unfinished, false), [{ result: "exited", rounds_reached: 2, games: "5" }]);
     const r = await s.api("GET", "/api/admin/stats", { cookie: admin.cookie });
     expect(r.body).toMatchObject({
       includeSeeded: false,
-      playRate: [{ scenario: "YUL", games: 3, pct_of_all_games: 75, finished: 2, pct_of_finished_games: 100 }],
+      playRate: [{ scenario: "YUL", games: 3, pct_of_all_games: 75, finished: 2, finish_pct: 66.7, pct_of_finished_games: 100 }],
       unfinished: [{ result: "exited", rounds_reached: 2, games: 5 }],
       crashCauses: [],
       recentGames: [],

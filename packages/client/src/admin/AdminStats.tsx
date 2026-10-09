@@ -116,7 +116,7 @@ function Dashboard({ stats }: { stats: Stats }) {
       <Section title="Play rate per airport" empty={!stats.playRate.length}>
         <div className="adm-chart-row">
           <PieChart title="Play rate per airport" slices={plays} legend={false} />
-        <Table head={["Airport", "Games", "Share", "Finished", "Share of finished"]}>
+        <Table head={["Airport", "Games", "Share", "Finished", "Finish rate", "Share of all finished"]}>
           {stats.playRate.map((r, i) => (
             <tr key={r.scenario}>
               <td>
@@ -126,6 +126,7 @@ function Dashboard({ stats }: { stats: Stats }) {
               <Num>{r.games}</Num>
               <Num>{pct(r.pct_of_all_games)}</Num>
               <Num>{r.finished}</Num>
+              <Num>{pct(r.finish_pct)}</Num>
               <Num>{pct(r.pct_of_finished_games)}</Num>
             </tr>
           ))}

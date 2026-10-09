@@ -9,11 +9,14 @@
 -- out unless asked: to do the same here, read every "FROM games" below as
 -- "FROM (SELECT * FROM games WHERE seeded_from IS NULL) games".
 
--- 1. Play rate: each airport's share of all logged games, and of finished games.
+-- 1. Play rate: each airport's share of all logged games; how many of its games
+--    were finished (finish_pct); and its share of all finished games.
 SELECT scenario,
        count(*)                                                             AS games,
        round(100.0 * count(*) / sum(count(*)) OVER (), 1)                    AS pct_of_all_games,
        count(*) FILTER (WHERE result IN ('won', 'lost'))                     AS finished,
+       round(100.0 * count(*) FILTER (WHERE result IN ('won', 'lost')) / count(*), 1)
+                                                                             AS finish_pct,
        round(100.0 * count(*) FILTER (WHERE result IN ('won', 'lost'))
              / nullif(sum(count(*) FILTER (WHERE result IN ('won', 'lost'))) OVER (), 0), 1)
                                                                              AS pct_of_finished_games

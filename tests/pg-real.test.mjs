@@ -216,8 +216,8 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       const st = await mod.stats.loadStats();
       expect(st.seededGames).toBe(1);
       expect(st.playRate).toEqual([
-        { scenario: "YUL", games: 4, pct_of_all_games: 66.7, finished: 3, pct_of_finished_games: 100 },
-        { scenario: "KEF", games: 2, pct_of_all_games: 33.3, finished: 0, pct_of_finished_games: 0 },
+        { scenario: "YUL", games: 4, pct_of_all_games: 66.7, finished: 3, finish_pct: 75, pct_of_finished_games: 100 },
+        { scenario: "KEF", games: 2, pct_of_all_games: 33.3, finished: 0, finish_pct: 0, pct_of_finished_games: 0 },
       ]);
       expect(st.crashCauses).toEqual([
         { scenario: "YUL", cause: "Landing failed", losses: 1, pct_of_airport_losses: 50 },

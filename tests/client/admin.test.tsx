@@ -21,8 +21,8 @@ const STATS: AdminStats = {
   includeSeeded: false,
   seededGames: 2,
   playRate: [
-    { scenario: "YUL", games: 4, pct_of_all_games: 66.7, finished: 3, pct_of_finished_games: 100 },
-    { scenario: "red-TGU", games: 2, pct_of_all_games: 33.3, finished: 0, pct_of_finished_games: 0 },
+    { scenario: "YUL", games: 4, pct_of_all_games: 66.7, finished: 3, finish_pct: 75, pct_of_finished_games: 100 },
+    { scenario: "red-TGU", games: 2, pct_of_all_games: 33.3, finished: 0, finish_pct: 0, pct_of_finished_games: 0 },
   ],
   crashCauses: [{ scenario: "YUL", cause: "Landing failed", losses: 2, pct_of_airport_losses: 100 }],
   failedLandings: [{ scenario: "YUL", condition: "Speed too high", failed_landings: 2 }],
@@ -92,6 +92,11 @@ describe("the statistics dashboard", () => {
     const play = section(/Play rate/);
     expect(within(play).getByText("YUL Montréal-Trudeau")).toBeTruthy();
     expect(within(play).getAllByText("66.7 %").length).toBeGreaterThan(0);
+    // Finish rate is the airport's own (3 of its 4 games); Share of all finished
+    // is its part of every finished game (all 3).
+    expect([...play.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["Airport", "Games", "Share", "Finished", "Finish rate", "Share of all finished"]);
+    const yul = within(play).getByText("YUL Montréal-Trudeau").closest("tr")!;
+    expect([...yul.querySelectorAll("td")].map((td) => td.textContent)).toEqual(["YUL Montréal-Trudeau", "4", "66.7 %", "3", "75.0 %", "100.0 %"]);
     expect(within(section(/Special Abilities/)).getByText("No games yet.")).toBeTruthy();
     const recent = section(/Recent games/);
     expect(within(recent).getByRole("link", { name: /YUL/ }).getAttribute("href")).toBe(`/games/${"g".repeat(21)}`);
