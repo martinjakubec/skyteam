@@ -84,9 +84,23 @@ jobs:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
+          # Secrets pasted in a browser can carry stray spaces or Windows line
+          # endings, which SSH rejects: strip them.
+          host=$(printf '%s' "$VPS_HOST" | tr -d '[:space:]')
+          echo "VPS=$VPS_USER@$host" >> "$GITHUB_ENV"
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$KEY" | tr -d '\r' > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          # A bare key line ("ssh-ed25519 AAAA…", no host in front) is for DEPLOY_HOST.
+          printf '%s\n' "$KNOWN_HOSTS" | tr -d '\r' | sed -E 's/^[[:space:]]+//; /^$/d' \
+            | sed -E "s/^(ssh-|ecdsa-)/$host \\1/" > ~/.ssh/known_hosts
+
+          # Say what's wrong instead of SSH's bare "Host key verification failed".
+          # Fingerprints aren't secret; the host shows as *** in the log.
+          echo "Host keys in DEPLOY_KNOWN_HOSTS:"
+          ssh-keygen -lf ~/.ssh/known_hosts || { echo "::error::DEPLOY_KNOWN_HOSTS has no valid key line (expected: <host> ssh-ed25519 AAAA…)."; exit 1; }
+          ssh-keygen -F "$host" >/dev/null || { echo "::error::DEPLOY_KNOWN_HOSTS has no key for DEPLOY_HOST: the host at the start of its line must be exactly DEPLOY_HOST (the IP or name)."; exit 1; }
+          ssh-keygen -yf ~/.ssh/id_ed25519 >/dev/null || { echo "::error::DEPLOY_SSH_KEY isn't a valid private key: paste the whole file, with its BEGIN/END lines and line breaks."; exit 1; }
+          ssh -o BatchMode=yes "$VPS_USER@$host" true || { echo "::error::Can't log in to the VPS as $VPS_USER with DEPLOY_SSH_KEY (see the SSH error above)."; exit 1; }
 
       - name: The app's settings (.env) from GitHub secrets and variables
         if: steps.vps.outputs.ready == 'true'
@@ -132,13 +146,13 @@ jobs:
       - name: Copy the stacks and settings
         if: steps.vps.outputs.ready == 'true'
         run: |
-          ssh "$VPS_USER@$VPS_HOST" 'mkdir -p /srv/edge/sites /srv/edge/auth /srv/apps/skyteam/backups'
-          scp deploy/edge/compose.yml deploy/edge/Caddyfile "$VPS_USER@$VPS_HOST:/srv/edge/"
-          scp deploy/edge/sites/*.caddy "$VPS_USER@$VPS_HOST:/srv/edge/sites/"
-          scp skyteam-auth.caddy "$VPS_USER@$VPS_HOST:/srv/edge/auth/skyteam.caddy"
-          scp deploy/app/compose.yml "$VPS_USER@$VPS_HOST:/srv/apps/skyteam/compose.yml"
-          scp app.env "$VPS_USER@$VPS_HOST:/srv/apps/skyteam/.env"
-          ssh "$VPS_USER@$VPS_HOST" 'chmod 600 /srv/apps/skyteam/.env /srv/edge/auth/skyteam.caddy'
+          ssh "$VPS" 'mkdir -p /srv/edge/sites /srv/edge/auth /srv/apps/skyteam/backups'
+          scp deploy/edge/compose.yml deploy/edge/Caddyfile "$VPS:/srv/edge/"
+          scp deploy/edge/sites/*.caddy "$VPS:/srv/edge/sites/"
+          scp skyteam-auth.caddy "$VPS:/srv/edge/auth/skyteam.caddy"
+          scp deploy/app/compose.yml "$VPS:/srv/apps/skyteam/compose.yml"
+          scp app.env "$VPS:/srv/apps/skyteam/.env"
+          ssh "$VPS" 'chmod 600 /srv/apps/skyteam/.env /srv/edge/auth/skyteam.caddy'
           rm app.env skyteam-auth.caddy
 
       - name: Start the new version
@@ -148,8 +162,8 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           # The images may be private: log in for the pull with this run's token, then out.
-          printf '%s' "$TOKEN" | ssh "$VPS_USER@$VPS_HOST" "docker login ghcr.io -u '$ACTOR' --password-stdin"
-          ssh "$VPS_USER@$VPS_HOST" 'set -e
+          printf '%s' "$TOKEN" | ssh "$VPS" "docker login ghcr.io -u '$ACTOR' --password-stdin"
+          ssh "$VPS" 'set -e
             docker network inspect edge >/dev/null 2>&1 || docker network create edge
             cd /srv/apps/skyteam
             docker compose pull --quiet
