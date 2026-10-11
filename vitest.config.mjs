@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   // The client's components use React's automatic JSX runtime (its tsconfig: react-jsx).
   esbuild: { jsx: "automatic" },
+  // The service worker's registration is a module only the Vite build makes.
+  resolve: { alias: { "virtual:pwa-register/react": new URL("./tests/support/pwaRegister.ts", import.meta.url).pathname } },
   test: {
     // Client tests (*.test.tsx) pick a browser-like DOM per file: @vitest-environment jsdom.
     include: ["tests/**/*.test.{mjs,tsx}"],

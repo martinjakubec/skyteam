@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The app icon: the game's plane climbing away, on the page's dark background.
+       Full-bleed with the plane inside the central 60%, so it is safe as a
+       maskable icon (Android crops to a circle or squircle). -->
+  <rect width="512" height="512" fill="#0b0f17"/>
+  <circle cx="256" cy="256" r="185" fill="#131a27"/>
+  <g transform="translate(256 256) rotate(-35) scale(13.5) translate(-12 -12)">
+    <path fill="#3b82f6" d="M21.6 12c0-.9-.8-1.5-1.8-1.5h-5.1L10 3.2H8l2.3 7.3H5.6L3.8 7.9H2.3l1.2 4.1-1.2 4.1h1.5l1.8-2.6h4.7L8 20.8h2l4.7-7.3h5.1c1 0 1.8-.6 1.8-1.5z"/>
+  </g>
+</svg>
