@@ -12,6 +12,7 @@ import { ServerDown } from "./components/ServerDown";
 import { TutorialModal } from "./components/TutorialModal";
 import { AccountChip } from "./account/AccountChip";
 import { Dot } from "./components/icons";
+import { TopbarMenu } from "./components/TopbarMenu";
 
 export function App() {
   const {
@@ -129,48 +130,54 @@ export function App() {
       <header className="topbar">
         <h1 className="wordmark">SKY&middot;TEAM</h1>
         <div className="topbar-right">
-          {/* In a room the account pages open in a new tab: the game here goes on. */}
-          {!inGame && <AccountChip newTab />}
           <span className={`conn ${connected ? "on" : "off"}`}>
             <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
           </span>
-          {/* Out of a game (the lobby, an abandoned game, watching): leave for good. */}
-          {!inGame && snapshot && (
-            <button
-              className="reset-btn exit-btn"
-              onClick={() => {
-                if (window.confirm("Leave this room?"))
-                  leaveRoom(() => {
-                    setRoom(null);
-                    window.history.replaceState(null, "", "/");
-                  });
-              }}
-            >
-              Leave room
-            </button>
-          )}
-          {inGame && snapshot?.you.kind === "player" && (
-            <button
-              className="reset-btn exit-btn"
-              onClick={() => {
-                if (window.confirm("End the game and return both players to the lobby? All progress will be lost."))
-                  exitGame();
-              }}
-            >
-              Exit to lobby
-            </button>
-          )}
-          {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
-            <button
-              className="reset-btn"
-              onClick={() => {
-                if (window.confirm("Reset the game back to the start? All progress will be lost."))
-                  resetGame();
-              }}
-            >
-              Reset game
-            </button>
-          )}
+          <TopbarMenu>
+            {(phone) => (
+              <>
+                {/* In a room the account pages open in a new tab: the game here goes on. */}
+                {!inGame && <AccountChip newTab flat={phone} />}
+                {/* Out of a game (the lobby, an abandoned game, watching): leave for good. */}
+                {!inGame && snapshot && (
+                  <button
+                    className={phone ? undefined : "reset-btn exit-btn"}
+                    onClick={() => {
+                      if (window.confirm("Leave this room?"))
+                        leaveRoom(() => {
+                          setRoom(null);
+                          window.history.replaceState(null, "", "/");
+                        });
+                    }}
+                  >
+                    Leave room
+                  </button>
+                )}
+                {inGame && snapshot?.you.kind === "player" && (
+                  <button
+                    className={phone ? undefined : "reset-btn exit-btn"}
+                    onClick={() => {
+                      if (window.confirm("End the game and return both players to the lobby? All progress will be lost."))
+                        exitGame();
+                    }}
+                  >
+                    Exit to lobby
+                  </button>
+                )}
+                {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
+                  <button
+                    className={phone ? "menu-danger" : "reset-btn"}
+                    onClick={() => {
+                      if (window.confirm("Reset the game back to the start? All progress will be lost."))
+                        resetGame();
+                    }}
+                  >
+                    Reset game
+                  </button>
+                )}
+              </>
+            )}
+          </TopbarMenu>
         </div>
       </header>
       {lastError && <p className="error">{lastError}</p>}

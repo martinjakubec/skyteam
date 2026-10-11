@@ -3001,6 +3001,66 @@ ul {
 .account-menu button {
   margin-top: 0.2rem;
 }
+/* The room header on a phone: wordmark, link light and a ☰ button whose
+   dropdown holds the account links and Leave room / Exit / Reset. */
+.topbar-right > .account-chip {
+  order: -1; /* wide screens: account links first, as before the menu */
+}
+.conn {
+  white-space: nowrap;
+}
+.topbar-menu {
+  position: relative;
+  display: flex;
+}
+.menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  font-size: 1.3rem;
+}
+.topbar-menu-list {
+  min-width: 13rem;
+}
+.topbar-menu-list a,
+.topbar-menu-list button {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+}
+.topbar-menu-list button {
+  margin-top: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+}
+.topbar-menu-list a:hover,
+.topbar-menu-list button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* A rule between the account links and the room's own entries. */
+.topbar-menu-list a + button {
+  margin-top: 0.2rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+}
+.menu-user {
+  padding: 0.4rem 0.75rem 0.2rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.menu-danger {
+  color: #fca5a5;
+}
+@media (max-width: 760px) {
+  .topbar {
+    align-items: center;
+    gap: 0.6rem;
+  }
+}
 .home-link {
   text-decoration: none;
   align-self: flex-start;

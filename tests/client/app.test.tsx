@@ -566,6 +566,26 @@ describe("leaving the room", () => {
     expect(screen.getByRole("button", { name: "Leave room" })).toBeTruthy();
   });
 
+  test("on a phone the header's entries sit behind a menu button", async () => {
+    viewport(true);
+    const sock = await inRoom(inGame());
+    expect(screen.queryByRole("button", { name: "Exit to lobby" })).toBe(null);
+    expect(screen.getByText("linked")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Exit to lobby" }));
+    expect(sock.last("game:exit")).toBeTruthy();
+    // Choosing an entry closes the menu; so does a tap outside it.
+    expect(screen.queryByRole("button", { name: "Reset game" })).toBe(null);
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    expect(screen.getByRole("button", { name: "Reset game" })).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("button", { name: "Reset game" })).toBe(null);
+    // Back to a wide screen: the entries are in the header again.
+    resize(false);
+    expect(screen.getByRole("button", { name: "Reset game" })).toBeTruthy();
+  });
+
   test("in a game there's Exit to lobby, not Leave room", async () => {
     await inRoom(inGame());
     expect(screen.queryByRole("button", { name: "Leave room" })).toBe(null);

@@ -540,6 +540,7 @@ input:focus {
 /* ---- Pages beside the game (accounts, history) on the dark background -------- */
 
 .account-chip a,
+.topbar-menu-list a,
 .page-links a,
 .center .form-links a {
   color: #93c5fd;

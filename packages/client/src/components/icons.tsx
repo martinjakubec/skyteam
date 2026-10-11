@@ -160,6 +160,13 @@ export const Star = (p: IconProps) => (
   </Icon>
 );
 
+/** ☰ — the phone header's menu button. */
+export const MenuIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 7h16M4 12h16M4 17h16" strokeWidth="2" />
+  </Icon>
+);
+
 /** ▾ — the dropdown's caret. */
 export const ChevronDown = (p: IconProps) => (
   <Icon {...p}>
