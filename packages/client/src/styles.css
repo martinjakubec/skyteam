@@ -1068,7 +1068,13 @@ ul {
 }
 .plane-svg {
   position: absolute;
-  inset: 6%;
+  /* An explicit box, not inset: 6% — WebKit (every iPhone browser) ignores
+     right/bottom on an absolute <svg>, sizes it to the full window and so
+     pushes the plane right and down. */
+  top: 6%;
+  left: 6%;
+  width: 88%;
+  height: 88%;
   overflow: visible; /* the bank pointer sits past the box, by the glass's edge */
   z-index: 2;
   transition: transform 0.5s ease;
@@ -2059,7 +2065,9 @@ ul {
 .turn-tab {
   position: relative;
   z-index: 1;
-  margin-top: -1px; /* fuse with the track's bottom edge */
+  /* fuse with the track's bottom edge: 2px, 1px past its 1px border, so
+     sub-pixel rounding (iOS Safari) can't leave the border showing as a seam */
+  margin-top: -2px;
   width: calc(100% - 10px);
   max-width: 76px;
   padding: 3px 4px 4px;

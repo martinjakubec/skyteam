@@ -786,7 +786,9 @@ button.primary:disabled {
 /* Turns: tabs that grow out of the bottom of the approach track — the track's
    own fill and outline, no top edge, and curved shoulders where they meet it. */
 .turn-tab {
-  margin-top: -1px; /* over the track's bottom border, which it replaces */
+  /* over the track's bottom border, which it replaces — 1px past it, into the
+     track's padding, so sub-pixel rounding (iOS Safari) leaves no seam */
+  margin-top: -2px;
   padding: 3px 5px 5px;
   background: var(--well);
   border: 1px solid var(--border);
@@ -796,14 +798,15 @@ button.primary:disabled {
 }
 /* The shoulders: each covers the top of the tab's side border as well, so the
    outline runs from the track, round the curve and down the side as one line
-   (no stub of the side border above the curve). */
+   (no stub of the side border above the curve). 10px tall for the tab's 1px
+   overlap: the top row is plain fill and the curve starts on the track's edge. */
 .turn-tab::before,
 .turn-tab::after {
   content: "";
   position: absolute;
   top: 0;
   width: 9px;
-  height: 9px;
+  height: 10px;
   pointer-events: none;
 }
 .turn-tab::before {
