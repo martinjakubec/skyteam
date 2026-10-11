@@ -26,7 +26,7 @@ afterAll(() => s.close());
 
 const rowsOf = (roomId) => FakePg.last.games.filter((g) => g.room_id === roomId);
 const firstDeal = (row) => /^D\d+/.exec(row.moves)[0];
-const INTERN = { scenarioId: "YUL", modules: ["intern"], abilities: [] };
+const INTERN = { scenarioId: "green-ATL", modules: ["intern"], abilities: [] };
 
 /** Start a game in the room and leave it at once; its row. */
 async function playAndLeave(r) {

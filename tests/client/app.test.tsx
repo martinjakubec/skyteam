@@ -124,7 +124,7 @@ async function inRoom(first: RoomSnapshot = snapshot()) {
 // --- same dice ----------------------------------------------------------------------------
 describe("a room flying an earlier game's dice", () => {
   test("the lobby says so, links the original, locks the setup; the host can use fresh dice", async () => {
-    const sock = await inRoom(snapshot({ sameDice: { gameId: "g".repeat(21) } }));
+    const sock = await inRoom(snapshot({ sameDice: { gameId: "g".repeat(21) }, setup: { scenarioId: "green-PRG", modules: ["kerosene"], abilities: [] } }));
     expect(document.querySelector(".same-dice")!.textContent).toMatch(/^Same dice as an earlier game\. Its results are marked/);
     expect(screen.getByRole("link", { name: "an earlier game" }).getAttribute("href")).toBe(`/games/${"g".repeat(21)}`);
     const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[]; // the setup: locked
@@ -243,16 +243,15 @@ describe("lobby", () => {
     expect(sock.last("game:start")).toBeTruthy();
   });
 
-  test("setup: modules toggle (one of an exclusive pair), abilities up to the card's cap", async () => {
+  test("setup: the card's modules are shown fixed; abilities up to the card's cap", async () => {
     const sock = await inRoom(snapshot({ setup: { scenarioId: "green-PRG", modules: ["kerosene"], abilities: [] } }));
     const box = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
-    fireEvent.click(box("Kerosene Leak"));
-    expect(sock.last("room:setup")!.args[0]).toEqual({ scenarioId: "green-PRG", modules: ["keroseneLeak"], abilities: [] });
-    fireEvent.click(box("Kerosene"));
-    expect(sock.last("room:setup")!.args[0]).toMatchObject({ modules: [] });
+    // Only the card's own module, ticked and locked.
+    expect(box("Kerosene")).toMatchObject({ checked: true, disabled: true });
+    expect(screen.queryByRole("checkbox", { name: "Kerosene Leak" })).toBe(null);
     expect(screen.getByText("Choose up to 2 Special Abilities.")).toBeTruthy();
     fireEvent.click(box("Adaptation"));
-    expect(sock.last("room:setup")!.args[0]).toMatchObject({ abilities: ["adaptation"] });
+    expect(sock.last("room:setup")!.args[0]).toEqual({ scenarioId: "green-PRG", modules: ["kerosene"], abilities: ["adaptation"] });
     sock.serve("room:state", snapshot({ setup: { scenarioId: "green-PRG", modules: ["kerosene"], abilities: ["adaptation", "anticipation"] } }));
     // At the cap, the unticked abilities lock; ticked ones can still be unticked.
     expect(box("Mastery").disabled).toBe(true);
@@ -260,16 +259,22 @@ describe("lobby", () => {
     expect(sock.last("room:setup")!.args[0]).toMatchObject({ abilities: ["anticipation"] });
   });
 
+  test("setup: a card without modules or Special Abilities shows neither list", async () => {
+    await inRoom(snapshot({ setup: { scenarioId: "green-HND", modules: [], abilities: [] } }));
+    expect(screen.queryByText("Modules")).toBe(null);
+    expect(screen.queryByText("Special Abilities")).toBe(null);
+    expect(screen.queryByRole("checkbox")).toBe(null);
+  });
+
   test("setup: the guest sees it read-only", async () => {
-    await inRoom(snapshot({ hostPlayerId: OTHER, you: { playerId: ME, kind: "player", role: "guest" }, seats: [{ ...guest, playerId: OTHER, role: "host" }, { playerId: ME, role: "guest", ready: false, connection: "connected" }] }));
-    expect(screen.getByText("The host chooses the airport and modules.")).toBeTruthy();
-    expect((screen.getByRole("checkbox", { name: "Kerosene" }) as HTMLInputElement).disabled).toBe(true);
+    await inRoom(snapshot({ hostPlayerId: OTHER, you: { playerId: ME, kind: "player", role: "guest" }, seats: [{ ...guest, playerId: OTHER, role: "host" }, { playerId: ME, role: "guest", ready: false, connection: "connected" }], setup: { scenarioId: "green-PRG", modules: ["kerosene"], abilities: [] } }));
+    expect(screen.getByText("The host chooses the airport and Special Abilities.")).toBeTruthy();
+    expect((screen.getAllByRole("checkbox") as HTMLInputElement[]).every((b) => b.disabled)).toBe(true);
     expect(screen.queryByRole("button", { name: "Start game" })).toBe(null);
-    expect(screen.getByText("This airport has no Special Abilities.")).toBeTruthy();
   });
 
   test("the info button opens a module's tutorial; the lobby notice and solo rooms show no invite box", async () => {
-    const sock = await inRoom();
+    const sock = await inRoom(snapshot({ setup: { scenarioId: "red-TGU", modules: ["kerosene", "wind"], abilities: [] } }));
     fireEvent.click(screen.getByRole("button", { name: "How Wind works" }));
     expect(within(screen.getByRole("dialog")).getByRole("heading", { level: 2 }).textContent).toMatch(/Wind/);
     fireEvent.keyDown(document, { key: "Escape" });
@@ -530,16 +535,21 @@ describe("between rounds", () => {
 });
 
 // --- leaving the room -----------------------------------------------------------------------
+/** Answers the app's "Are you sure?" dialog by its button. */
+const answer = (button: string) => fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: button }));
+
 describe("leaving the room", () => {
   test("Leave room asks first, then leaves and goes back to the start page", async () => {
     const sock = await inRoom();
     expect(window.location.search).toBe("?join=INVITE01");
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+    expect(screen.getByRole("alertdialog", { name: "Leave this room?" })).toBeTruthy();
+    answer("Cancel");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBe(null));
     expect(sock.last("room:leave")).toBeUndefined();
     fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
-    expect(sock.last("room:leave")).toBeTruthy();
-    expect(confirm).toHaveBeenCalledTimes(2);
+    answer("Leave room");
+    await waitFor(() => expect(sock.last("room:leave")).toBeTruthy());
     await waitFor(() => expect(screen.getByRole("button", { name: "Create a room" })).toBeTruthy());
     expect(sock.disconnected).toBe(true);
     expect(useGame.getState()).toMatchObject({ socket: null, snapshot: null });

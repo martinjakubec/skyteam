@@ -12,6 +12,8 @@ import {
   SetNamePayload,
   SetReadyPayload,
   SetSetupPayload,
+  cardModules,
+  CARD_MODULES_NOTE,
   SOLO_RESTRICTED_NOTE,
   soloAllowed,
   hasModule,
@@ -239,7 +241,7 @@ async function onName(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack
   broadcastState(io, room);
 }
 
-/** Host picks the airport/modules. Changing them un-readies the other seats so
+/** Host picks the airport (its card fixes the modules) and Special Abilities. Changing them un-readies the other seats so
  *  nobody starts a game they didn't agree to. */
 async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ack) {
   const parsed = SetSetupPayload.safeParse(payload);
@@ -254,9 +256,14 @@ async function onSetup(io: IOServer, socket: IOSocket, payload: unknown, ack: Ac
   // The bot flies green and yellow cards only: red and black are for human crews.
   if (room.seats.some((s) => s.bot) && !soloAllowed(parsed.data.scenarioId))
     return ack({ ok: false, error: SOLO_RESTRICTED_NOTE });
+  // The card fixes the modules: exactly the ones printed on it.
+  const modules = cardModules(parsed.data.scenarioId);
+  if (parsed.data.modules.length !== modules.length || !modules.every((m) => parsed.data.modules.includes(m)))
+    return ack({ ok: false, error: CARD_MODULES_NOTE });
+  const setup = { ...parsed.data, modules };
 
-  if (JSON.stringify(parsed.data) !== JSON.stringify(room.setup)) {
-    room.setup = parsed.data;
+  if (JSON.stringify(setup) !== JSON.stringify(room.setup)) {
+    room.setup = setup;
     room.seats = unreadyOthers(room.seats, playerId);
     room.status = lobbyStatus(room.seats); // a solo room (host + bot) stays ready
     await saveRoom(room);

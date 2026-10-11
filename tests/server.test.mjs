@@ -26,7 +26,7 @@ const { issueToken } = await import("../packages/server/src/identity.ts");
 const { default: FakeRedis } = await import("./support/fakeRedis.mjs");
 const { Pool: FakePg } = await import("./support/fakePg.mjs");
 const { initGameLogs, flushPendingGameLogs, PENDING_KEY } = await import("../packages/server/src/gameLog.ts");
-const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, replay, settleTraffic, randDice, withEntropy, LOG_FORMAT, MOVE_CODES, UNAVAILABLE, SOLO_RESTRICTED_NOTE, shuffledInternTokens } = await import("../packages/shared/src/index.ts");
+const { actorFor, legalMoves, quickMove, mulberry32, newGame, reduce, replay, settleTraffic, randDice, withEntropy, LOG_FORMAT, MOVE_CODES, UNAVAILABLE, SOLO_RESTRICTED_NOTE, CARD_MODULES_NOTE, shuffledInternTokens } = await import("../packages/shared/src/index.ts");
 
 let server, url;
 const sockets = [];
@@ -335,6 +335,9 @@ describe("socket lobby", () => {
     const kerosene = { scenarioId: "green-OSL", modules: ["kerosene"], abilities: [] };
     expect((await emit(g, "room:setup", kerosene)).error).toBe("Only the host can change the setup.");
     expect((await emit(h, "room:setup", { scenarioId: "nowhere", modules: [], abilities: [] })).ok).toBe(false);
+    // The card fixes the modules: none added, none dropped.
+    expect((await emit(h, "room:setup", { scenarioId: "YUL", modules: ["intern"], abilities: [] })).error).toBe(CARD_MODULES_NOTE);
+    expect((await emit(h, "room:setup", { ...kerosene, modules: [] })).error).toBe(CARD_MODULES_NOTE);
     await emit(g, "seat:ready", { ready: true });
     expect(await emit(h, "room:setup", kerosene)).toEqual({ ok: true });
     await until(() => latest(g).setup.scenarioId === "green-OSL", 2000, "setup");
@@ -572,7 +575,7 @@ describe("socket game", () => {
   });
 
   test("Real-Time: the clock pauses while a seat is empty, resumes, and ends the round at zero", async () => {
-    const { h, g, roomId, guestToken } = await startedGame({ scenarioId: "YUL", modules: ["realTime"], abilities: [] });
+    const { h, g, roomId, guestToken } = await startedGame({ scenarioId: "red-PBH", modules: ["kerosene", "realTime"], abilities: [] });
     expect(latest(h).game.timerEndsAt).not.toBe(null);
     g.disconnect();
     await until(() => latest(h).game.timerRemainingMs !== null, 2000, "paused");
@@ -689,7 +692,7 @@ describe("socket debrief", () => {
     // Place only the four mandatory dice and let the 1 s clock end the round:
     // the Axis dice as close as they come (no spin), the lowest on the Engines
     // (no speed into traffic).
-    const r = await startedGame({ scenarioId: "YUL", modules: ["realTime"], abilities: [] });
+    const r = await startedGame({ scenarioId: "red-PBH", modules: ["kerosene", "realTime"], abilities: [] });
     for (let i = 0; i < 4; i++) {
       const crew = actorFor(r.h.game);
       const sock = crew === "pilot" ? r.h : r.g;
@@ -778,7 +781,7 @@ describe("game logs", () => {
   });
 
   test("Reset mid-game logs the old game as reset; Exit logs the new one as exited", async () => {
-    const r = await startedGame({ scenarioId: "YUL", modules: ["intern"], abilities: [] });
+    const r = await startedGame({ scenarioId: "green-ATL", modules: ["intern"], abilities: [] });
     const { sock, command } = nextMove(r);
     await emit(sock, "game:command", { commandId: "lg1", command });
     expect(await emit(r.h, "game:reset")).toEqual({ ok: true });
@@ -786,7 +789,7 @@ describe("game logs", () => {
     const [reset] = logged(r.roomId);
     expect(reset).toMatchObject({ result: "reset", loss_reason: null, rounds_reached: 1, modules: ["intern"] });
     expect(reset.intern_order).toMatch(/^[1-6]{6}$/);
-    expect(reset.moves).toMatch(/^D\d{8}[PC]\d/); // the deal, then the move
+    expect(reset.moves).toMatch(/^D\d{8,}[PC]\d/); // the deal (and Traffic dice), then the move
     expect(replayRow(reset).placedThisRound).toBe(1);
     expect(await emit(r.g, "game:exit")).toEqual({ ok: true });
     await until(() => logged(r.roomId).length === 2, 2000, "exit row");
@@ -807,7 +810,7 @@ describe("game logs", () => {
 
   test("every game is seeded: the row has its seed, and the seed alone gives the logged deals and Intern order", async () => {
     const { newSeedState, seededRand } = await import("../packages/server/src/seededRand.ts");
-    const r = await toDebrief({ scenarioId: "YUL", modules: ["intern"], abilities: [] });
+    const r = await toDebrief({ scenarioId: "green-ATL", modules: ["intern"], abilities: [] });
     // While it runs, the seed is in the room record (a restarted server carries on) ...
     const stored = JSON.parse(await FakeRedis.last.get(`room:${r.roomId}`));
     expect(stored.seedState.seed).toMatch(/^[0-9a-f]{32}$/);

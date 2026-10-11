@@ -12,7 +12,7 @@
  */
 
 import type { AbilityId } from "./abilities";
-import { YUL_MONTREAL, type ApproachSpace, type ModuleId, type Scenario } from "./scenario";
+import { MODULE_IDS, YUL_MONTREAL, type ApproachSpace, type ModuleId, type Scenario } from "./scenario";
 
 export type Difficulty = "green" | "yellow" | "red" | "black";
 
@@ -182,6 +182,16 @@ export const SCENARIO_IDS = Object.keys(SCENARIOS) as [ScenarioId, ...ScenarioId
 export function templateFor(id: ScenarioId): ScenarioTemplate | undefined {
   return SCENARIO_TEMPLATES.find((t) => t.id === (id === "YUL" ? "green-YUL" : id));
 }
+
+/** The modules a lobby scenario is played with: the ones printed on its card,
+ *  in canonical MODULE_IDS order. The crew can't add or drop any. */
+export function cardModules(id: ScenarioId): ModuleId[] {
+  const printed = templateFor(id)?.modules ?? [];
+  return MODULE_IDS.filter((m) => printed.includes(m));
+}
+
+/** Refused when a lobby setup's modules aren't its card's. */
+export const CARD_MODULES_NOTE = "This airport's modules are set by its card.";
 
 /** What the host picks in the lobby: the airport, advanced modules and Special Abilities. */
 export interface GameSetup {

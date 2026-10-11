@@ -2,17 +2,13 @@ import {
   ABILITY_IDS,
   ABILITY_LABELS,
   ABILITY_TEXT,
+  cardModules,
   DEFAULT_MAX_ABILITIES,
   MAX_NAME_LENGTH,
-  EXCLUSIVE_MODULE_GROUPS,
-  IMPLEMENTED_MODULES,
-  conflictingModules,
-  MODULE_IDS,
   MODULE_LABELS,
   SCENARIOS,
   SOLO_RESTRICTED_NOTE,
   soloAllowed,
-  templateFor,
   type AbilityId,
   type GameSetup,
   type ModuleId,
@@ -110,8 +106,9 @@ function NameField({ name, onSave }: { name: string; onSave: (name: string) => v
   );
 }
 
-/** Airport + module selection. The host edits it; the guest sees it read-only
- *  (and is un-readied by the server whenever it changes). */
+/** Airport (its card fixes the modules) + Special Abilities. The host edits
+ *  it; the guest sees it read-only (and is un-readied by the server whenever
+ *  it changes). */
 function SetupPicker({
   setup,
   editable,
@@ -133,25 +130,9 @@ function SetupPicker({
       abilities: ABILITY_IDS.filter((a) => (a === id ? on : setup.abilities.includes(a))),
     });
 
-  // Ticking a module unticks any it can't be played with (e.g. Kerosene vs
-  // Kerosene Leak — one or the other).
-  const toggle = (id: ModuleId, on: boolean) => {
-    const drop = on ? conflictingModules(id) : [];
-    onChange({
-      ...setup,
-      // Keep the canonical MODULE_IDS order so equal selections compare equal.
-      modules: MODULE_IDS.filter((m) => (m === id ? on : setup.modules.includes(m) && !drop.includes(m))),
-    });
-  };
-
-  // Picking a card switches on the modules printed on it (the host can still
+  // Picking a card brings the modules printed on it (fixed — the crew can't
   // change them) and drops abilities, whose cap comes from the new card.
-  const pickAirport = (scenarioId: ScenarioId) =>
-    onChange({
-      scenarioId,
-      modules: MODULE_IDS.filter((m) => templateFor(scenarioId)?.modules.includes(m) && IMPLEMENTED_MODULES.includes(m)),
-      abilities: [],
-    });
+  const pickAirport = (scenarioId: ScenarioId) => onChange({ scenarioId, modules: cardModules(scenarioId), abilities: [] });
 
   // The info button beside each module and ability opens its tutorial — for host and
   // guest alike (it runs locally; nothing is sent).
@@ -177,58 +158,50 @@ function SetupPicker({
           {...(solo ? { allow: soloAllowed, restrictedNote: SOLO_RESTRICTED_NOTE } : {})}
         />
       </div>
-      <fieldset className="setup-modules">
-        <legend className="setup-label">Modules</legend>
-        {MODULE_IDS.map((id) => {
-          const available = IMPLEMENTED_MODULES.includes(id);
-          return (
+      {/* The card's modules, fixed: shown ticked, not to be unticked. None, no list. */}
+      {setup.modules.length > 0 && (
+        <fieldset className="setup-modules">
+          <legend className="setup-label">Modules</legend>
+          {setup.modules.map((id) => (
             <span key={id} className="setup-item">
-              <label className={available ? "" : "muted"}>
-                <input
-                  type="checkbox"
-                  checked={setup.modules.includes(id)}
-                  disabled={!editable || !available}
-                  onChange={(e) => toggle(id, e.target.checked)}
-                />
+              <label>
+                <input type="checkbox" checked disabled readOnly />
                 {MODULE_LABELS[id]}
-                {!available && " (soon)"}
               </label>
               {info(id, MODULE_LABELS[id])}
             </span>
-          );
-        })}
-      </fieldset>
-      <fieldset className="setup-abilities">
-        <legend className="setup-label">Special Abilities</legend>
-        {ABILITY_IDS.map((id) => {
-          const checked = setup.abilities.includes(id);
-          return (
-            <span key={id} className="setup-item">
-              <label title={ABILITY_TEXT[id]}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={!editable || (!checked && setup.abilities.length >= maxAbilities)}
-                  onChange={(e) => toggleAbility(id, e.target.checked)}
-                />
-                {ABILITY_LABELS[id]}
-              </label>
-              {info(id, ABILITY_LABELS[id])}
-            </span>
-          );
-        })}
-      </fieldset>
-      <p className="muted setup-note">
-        {maxAbilities === 0
-          ? "This airport has no Special Abilities."
-          : `Choose up to ${maxAbilities} Special Abilities.`}
-      </p>
-      {EXCLUSIVE_MODULE_GROUPS.map((group) => (
-        <p key={group.join()} className="muted setup-note">
-          {group.map((m) => MODULE_LABELS[m]).join(" or ")} — one or the other, not both.
-        </p>
-      ))}
-      {!editable && <p className="muted">The host chooses the airport and modules.</p>}
+          ))}
+        </fieldset>
+      )}
+      {/* Only a card with the ★ badge offers Special Abilities. */}
+      {maxAbilities > 0 && (
+        <>
+          <fieldset className="setup-abilities">
+            <legend className="setup-label">Special Abilities</legend>
+            {ABILITY_IDS.map((id) => {
+              const checked = setup.abilities.includes(id);
+              return (
+                <span key={id} className="setup-item">
+                  <label title={ABILITY_TEXT[id]}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!editable || (!checked && setup.abilities.length >= maxAbilities)}
+                      onChange={(e) => toggleAbility(id, e.target.checked)}
+                    />
+                    {ABILITY_LABELS[id]}
+                  </label>
+                  {info(id, ABILITY_LABELS[id])}
+                </span>
+              );
+            })}
+          </fieldset>
+          <p className="muted setup-note">Choose up to {maxAbilities} Special Abilities.</p>
+        </>
+      )}
+      {!editable && (
+        <p className="muted">The host chooses the airport{maxAbilities > 0 ? " and Special Abilities" : ""}.</p>
+      )}
       {tutorial && <TutorialModal id={tutorial} onClose={() => setTutorial(null)} />}
     </div>
   );
