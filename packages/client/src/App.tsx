@@ -61,7 +61,10 @@ export function App() {
         connect(r.roomId);
       })
       .catch((e) => {
-        rememberRoom(null); // the room has gone: the installed app's next launch is the start page
+        // The server refused (the room has gone): the installed app's next launch
+        // is the start page. No connection (fetch's TypeError) or storage down: the
+        // room may well still be there, so it's kept for the next try.
+        if (!(e instanceof TypeError) && !(e instanceof ServerUnavailableError)) rememberRoom(null);
         failed(e);
       })
       .finally(() => setBusy(false));

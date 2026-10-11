@@ -6,7 +6,7 @@
 import "../support/dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { DEFAULT_SETUP, type RoomSnapshot } from "@skyteam/shared";
+import { DEFAULT_SETUP, UNAVAILABLE, type RoomSnapshot } from "@skyteam/shared";
 
 type Handler = (...args: unknown[]) => void;
 class FakeSocket {
@@ -187,6 +187,30 @@ describe("the installed app", () => {
     launch();
     expect(window.location.search).toBe("");
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("launched without a connection (or with the server's storage down), the room is kept for the next launch", async () => {
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    serverRoutes();
+    await createRoom();
+    vi.restoreAllMocks();
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+    closeTheApp();
+    launch();
+    await waitFor(() => expect(window.alert).toHaveBeenCalled());
+    closeTheApp();
+    launch();
+    expect(window.location.search).toBe("?join=INVITE01");
+    await waitFor(() => expect(window.alert).toHaveBeenCalledTimes(2));
+    closeTheApp();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ code: UNAVAILABLE, error: "Storage is down." }), { status: 503 }));
+    launch();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy());
+    closeTheApp();
+    launch();
+    expect(window.location.search).toBe("?join=INVITE01");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy());
   });
 
   test("with storage blocked it works like a tab, and nothing throws", async () => {
