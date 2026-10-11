@@ -1,6 +1,7 @@
 import { UNAVAILABLE, type Crew } from "@skyteam/shared";
 import { SERVER_URL } from "./config";
 import { uuid } from "./uuid";
+import { installedToken, isInstalled, storeInstalledToken } from "./pwa/installed";
 
 // Each browser TAB must be an independent player. Storage alone can't guarantee
 // this: localStorage is shared across all tabs, and sessionStorage is *copied*
@@ -22,12 +23,15 @@ function tabId(): string {
 
 const tokenKey = () => `${tabId()}.token`;
 
+// The installed app is one window that the phone may close at any time: its
+// token outlives the window (pwa/installed.ts).
 export function getStoredToken(): string | null {
-  return sessionStorage.getItem(tokenKey());
+  return isInstalled() ? installedToken() : sessionStorage.getItem(tokenKey());
 }
 
 export function storeToken(token: string): void {
-  sessionStorage.setItem(tokenKey(), token);
+  if (isInstalled()) storeInstalledToken(token);
+  else sessionStorage.setItem(tokenKey(), token);
 }
 
 // The player's name, unlike their identity, is shared by every tab and kept

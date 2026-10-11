@@ -14,6 +14,7 @@ import { AccountChip } from "./account/AccountChip";
 import { Dot } from "./components/icons";
 import { TopbarMenu } from "./components/TopbarMenu";
 import { useConfirm } from "./components/ConfirmDialog";
+import { rememberRoom } from "./pwa/installed";
 
 export function App() {
   const {
@@ -59,7 +60,10 @@ export function App() {
         setRoom(r);
         connect(r.roomId);
       })
-      .catch(failed)
+      .catch((e) => {
+        rememberRoom(null); // the room has gone: the installed app's next launch is the start page
+        failed(e);
+      })
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,6 +79,7 @@ export function App() {
       // Put the room in the URL so a refresh re-enters it via the auto-join path
       // below (the per-tab token reconnects the host to their existing seat).
       window.history.replaceState(null, "", `?join=${r.inviteCode}`);
+      rememberRoom(r.inviteCode);
     } catch (e) {
       failed(e);
     } finally {
@@ -149,6 +154,7 @@ export function App() {
                         leaveRoom(() => {
                           setRoom(null);
                           window.history.replaceState(null, "", "/");
+                          rememberRoom(null);
                         });
                     }}
                   >
