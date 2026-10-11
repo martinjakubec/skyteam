@@ -767,6 +767,26 @@ describe("invite box and 500 page", () => {
     expect(input.selectionEnd).toBe(input.value.length);
   });
 
+  test("where the device can share (phones), Share opens its share sheet with the link; elsewhere only Copy", async () => {
+    expect(screen.queryByRole("button", { name: "Share" })).toBe(null);
+    render(<InviteBox url="http://x/?join=A" />);
+    expect(screen.queryByRole("button", { name: "Share" })).toBe(null);
+    cleanup();
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { value: share, configurable: true });
+    try {
+      render(<InviteBox url="http://x/?join=A" />);
+      fireEvent.click(screen.getByRole("button", { name: "Share" }));
+      expect(share).toHaveBeenCalledWith({ title: "SkyTeam", text: "Fly with me in SkyTeam", url: "http://x/?join=A" });
+      // Closing the share sheet without sharing rejects; that's not an error.
+      share.mockRejectedValueOnce(new DOMException("cancelled", "AbortError"));
+      fireEvent.click(screen.getByRole("button", { name: "Share" }));
+      await Promise.resolve();
+    } finally {
+      delete (navigator as { share?: unknown }).share;
+    }
+  });
+
   test("Try again reloads", () => {
     const reload = vi.fn();
     vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload } as Location);

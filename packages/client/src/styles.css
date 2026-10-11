@@ -26,6 +26,12 @@
 
 body {
   margin: 0;
+  /* The page reaches under the notch and the home indicator (viewport-fit=cover,
+     and the installed iOS app's translucent status bar): keep the content clear
+     of them. Zero on a screen without them. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+  box-sizing: border-box;
   color: var(--paper);
   min-height: 100vh;
   background: radial-gradient(130% 90% at 50% -10%, #cccccc 0%, #b8b8b8 45%, #a0a0a0 100%);
