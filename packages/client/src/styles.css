@@ -2848,6 +2848,55 @@ ul {
 .tutorial-confirm p {
   margin: 0;
 }
+
+/* The app's "Are you sure?" (ConfirmDialog, in place of window.confirm): the
+   same box as the tutorial's, over the whole page, above the tutorials. */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(8, 11, 16, 0.72);
+}
+.confirm-dialog {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 10px;
+  background: var(--recess);
+  border: 1px solid var(--panel-edge);
+  color: var(--paper);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+.confirm-dialog h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.confirm-dialog p {
+  margin: 0;
+}
+.confirm-dialog .row {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.confirm-type {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+button.confirm-danger {
+  color: #f6e7c8;
+  background: linear-gradient(180deg, #8a3b34, #5e231d);
+  border-color: #3a1512;
+}
 .tutorial-head {
   display: flex;
   justify-content: space-between;

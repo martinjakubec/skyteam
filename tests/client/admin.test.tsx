@@ -201,13 +201,19 @@ describe("the users page", () => {
 
   test("delete: only after typing the name", async () => {
     routes["DELETE /api/admin/users/*"] = () => ({ status: 204 });
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("wrong");
     await open("/admin/users");
     await waitFor(() => expect(rowOf("alice")).toBeTruthy());
     fireEvent.click(within(rowOf("alice")).getByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete alice?" });
+    const confirm = within(dialog).getByRole("button", { name: "Delete account" }) as HTMLButtonElement;
+    const name = within(dialog).getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "wrong" } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.submit(dialog); // Enter with the wrong name does nothing
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    fireEvent.change(name, { target: { value: "alice" } });
     expect(calls.some((c) => c.key.startsWith("DELETE"))).toBe(false);
-    prompt.mockReturnValue("alice");
-    fireEvent.click(within(rowOf("alice")).getByRole("button", { name: "Delete" }));
+    fireEvent.click(confirm);
     await waitFor(() => expect(screen.queryByRole("row", { name: /^alice\b/ })).toBe(null));
     expect(calls.find((c) => c.key.startsWith("DELETE"))!.url.pathname).toBe("/api/admin/users/id-alice");
   });

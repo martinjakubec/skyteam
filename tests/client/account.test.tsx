@@ -4,7 +4,7 @@
 // is faked: fetch answers from a route table.
 import "../support/dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PublicUser } from "@skyteam/shared";
 
 vi.mock("socket.io-client", () => ({ io: vi.fn() }));
@@ -214,13 +214,15 @@ describe("the account page", () => {
 
   test("delete my account: needs the password and a confirmation", async () => {
     routes["DELETE /api/account"] = () => ({ status: 204 });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await open("/account");
     type("Password to delete", "ten chars!");
     click("Delete my account");
+    const dialog = () => screen.getByRole("alertdialog", { name: "Delete your account?" });
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBe(null));
     expect(calls.some((c) => c.key === "DELETE /api/account")).toBe(false);
-    confirm.mockReturnValue(true);
     click("Delete my account");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Delete account" }));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(calls.find((c) => c.key === "DELETE /api/account")!.body).toEqual({ password: "ten chars!" });
   });

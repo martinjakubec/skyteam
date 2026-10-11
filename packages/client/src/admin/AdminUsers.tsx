@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSignedIn } from "../account/Account";
 import { call } from "../account/authApi";
 import { useAccount } from "../account/useAccount";
+import { useConfirm } from "../components/ConfirmDialog";
 import { when } from "../history/format";
 import { navigate } from "../router";
 import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
@@ -35,6 +36,7 @@ export default function AdminUsers() {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<{ username: string; url: string; expiresAt: string } | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
 
   /** A refused request: signed out goes to sign in; anything else is shown. */
   const refused = useCallback((r: { status: number; error: string }) => {
@@ -90,7 +92,14 @@ export default function AdminUsers() {
     else refused(r);
   };
   const remove = async (u: ManagedUser) => {
-    if (window.prompt(`Type ${u.username} to delete this account. Its game history goes with it.`) !== u.username) return;
+    const yes = await confirm({
+      title: `Delete ${u.username}?`,
+      message: "Its game history goes with it. This can't be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+      typeToConfirm: u.username,
+    });
+    if (!yes) return;
     setError(null);
     const r = await call("DELETE", `/admin/users/${u.id}`);
     if (r.ok) setUsers((list) => list?.filter((x) => x.id !== u.id) ?? null);
@@ -183,6 +192,7 @@ export default function AdminUsers() {
           Load more
         </button>
       )}
+      {confirmDialog}
     </AdminLayout>
   );
 }

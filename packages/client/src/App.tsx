@@ -13,6 +13,7 @@ import { TutorialModal } from "./components/TutorialModal";
 import { AccountChip } from "./account/AccountChip";
 import { Dot } from "./components/icons";
 import { TopbarMenu } from "./components/TopbarMenu";
+import { useConfirm } from "./components/ConfirmDialog";
 
 export function App() {
   const {
@@ -36,6 +37,7 @@ export function App() {
   const [room, setRoom] = useState<{ roomId: string; inviteCode: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [howToPlay, setHowToPlay] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   /** A request the server refused: the 500 page if its storage is down, else an alert. */
   const failed = (e: unknown) => (e instanceof ServerUnavailableError ? serverIsDown() : alert((e as Error).message));
@@ -142,8 +144,8 @@ export function App() {
                 {!inGame && snapshot && (
                   <button
                     className={phone ? undefined : "reset-btn exit-btn"}
-                    onClick={() => {
-                      if (window.confirm("Leave this room?"))
+                    onClick={async () => {
+                      if (await confirm({ title: "Leave this room?", confirmLabel: "Leave room" }))
                         leaveRoom(() => {
                           setRoom(null);
                           window.history.replaceState(null, "", "/");
@@ -156,8 +158,15 @@ export function App() {
                 {inGame && snapshot?.you.kind === "player" && (
                   <button
                     className={phone ? undefined : "reset-btn exit-btn"}
-                    onClick={() => {
-                      if (window.confirm("End the game and return both players to the lobby? All progress will be lost."))
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Exit to lobby?",
+                          message: "The game ends and both players return to the lobby. All progress will be lost.",
+                          confirmLabel: "Exit to lobby",
+                          danger: true,
+                        })
+                      )
                         exitGame();
                     }}
                   >
@@ -167,8 +176,15 @@ export function App() {
                 {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
                   <button
                     className={phone ? "menu-danger" : "reset-btn"}
-                    onClick={() => {
-                      if (window.confirm("Reset the game back to the start? All progress will be lost."))
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Reset the game?",
+                          message: "The game goes back to the start. All progress will be lost.",
+                          confirmLabel: "Reset game",
+                          danger: true,
+                        })
+                      )
                         resetGame();
                     }}
                   >
@@ -217,6 +233,7 @@ export function App() {
       {snapshot?.status === "abandoned" && (
         <p className="error">A player left and didn't return in time — the game was abandoned.</p>
       )}
+      {confirmDialog}
     </main>
   );
 }

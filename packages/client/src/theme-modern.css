@@ -126,7 +126,8 @@ label {
 .tray .log,
 .debrief,
 .tutorial-panel,
-.tutorial-confirm {
+.tutorial-confirm,
+.confirm-dialog {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: none;
@@ -559,7 +560,8 @@ input:focus {
 .replay-pos,
 .server-down-code,
 .tutorial-head h2,
-.tutorial-confirm h3 {
+.tutorial-confirm h3,
+.confirm-dialog h3 {
   font-family: var(--font-body);
   letter-spacing: 0.02em;
 }
@@ -583,6 +585,20 @@ button.primary {
 button.primary:hover:not(:disabled) {
   background: #1d4ed8;
   border-color: #1d4ed8;
+}
+button.confirm-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+button.confirm-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+button.confirm-danger:disabled {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--muted);
 }
 button.primary:disabled {
   background: var(--surface-2);

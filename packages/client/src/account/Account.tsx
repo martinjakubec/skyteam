@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useConfirm } from "../components/ConfirmDialog";
 import { navigate } from "../router";
 import { AccountFrame, Alert, Field } from "./AccountPages";
 import { authApi } from "./authApi";
@@ -25,6 +26,7 @@ export function Account() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   if (!user) return null;
 
@@ -68,9 +70,15 @@ export function Account() {
   });
 
   // Asked before anything is sent (and before the form counts as busy).
-  const deleteAccount = (e: FormEvent) => {
+  const deleteAccount = async (e: FormEvent) => {
     e.preventDefault();
-    if (window.confirm("Delete your account? Your game history goes with it. This can't be undone.")) void removeAccount();
+    const yes = await confirm({
+      title: "Delete your account?",
+      message: "Your game history goes with it. This can't be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+    });
+    if (yes) void removeAccount();
   };
 
   if (code) {
@@ -119,6 +127,7 @@ export function Account() {
           Delete my account
         </button>
       </form>
+      {confirmDialog}
     </AccountFrame>
   );
 }

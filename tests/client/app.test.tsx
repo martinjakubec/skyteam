@@ -559,8 +559,8 @@ describe("leaving the room", () => {
   test("a refused leave keeps the room and says why", async () => {
     const sock = await inRoom();
     sock.reply = (event) => (event === "room:leave" ? { ok: false, error: "Exit the game first." } : { ok: true });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+    answer("Leave room");
     await waitFor(() => expect(screen.getByText("Exit the game first.")).toBeTruthy());
     expect(sock.disconnected).toBe(false);
     expect(screen.getByRole("button", { name: "Leave room" })).toBeTruthy();
@@ -572,9 +572,9 @@ describe("leaving the room", () => {
     expect(screen.queryByRole("button", { name: "Exit to lobby" })).toBe(null);
     expect(screen.getByText("linked")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Exit to lobby" }));
-    expect(sock.last("game:exit")).toBeTruthy();
+    answer("Exit to lobby");
+    await waitFor(() => expect(sock.last("game:exit")).toBeTruthy());
     // Choosing an entry closes the menu; so does a tap outside it.
     expect(screen.queryByRole("button", { name: "Reset game" })).toBe(null);
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
@@ -597,14 +597,16 @@ describe("in game", () => {
   test("the cockpit shows; game events update it; Exit and Reset ask first", async () => {
     const sock = await inRoom(inGame());
     expect(document.querySelector(".board")).toBeTruthy();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Exit to lobby" }));
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBe(null));
     expect(sock.last("game:exit")).toBeUndefined();
     fireEvent.click(screen.getByRole("button", { name: "Exit to lobby" }));
-    expect(sock.last("game:exit")).toBeTruthy();
+    answer("Exit to lobby");
+    await waitFor(() => expect(sock.last("game:exit")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Reset game" }));
-    expect(sock.last("game:reset")).toBeTruthy();
-    expect(confirm).toHaveBeenCalledTimes(3);
+    answer("Reset game");
+    await waitFor(() => expect(sock.last("game:reset")).toBeTruthy());
 
     // A move arrives: the store takes its game and version, and the clock offset (when it moved).
     const g = useGame.getState().snapshot!.game!;
