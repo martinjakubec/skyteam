@@ -3363,3 +3363,37 @@ button.confirm-danger {
   stroke-width: 1.4;
   stroke-linecap: round;
 }
+
+/* The app's bars (pwa/): offline, and a new version ready. At the bottom, clear
+   of the phone's home indicator, above the page but under dialogs. */
+.app-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  padding: 0.6rem 0.7rem 0.6rem 1rem;
+  border-radius: 10px;
+  background: var(--surface-2, #19212f);
+  border: 1px solid var(--border-strong, #2f3a4f);
+  color: var(--text, #e6e9f0);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 0.9rem;
+}
+.app-bar button {
+  flex: none;
+  padding: 0.4rem 0.9rem;
+}
+.app-bar.offline {
+  padding: 0.6rem 1rem;
+  border-color: var(--warn, #f59e0b);
+}
+/* Both at once: the offline notice sits above the new-version bar. */
+.app-bar.offline:has(~ .app-bar) {
+  bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px));
+}

@@ -5,14 +5,27 @@ import { Forgot, Register, Reset, SignIn } from "./account/AccountPages";
 import { useAccount } from "./account/useAccount";
 import { History } from "./history/History";
 import { usePath } from "./router";
+import { OfflineBar } from "./pwa/OfflineBar";
+import { UpdateBar } from "./pwa/UpdateBar";
 
 // Pages most players never open: loaded only when they do.
 const GamePage = lazy(() => import("./history/GamePage"));
 const AdminStats = lazy(() => import("./admin/AdminStats"));
 const AdminUsers = lazy(() => import("./admin/AdminUsers"));
 
-/** The page for the current path: the game (the default), or one of the pages beside it. */
+/** The page for the current path, with the app's bars (offline, a new version) over any of them. */
 export function Root() {
+  return (
+    <>
+      <Page />
+      <OfflineBar />
+      <UpdateBar />
+    </>
+  );
+}
+
+/** The page for the current path: the game (the default), or one of the pages beside it. */
+function Page() {
   const path = usePath();
 
   // Who's signed in: at start, and again whenever the tab gets focus (an

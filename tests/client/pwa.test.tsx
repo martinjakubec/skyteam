@@ -45,6 +45,8 @@ const { App } = await import("../../packages/client/src/App");
 const { useGame } = await import("../../packages/client/src/store");
 const api = await import("../../packages/client/src/api");
 const installed = await import("../../packages/client/src/pwa/installed");
+const { Root } = await import("../../packages/client/src/Root");
+const { pwa } = await import("../support/pwaRegister");
 
 const ME = "player-me";
 const snapshot = (over: Partial<RoomSnapshot> = {}): RoomSnapshot => ({
@@ -101,6 +103,8 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/");
   localStorage.clear();
   displayMode(true);
+  pwa.needRefresh = false;
+  pwa.updated = 0;
 });
 afterEach(() => {
   cleanup();
@@ -208,5 +212,54 @@ describe("a browser tab", () => {
     expect(api.getStoredToken()).toBe(null);
     launch();
     expect(window.location.search).toBe("");
+  });
+});
+
+describe("a new version", () => {
+  /** The start page, signed out. */
+  function home() {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ user: null }), { status: 200 }));
+    render(<Root />);
+  }
+  const bar = () => screen.queryByRole("status", { name: "New version" });
+
+  test("is offered out of a game; Reload switches to it", async () => {
+    pwa.needRefresh = true;
+    home();
+    expect(bar()!.textContent).toMatch(/A new version of SkyTeam is ready/);
+    fireEvent.click(within(bar()!).getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(pwa.updated).toBe(1));
+  });
+
+  test("waits while a game is on, and is offered once it's over", () => {
+    pwa.needRefresh = true;
+    useGame.setState({ snapshot: snapshot({ status: "in_progress" }) });
+    home();
+    expect(bar()).toBe(null);
+    act(() => useGame.setState({ snapshot: snapshot({ status: "finished" }) }));
+    expect(bar()).toBeTruthy();
+  });
+
+  test("isn't mentioned when there's none", () => {
+    home();
+    expect(bar()).toBe(null);
+  });
+});
+
+describe("offline", () => {
+  const notice = () => screen.queryByRole("status", { name: "Offline" });
+  function setOnline(online: boolean) {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(online);
+    act(() => void window.dispatchEvent(new Event(online ? "online" : "offline")));
+  }
+
+  test("says the game needs a connection, until it's back", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ user: null }), { status: 200 }));
+    render(<Root />);
+    expect(notice()).toBe(null);
+    setOnline(false);
+    expect(notice()!.textContent).toBe("You're offline. SkyTeam needs a connection to play.");
+    setOnline(true);
+    expect(notice()).toBe(null);
   });
 });
