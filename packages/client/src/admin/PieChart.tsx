@@ -3,7 +3,10 @@
  * each slice is a circle's stroke, dashed to its share. Past MAX_SLICES the
  * smallest slices are grouped as "Other". Screen readers get the figures in
  * the chart's label; the legend (or a table beside it) shows them too.
+ * Hovering (or tapping) a slice shows its value in a tooltip.
  */
+
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 
 export interface Slice {
   label: string;
@@ -32,10 +35,59 @@ export function sliceColor(i: number, count: number): string {
 
 const share = (value: number, total: number) => `${((100 * value) / total).toFixed(1)} %`;
 
+/** The hovered slice and the pointer, in viewport coordinates. */
+interface Hover {
+  i: number;
+  x: number;
+  y: number;
+  touch: boolean;
+}
+
+/** Gap between the pointer and the tooltip, and the tooltip and the window's edge. */
+const GAP = 12;
+
 export function PieChart({ title, slices, legend = true, size = 168 }: { title: string; slices: Slice[]; legend?: boolean; size?: number }) {
   const drawn = groupSlices(slices);
   const total = drawn.reduce((n, s) => n + s.value, 0);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const tip = useRef<HTMLDivElement>(null);
+
+  // Fixed to the window, so the card's overflow can't clip it: right of and
+  // below the pointer, flipped to the other side where it wouldn't fit.
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!el || !hover) return;
+    const { width, height } = el.getBoundingClientRect();
+    const fitsRight = hover.x + GAP + width <= window.innerWidth - GAP;
+    const fitsBelow = hover.y + GAP + height <= window.innerHeight - GAP;
+    el.style.left = `${Math.max(GAP, fitsRight ? hover.x + GAP : hover.x - GAP - width)}px`;
+    el.style.top = `${Math.max(GAP, fitsBelow ? hover.y + GAP : hover.y - GAP - height)}px`;
+  }, [hover]);
+
+  // A tap's tooltip stays until the next tap elsewhere (a touch has no "leave").
+  const pinned = hover?.touch ?? false;
+  useEffect(() => {
+    if (!pinned) return;
+    const close = (e: globalThis.PointerEvent) => {
+      if (!(e.target instanceof Element && e.target.classList.contains("adm-slice"))) setHover(null);
+    };
+    const hide = () => setHover(null);
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("scroll", hide, true);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("scroll", hide, true);
+    };
+  }, [pinned]);
+
   if (!total) return null;
+  const count = slices.filter((x) => x.value > 0).length;
+  const colorOf = (s: Slice, i: number) => s.color ?? sliceColor(i, count);
+  const point = (i: number) => (e: PointerEvent) => setHover({ i, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse" });
+  const leave = (e: PointerEvent) => {
+    if (e.pointerType === "mouse") setHover(null);
+  };
+  const shown = hover && drawn[hover.i];
   const r = 15.9155; // circumference 100: dash lengths are percentages
   let offset = 25; // start at 12 o'clock
   const label = `${title}: ${drawn.map((s) => `${s.label} ${s.value} (${share(s.value, total)})`).join(", ")}`;
@@ -53,13 +105,14 @@ export function PieChart({ title, slices, legend = true, size = 168 }: { title: 
               cy="21"
               r={r}
               fill="none"
-              stroke={s.color ?? sliceColor(i, slices.filter((x) => x.value > 0).length)}
+              stroke={colorOf(s, i)}
               strokeWidth="7"
               strokeDasharray={`${len} ${100 - len}`}
               strokeDashoffset={offset}
-            >
-              <title>{`${s.label}: ${s.value} (${share(s.value, total)})`}</title>
-            </circle>
+              onPointerDown={point(i)}
+              onPointerMove={point(i)}
+              onPointerLeave={leave}
+            />
           );
           offset -= len;
           return el;
@@ -72,13 +125,22 @@ export function PieChart({ title, slices, legend = true, size = 168 }: { title: 
         <ul className="adm-legend">
           {drawn.map((s, i) => (
             <li key={s.label}>
-              <Swatch color={s.color ?? sliceColor(i, slices.filter((x) => x.value > 0).length)} />
+              <Swatch color={colorOf(s, i)} />
               <span className="adm-legend-label">{s.label}</span>
               <span className="adm-legend-value">{s.value}</span>
               <span className="adm-legend-share">{share(s.value, total)}</span>
             </li>
           ))}
         </ul>
+      )}
+      {shown && (
+        <div ref={tip} className="adm-tooltip" role="presentation">
+          <span className="adm-tooltip-key" style={{ background: colorOf(shown, hover.i) }} />
+          <strong className="adm-tooltip-label">{shown.label}</strong>
+          <span className="adm-tooltip-value">
+            {shown.value} · {share(shown.value, total)}
+          </span>
+        </div>
       )}
     </div>
   );

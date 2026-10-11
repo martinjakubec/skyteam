@@ -545,3 +545,38 @@
 .adm-legend .adm-swatch {
   margin-right: 0;
 }
+.adm-tooltip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 7px 10px;
+  max-width: 240px;
+  background: var(--adm-surface);
+  color: var(--adm-text);
+  border: 1px solid var(--adm-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.14);
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.adm-tooltip-key {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+.adm-tooltip-label {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.adm-tooltip-value {
+  grid-column: 2;
+  font-variant-numeric: tabular-nums;
+  color: var(--adm-muted);
+}

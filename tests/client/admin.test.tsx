@@ -250,3 +250,23 @@ test("a pie with many slices groups the smallest as Other, in grey", async () =>
   expect(sliceColor(MAX_SLICES - 1, 11)).toBe("#9aa3b2");
   expect(sliceColor(MAX_SLICES - 1, MAX_SLICES)).not.toBe("#9aa3b2");
 });
+
+test("hovering a slice shows its value in a tooltip; a tapped one stays until the next tap elsewhere", async () => {
+  const { PieChart } = await import("../../packages/client/src/admin/PieChart");
+  const { container } = render(<PieChart title="How games end" slices={[{ label: "Won", value: 3 }, { label: "Lost", value: 1 }]} />);
+  const [won, lost] = container.querySelectorAll(".adm-slice");
+  const tooltip = () => container.querySelector(".adm-tooltip");
+
+  fireEvent.pointerMove(won, { pointerType: "mouse", clientX: 10, clientY: 10 });
+  expect(tooltip()?.textContent).toBe("Won3 · 75.0 %");
+  fireEvent.pointerMove(lost, { pointerType: "mouse", clientX: 20, clientY: 10 });
+  expect(tooltip()?.textContent).toBe("Lost1 · 25.0 %");
+  fireEvent.pointerOut(lost, { pointerType: "mouse", relatedTarget: document.body }); // React's onPointerLeave
+  expect(tooltip()).toBeNull();
+
+  fireEvent.pointerDown(won, { pointerType: "touch", clientX: 10, clientY: 10 });
+  fireEvent.pointerOut(won, { pointerType: "touch", relatedTarget: document.body });
+  expect(tooltip()?.textContent).toBe("Won3 · 75.0 %");
+  fireEvent.pointerDown(document.body, { pointerType: "touch" });
+  expect(tooltip()).toBeNull();
+});

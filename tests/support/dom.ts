@@ -1,12 +1,15 @@
 // Browser APIs jsdom lacks that the client uses. Import first in client tests.
 
-// Pointer events (drags): a MouseEvent carries the coordinates the cockpit reads.
+// Pointer events (drags, chart tooltips): a MouseEvent carries the coordinates
+// the cockpit reads; pointerType tells a mouse from a touch.
 if (typeof globalThis.PointerEvent === "undefined") {
   class PointerEvent extends MouseEvent {
     pointerId: number;
+    pointerType: string;
     constructor(type: string, init: PointerEventInit = {}) {
       super(type, init);
       this.pointerId = init.pointerId ?? 1;
+      this.pointerType = init.pointerType ?? "mouse";
     }
   }
   globalThis.PointerEvent = PointerEvent as typeof globalThis.PointerEvent;
