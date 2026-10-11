@@ -2987,11 +2987,14 @@ button.confirm-danger {
 }
 
 /* Accounts: the chip (sign in / the user's menu), the account pages' forms, and
-   the recovery code shown once. */
-.account-bar {
+   the recovery code shown once. On the home page the chip shares the
+   wordmark's line, at the right. */
+.home-head {
   display: flex;
-  justify-content: flex-end;
-  min-height: 1.6rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 1.9rem;
 }
 .account-chip {
   position: relative;

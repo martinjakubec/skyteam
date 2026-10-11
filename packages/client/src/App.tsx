@@ -87,10 +87,10 @@ export function App() {
   if (!room) {
     return (
       <main className="center">
-        <nav className="account-bar">
+        <header className="home-head">
+          <h1 className="wordmark">SKY&middot;TEAM</h1>
           <AccountChip />
-        </nav>
-        <h1 className="wordmark">SKY&middot;TEAM</h1>
+        </header>
         <p className="muted">Land the plane together. One Pilot, one Co-Pilot, no talking.</p>
         <button className="primary" disabled={busy} onClick={() => onCreate()}>
           Create a room
