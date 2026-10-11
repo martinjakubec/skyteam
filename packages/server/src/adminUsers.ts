@@ -61,11 +61,11 @@ const toManaged = (r: Record<string, unknown>): ManagedUser => ({
   games: Number(r.games ?? 0),
 });
 
-/** Accounts whose names start with `q`, 50 a page, after `after` (a username). */
+/** Accounts whose names contain `q`, 50 a page, after `after` (a username). */
 export async function listUsers(q: string, after = ""): Promise<{ users: ManagedUser[]; next: string | null }> {
-  const prefix = q.trim().toLowerCase();
-  if (!/^[a-z0-9_.-]{0,24}$/.test(prefix)) return { users: [], next: null };
-  const pattern = `${prefix.replace(/[!%_]/g, (c) => `!${c}`)}%`;
+  const part = q.trim().toLowerCase();
+  if (!/^[a-z0-9_.-]{0,24}$/.test(part)) return { users: [], next: null };
+  const pattern = `%${part.replace(/[!%_]/g, (c) => `!${c}`)}%`;
   const rows = (await (await pool()).query(ADMIN_SQL.list, [pattern, after])).rows;
   const users = rows.slice(0, USERS_PAGE).map(toManaged);
   return { users, next: rows.length > USERS_PAGE ? users.at(-1)!.username : null };

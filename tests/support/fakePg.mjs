@@ -154,10 +154,10 @@ Pool.prototype.tags = {
     return rows([{ ...g, has_seed: !!g.seed, seeded_from: g.seeded_from ?? null, pilot_name: name("pilot"), copilot_name: name("copilot") }]);
   },
   "users.list"(pattern, after) {
-    // LIKE with "!" as the escape: "!_" is a literal "_", a trailing "%" anything.
-    const prefix = pattern.replace(/%$/, "").replace(/!(.)/g, "$1");
+    // LIKE with "!" as the escape: "!_" is a literal "_", "%" around it anything.
+    const part = pattern.replace(/^%|%$/g, "").replace(/!(.)/g, "$1");
     const list = this.users
-      .filter((u) => u.username.startsWith(prefix) && u.username > after)
+      .filter((u) => u.username.includes(part) && u.username > after)
       .sort((a, b) => (a.username < b.username ? -1 : 1))
       .map((u) => ({ ...u, games: this.gamePlayers.filter((p) => p.user_id === u.id).length }));
     return rows(list.slice(0, 51));

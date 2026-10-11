@@ -110,7 +110,7 @@ export default function AdminUsers() {
     <AdminLayout title="Users">
       <label className="adm-search">
         Search by name
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" spellCheck={false} placeholder="Username starts with…" />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" spellCheck={false} placeholder="Part of the username…" />
       </label>
       <AdminAlert error={error} />
       {link && (

@@ -93,7 +93,7 @@ describe("user management", async () => {
     ]) expect((await s.api(method, path, { cookie: admin.cookie, body })).status, `${method} ${path}`).toBe(403);
   });
 
-  test("the list: search by name start, a page of 50 at a time, with games played", async () => {
+  test("the list: search by any part of the name, a page of 50 at a time, with games played", async () => {
     const sa = await as("sara", "SUPERADMIN");
     for (let i = 0; i < 55; i++) await s.signUp(`zed${String(i).padStart(2, "0")}`);
     const first = await s.api("GET", "/api/admin/users?q=zed", { cookie: sa.cookie });
@@ -107,6 +107,9 @@ describe("user management", async () => {
     await s.signUp("a_b");
     await s.signUp("axb");
     expect((await s.api("GET", "/api/admin/users?q=a_", { cookie: sa.cookie })).body.users.map((u) => u.username)).toEqual(["a_b"]);
+    // Any part of the name, not just its start; case doesn't matter.
+    expect((await s.api("GET", "/api/admin/users?q=D5", { cookie: sa.cookie })).body.users.map((u) => u.username)).toEqual(["zed50", "zed51", "zed52", "zed53", "zed54"]);
+    expect((await s.api("GET", "/api/admin/users?q=_b", { cookie: sa.cookie })).body.users.map((u) => u.username)).toEqual(["a_b"]);
   });
 
   test("roles, with their privileges", async () => {

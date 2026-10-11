@@ -256,7 +256,7 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
   });
 
   describe("user management", () => {
-    test("list by name start (with _ a letter), roles, disabling, the last manager, deleting", async () => {
+    test("list by any part of the name (with _ a letter), roles, disabling, the last manager, deleting", async () => {
       const { user: boss } = await mod.acc.register("um_boss", "ten chars!");
       const { user: two } = await mod.acc.register("um_two", "ten chars!");
       await mod.acc.register("umxthree", "ten chars!");
@@ -265,6 +265,8 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       const listed = await mod.admin.listUsers("um_");
       expect(listed.users.map((u) => [u.username, u.role, u.disabled, u.games])).toEqual([["um_boss", "SUPERADMIN", false, 0], ["um_two", "USER", false, 0]]);
       expect((await mod.admin.listUsers("um", "um_boss")).users.map((u) => u.username)).toEqual(["um_two", "umxthree"]);
+      expect((await mod.admin.listUsers("thr")).users.map((u) => u.username)).toEqual(["umxthree"]);
+      expect((await mod.admin.listUsers("_t")).users.map((u) => u.username)).toEqual(["um_two"]);
       expect((await mod.admin.listRoles()).map((r) => r.name)).toEqual(["USER", "ADMIN", "SUPERADMIN"]);
 
       expect(await mod.admin.updateUser(boss.id, two.id, { role: "ADMIN", disabled: true })).toMatchObject({ role: "ADMIN", disabled: true });
