@@ -6,10 +6,13 @@ skyteam.mjakubec.eu {
 	# - /health, so the deploy and monitors can check the site;
 	# - /socket.io/*, because some browsers (Safari) don't send the password on
 	#   a WebSocket. The socket is no way in: it only serves rooms created
-	#   through the protected pages, to players holding their tokens.
+	#   through the protected pages, to players holding their tokens;
+	# - the installed app's files (manifest, service worker, icons): browsers
+	#   fetch the manifest without the password, so installing would fail.
+	#   They hold nothing private; the app they open is still behind the gate.
 	# The deploy writes auth/skyteam.caddy from the SITE_USERNAME and
 	# SITE_PASSWORD secrets (empty when they aren't set: then the site is open).
-	@gated not path /health /socket.io/*
+	@gated not path /health /socket.io/* /manifest.webmanifest /sw.js /workbox-*.js /favicon.ico /icon.svg /pwa-*.png /maskable-icon-*.png /apple-touch-icon-*.png
 	import /etc/caddy/auth/skyteam.caddy
 
 	reverse_proxy skyteam-web:80

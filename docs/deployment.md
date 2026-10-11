@@ -35,6 +35,47 @@ username and password once, then sends them with every request.
   - `/socket.io/*`. Some browsers (Safari) don't send the password on a
     WebSocket. The socket only serves rooms made through the protected pages,
     to players holding their tokens, so it isn't a way in.
+  - The installed app's files: `/manifest.webmanifest`, `/sw.js`,
+    `/workbox-*.js` and the icons. Browsers fetch the manifest without the
+    password, so installing would fail. These files hold nothing private, and
+    the app they open is still behind the password.
+
+## The installable app (PWA)
+
+SkyTeam installs as an app: Chrome or Edge's install icon in the address bar,
+Android Chrome's menu → Install app, or iOS Safari's Share → Add to Home Screen.
+- **What makes it an app:** `vite-plugin-pwa` (in
+  `packages/client/vite.config.ts`) builds the manifest and a service worker.
+  The worker keeps the app shell (`index.html` and `/assets/*`), so the app
+  opens at once. `/api`, `/rooms`, `/identity`, `/health` and `/socket.io`
+  always go to the server.
+- **Updates:** a new version waits until the player taps Reload, and the
+  Reload bar never shows while a game is on (`src/pwa/UpdateBar.tsx`). nginx
+  serves `sw.js` and the manifest with `no-cache`, so a deploy is noticed on
+  the next launch, or within the hour while the app is open.
+- **The seat:** a phone closes an installed app whenever it likes, so the
+  installed app keeps its token and its room in `localStorage` and goes back
+  into the room at launch (`src/pwa/installed.ts`). A browser tab is still one
+  player per tab.
+- **Icons:** drawn in `packages/client/public/icon.svg`. To regenerate the PNGs
+  after changing it, from `packages/client`, in `node:22-alpine`, run
+  `npx @vite-pwa/assets-generator@2.0.0` (settings in `pwa-assets.config.mjs`).
+
+**Testing it locally.** A service worker only runs on `https://` or
+`http://localhost`, and the dev server's hot reload gets in its way. So test
+the production build:
+1. Stop the dev stack (it uses the same ports), then `docker compose up --build`
+   and open http://localhost:8080 in Chrome or Edge. Install it from the address
+   bar. DevTools → Application shows the manifest, the service worker (with an
+   Offline switch) and Clear site data.
+2. **Android, over USB:** turn on USB debugging, open `chrome://inspect` on the
+   computer, and under Port forwarding map `8080` to `localhost:8080`. On the
+   phone, http://localhost:8080 in Chrome now counts as localhost, so it
+   installs.
+3. **iPhone:** it needs real HTTPS. A temporary tunnel gives you an
+   `https://….trycloudflare.com` address:
+   `docker run --rm cloudflare/cloudflared tunnel --url http://host.docker.internal:8080`.
+   Open it in Safari, then Share → Add to Home Screen.
 
 ## Setting it up (once)
 
