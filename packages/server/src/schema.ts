@@ -1,5 +1,6 @@
 import { LOG_FORMAT, MOVE_CODES } from "@skyteam/shared";
 import { db } from "./db";
+import { singleFlight } from "./singleFlight";
 
 /**
  * The database's tables: game logs (games, move_codes), accounts (users, roles,
@@ -86,8 +87,9 @@ export const SQL_MOVE_CODES = `INSERT INTO move_codes (format, code, meaning) SE
 /** The tables exist and are current (checked again until that works once). */
 let ready = false;
 
-export async function ensureSchema(): Promise<void> {
-  if (ready) return;
+/** One run at a time: callers at startup (the game log, the owner's account)
+ *  share it — two runs at once deadlock on the tables' locks. */
+const migrate = singleFlight(async () => {
   const pool = db()!;
   await pool.query(SCHEMA);
   await pool.query(SQL_MOVE_CODES, [LOG_FORMAT, MOVE_CODES.map((c) => c.code), MOVE_CODES.map((c) => c.meaning)]);
@@ -97,6 +99,10 @@ export async function ensureSchema(): Promise<void> {
   const grants = DEFAULT_ROLES.filter((r) => added.has(r.name)).flatMap((r) => r.privileges.map((p) => [r.name, p]));
   if (grants.length) await pool.query(SQL_INSERT_PRIVILEGES, [grants.map((g) => g[0]), grants.map((g) => g[1])]);
   ready = true;
+});
+
+export async function ensureSchema(): Promise<void> {
+  if (!ready) await migrate("schema");
 }
 
 /** Tests: run the schema again, as a restarted server would. */

@@ -48,6 +48,8 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       await mod.schema.ensureSchema();
       mod.schema.resetSchemaCache();
       await mod.schema.ensureSchema(); // twice: idempotent
+      mod.schema.resetSchemaCache();
+      await Promise.all([mod.schema.ensureSchema(), mod.schema.ensureSchema()]); // at once (as at startup): one run, no deadlock
       const tables = (await q(`SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY 1`, [schema])).map((r) => r.table_name);
       expect(tables).toEqual(["game_players", "games", "move_codes", "password_resets", "role_privileges", "roles", "users"]);
       const roles = await q(`SELECT r.name, r.rank, array_agg(p.privilege ORDER BY p.privilege) AS privileges
