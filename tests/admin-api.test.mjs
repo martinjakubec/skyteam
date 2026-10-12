@@ -192,3 +192,80 @@ describe("user management", async () => {
     expect((await s.api("PATCH", `/api/admin/users/${"n".repeat(21)}`, { cookie: fresh.cookie, body: { role: "USER" } })).status).toBe(404);
   });
 });
+
+describe("a user's games, and exporting them", () => {
+  /** A logged game row, written straight into the fake (with links). */
+  function fakeGame({ id, endedAt, moves = "D11112222", copilot = "human", links = [], format = 1 }) {
+    FakePg.last.games.push({
+      id, room_id: "room-" + id, format, build: "v1.2.3", scenario: "YUL", modules: [], abilities: [], intern_order: "",
+      pilot: "human", copilot, result: "exited", loss_reason: null, rounds_reached: 1, moves, started_at: endedAt, ended_at: endedAt,
+      seed: "ab".repeat(16), seeded_from: null,
+    });
+    for (const [crew, user_id] of links) FakePg.last.gamePlayers.push({ game_id: id, user_id, crew });
+  }
+  const gid = (p) => p.padEnd(21, "x");
+
+  test("only manage_users: an ADMIN is refused", async () => {
+    const admin = await as("abel", "ADMIN");
+    const target = await s.signUp("target2");
+    expect((await s.api("GET", `/api/admin/users/${target.user.id}/games`, { cookie: admin.cookie })).status).toBe(403);
+    expect((await s.api("POST", "/api/admin/games/export", { cookie: admin.cookie, body: { ids: [gid("x1")] } })).status).toBe(403);
+    expect((await s.api("POST", "/api/admin/games/export", { body: { ids: [gid("x1")] } })).status).toBe(401);
+  });
+
+  test("a user's games: the account, and its history a page at a time", async () => {
+    const sa = await as("sigrid", "SUPERADMIN");
+    const pia = await s.signUp("pianist");
+    for (let i = 0; i < 22; i++) fakeGame({ id: gid(`p${String(i).padStart(2, "0")}`), endedAt: new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString(), links: [["pilot", pia.user.id]] });
+    const first = await s.api("GET", `/api/admin/users/${pia.user.id}/games`, { cookie: sa.cookie });
+    expect(first.status).toBe(200);
+    expect(first.body.user).toMatchObject({ id: pia.user.id, username: "pianist", games: 22 });
+    expect(first.body.games).toHaveLength(20);
+    expect(first.body.games[0]).toMatchObject({ id: gid("p21"), crew: "pilot", partner: "Guest", result: "exited" });
+    const rest = await s.api("GET", `/api/admin/users/${pia.user.id}/games?before=${encodeURIComponent(first.body.next)}`, { cookie: sa.cookie });
+    expect(rest.body.games.map((g) => g.id)).toEqual([gid("p01"), gid("p00")]);
+    expect(rest.body.next).toBe(null);
+    expect((await s.api("GET", `/api/admin/users/${pia.user.id}/games?before=nope`, { cookie: sa.cookie })).status).toBe(400);
+    expect((await s.api("GET", `/api/admin/users/${"n".repeat(21)}/games`, { cookie: sa.cookie })).status).toBe(404);
+  });
+
+  test("export: seed, crews, result and the decoded moves — never the room or an account id", async () => {
+    const sa = await as("saskia", "SUPERADMIN");
+    const quinn = await s.signUp("quinn");
+    fakeGame({ id: gid("e1"), endedAt: "2026-10-02T10:00:00.000Z", copilot: "bot:aviator", links: [["pilot", quinn.user.id]] });
+    fakeGame({ id: gid("e2"), endedAt: "2026-10-01T10:00:00.000Z", links: [["copilot", quinn.user.id]] });
+    const r = await s.api("POST", "/api/admin/games/export", { cookie: sa.cookie, body: { ids: [gid("e1"), gid("e2"), gid("e1"), gid("gone")] } });
+    expect(r.status).toBe(200);
+    expect(r.body.exportedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(r.body.missing).toEqual([gid("gone")]);
+    expect(r.body.games.map((g) => g.id)).toEqual([gid("e2"), gid("e1")]); // oldest first, each once
+    expect(r.body.games[1]).toEqual({
+      id: gid("e1"), format: 1, build: "v1.2.3", setup: { scenarioId: "YUL", modules: [], abilities: [] }, internTokens: [],
+      seed: "ab".repeat(16), seededFrom: null,
+      crews: { pilot: { username: "quinn", seat: "human" }, copilot: { username: null, seat: "bot:aviator" } },
+      result: "exited", lossReason: null, roundsReached: 1,
+      startedAt: "2026-10-02T10:00:00.000Z", endedAt: "2026-10-02T10:00:00.000Z",
+      moves: "D11112222",
+      steps: [{ token: "D11112222", crew: null, command: { type: "roll", pilot: [1, 1, 1, 1], copilot: [2, 2, 2, 2], at: 0 } }],
+    });
+    const text = JSON.stringify(r.body);
+    expect(text).not.toContain("room-");
+    expect(text).not.toContain(quinn.user.id);
+  });
+
+  test("export: moves this build can't replay still go out, with why", async () => {
+    const sa = await as("selene", "SUPERADMIN");
+    fakeGame({ id: gid("old"), endedAt: "2026-10-01T10:00:00.000Z", format: 0 });
+    const r = await s.api("POST", "/api/admin/games/export", { cookie: sa.cookie, body: { ids: [gid("old")] } });
+    expect(r.body.games[0]).toMatchObject({ moves: "D11112222", steps: null, stepsError: expect.stringContaining("format 0") });
+  });
+
+  test("export: refused without ids, past the limit, or with something that isn't a game id", async () => {
+    const sa = await as("sorrel", "SUPERADMIN");
+    const post = (body) => s.api("POST", "/api/admin/games/export", { cookie: sa.cookie, body });
+    expect(await post({ ids: [] })).toMatchObject({ status: 400, body: { error: "Choose at least one game." } });
+    expect(await post({ ids: Array.from({ length: 201 }, (_, i) => gid(`m${i}`)) })).toMatchObject({ status: 400, body: { error: "Export at most 200 games at a time." } });
+    expect((await post({ ids: ["'; DROP TABLE games"] })).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+  });
+});

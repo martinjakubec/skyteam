@@ -241,6 +241,84 @@ describe("the users page", () => {
   });
 });
 
+/** A jsdom Blob's text (it has no .text()). */
+const readBlob = (b: Blob) =>
+  new Promise<string>((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.readAsText(b);
+  });
+
+describe("a user's games, to export", () => {
+  const game = (id: string, over = {}) => ({
+    id: id.padEnd(21, "x"), scenario: "YUL", modules: [], abilities: [], result: "won", lossReason: null, roundsReached: 7,
+    crew: "pilot", partner: "Bot (aviator)", endedAt: "2026-10-01T10:00:00.000Z", seeded: false, ...over,
+  });
+  let blobs: Blob[];
+  let saved: string[];
+  beforeEach(() => {
+    routes["GET /api/auth/me"] = () => ({ body: { user: SUPER } });
+    routes["GET /api/admin/users/id-alice/games"] = (url) =>
+      url.searchParams.get("before")
+        ? { body: { user: { username: "alice" }, games: [game("g3")], next: null } }
+        : { body: { user: { username: "alice" }, games: [game("g1"), game("g2", { crew: "copilot", seeded: true })], next: "cursor" } };
+    routes["POST /api/admin/games/export"] = (_url, body) => ({ body: { exportedAt: "2026-10-12T00:00:00.000Z", games: (body.ids as string[]).map((id) => ({ id, seed: "ab" })), missing: [] } });
+    blobs = [];
+    saved = [];
+    URL.createObjectURL = vi.fn((b: Blob) => (blobs.push(b), "blob:x"));
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+  });
+
+  test("the users page links each user's games", async () => {
+    routes["GET /api/admin/roles"] = () => ({ body: { roles: [] } });
+    routes["GET /api/admin/users"] = () => ({ body: { users: [{ id: "id-alice", username: "alice", role: "USER", disabled: false, createdAt: "2026-10-01T10:00:00.000Z", games: 3 }], next: null } });
+    await open("/admin/users");
+    fireEvent.click(await screen.findByRole("link", { name: "Games of alice" }));
+    expect(window.location.pathname).toBe("/admin/users/id-alice/games");
+    expect(await screen.findByRole("heading", { name: "Games of alice" })).toBeTruthy();
+  });
+
+  test("choose some (or every one shown), export: the server's JSON is downloaded", async () => {
+    await open("/admin/users/id-alice/games");
+    const exportButton = await screen.findByRole("button", { name: "Export as JSON" });
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Export 1 as JSON" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(calls.find((c) => c.key === "POST /api/admin/games/export")!.body).toEqual({ ids: ["g1".padEnd(21, "x")] });
+    expect(JSON.parse(await readBlob(blobs[0]))).toEqual({ exportedAt: "2026-10-12T00:00:00.000Z", games: [{ id: "g1".padEnd(21, "x"), seed: "ab" }], missing: [] });
+    expect(saved[0]).toMatch(/^skyteam-games-alice-\d{4}-\d\d-\d\d\.json$/);
+
+    // Load more, then choose every game shown.
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText(/same dice/);
+    await waitFor(() => expect(screen.getAllByRole("checkbox")).toHaveLength(4));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose every game shown" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export 3 as JSON" }));
+    await waitFor(() => expect(calls.filter((c) => c.key === "POST /api/admin/games/export")).toHaveLength(2));
+    expect(calls.filter((c) => c.key === "POST /api/admin/games/export")[1].body.ids).toEqual(["g1", "g2", "g3"].map((g) => g.padEnd(21, "x")));
+  });
+
+  test("the server's refusal shows", async () => {
+    routes["POST /api/admin/games/export"] = () => ({ status: 400, body: { error: "Export at most 200 games at a time." } });
+    await open("/admin/users/id-alice/games");
+    fireEvent.click((await screen.findAllByRole("checkbox"))[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Export 1 as JSON" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Export at most 200 games at a time.");
+    expect(saved).toEqual([]);
+  });
+
+  test("an ADMIN without manage_users may not see it", async () => {
+    routes["GET /api/auth/me"] = () => ({ body: { user: ADMIN } });
+    await open("/admin/users/id-alice/games");
+    expect(await screen.findByText("You don't have access to this.")).toBeTruthy();
+    expect(calls.some((c) => c.key.startsWith("GET /api/admin/users"))).toBe(false);
+  });
+});
+
 test("a pie with many slices groups the smallest as Other, in grey", async () => {
   const { groupSlices, sliceColor, MAX_SLICES } = await import("../../packages/client/src/admin/PieChart");
   const slices = Array.from({ length: 11 }, (_, i) => ({ label: `s${i}`, value: 20 - i }));

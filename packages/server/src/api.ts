@@ -22,9 +22,10 @@ import {
   type AccountErrorCode,
 } from "./accounts";
 import { db } from "./db";
-import { gameRecord, myGames, parseCursor } from "./history";
+import { GAME_ID, gameRecord, myGames, parseCursor } from "./history";
+import { EXPORT_MAX, exportGames } from "./gameExport";
 import { loadStats } from "./stats";
-import { deleteUser, listRoles, listUsers, resetLinkFor, updateUser } from "./adminUsers";
+import { deleteUser, listRoles, listUsers, managed, resetLinkFor, updateUser } from "./adminUsers";
 import { clearedCookie, currentUser, issueSession, requirePrivilege, sessionCookie } from "./sessions";
 import { failureLimiter, limit, route } from "./routing";
 
@@ -200,6 +201,28 @@ export function apiRouter(): Router {
 
   r.post("/admin/users/:id/reset-link", manage, route(async (req, res) => {
     res.json(await resetLinkFor(me(res)!.id, req.params.id));
+  }));
+
+  // A user's games, as their history lists them (20 a page), and chosen games exported.
+  r.get("/admin/users/:id/games", manage, route(async (req, res) => {
+    const before = req.query.before === undefined ? undefined : parseCursor(req.query.before);
+    if (before === null) return void res.status(400).json({ error: "That page doesn't exist." });
+    const user = await managed(req.params.id);
+    res.json({ user, ...(await myGames(user.id, before)) });
+  }));
+
+  const ExportRequest = z.object({
+    ids: z
+      .array(z.string().regex(GAME_ID, "That's not a game id."))
+      .min(1, "Choose at least one game.")
+      .max(EXPORT_MAX, `Export at most ${EXPORT_MAX} games at a time.`)
+      .transform((ids) => [...new Set(ids)]),
+  });
+
+  r.post("/admin/games/export", manage, limit(30), route(async (req, res) => {
+    const body = parse(ExportRequest, req.body, res);
+    if (!body) return;
+    res.json(await exportGames(body.ids));
   }));
 
   r.delete("/admin/users/:id", manage, route(async (req, res) => {

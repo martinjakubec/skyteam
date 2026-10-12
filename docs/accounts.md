@@ -96,6 +96,19 @@ the site owner's account:
   - never the seed or the room.
 - **When a game is won or lost**, the cockpit links to its replay.
 
+**Exporting games** (`manage_users`). On the users page a user's games count
+opens their games (`/admin/users/<id>/games`). Tick some (or every one shown)
+and **Export as JSON** downloads, for each game (at most 200 at a time):
+- its setup, Intern order, build, seed and the game it took its dice from;
+- each seat's username (null for none) and seat (`human` or `bot:<level>`);
+- the result, loss reason, rounds reached, start and end;
+- its move string, and the moves decoded (`steps`: token, crew, command), as
+  `npm run logs:export` writes them. A game this build can't replay keeps its
+  move string, with `steps: null` and a `stepsError`.
+
+Never the room it was played in, nor any account id. Unknown ids come back
+under `missing`.
+
 **Deleting an account** removes its links to games. The game rows stay: they
 are anonymous and feed the statistics.
 
@@ -152,4 +165,4 @@ Everything is JSON under `/api`.
 | Route | Who |
 |---|---|
 | `GET /api/admin/stats?includeSeeded=1` | `view_stats` |
-| `GET /api/admin/users?q=&after=`, `GET /api/admin/roles`, `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/reset-link`, `DELETE /api/admin/users/:id` | `manage_users` |
+| `GET /api/admin/users?q=&after=`, `GET /api/admin/roles`, `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/reset-link`, `DELETE /api/admin/users/:id`, `GET /api/admin/users/:id/games?before=<cursor>`, `POST /api/admin/games/export` (`{ ids }`) | `manage_users` |

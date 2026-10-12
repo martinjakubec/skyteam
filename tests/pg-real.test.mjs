@@ -31,6 +31,7 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       gameLog: await import("../packages/server/src/gameLog.ts"),
       stats: await import("../packages/server/src/stats.ts"),
       admin: await import("../packages/server/src/adminUsers.ts"),
+      gameExport: await import("../packages/server/src/gameExport.ts"),
     };
   });
 
@@ -184,6 +185,22 @@ describe.skipIf(!base)("against a real PostgreSQL", () => {
       // Deleting the account removes the link, keeps the game.
       expect(await mod.acc.deleteOwnAccount(user.id, "ten chars!")).toBe(true);
       expect((await mod.history.gameRecord(gid("n1"))).crews.pilot).toBe("Guest");
+    });
+
+    test("an export: the chosen games oldest first, named crews, seed and decoded moves", async () => {
+      const { user } = await mod.acc.register("xena", "ten chars!");
+      await insertGame(gid("x1"), "2026-10-06T11:00:00Z", { copilot: "bot:aviator", seed: "ef".repeat(16) });
+      await link(gid("x1"), user.id, "pilot");
+      await insertGame(gid("x2"), "2026-10-06T10:00:00Z");
+      const out = await mod.gameExport.exportGames([gid("x1"), gid("x2"), gid("nope")]);
+      expect(out.missing).toEqual([gid("nope")]);
+      expect(out.games.map((g) => g.id)).toEqual([gid("x2"), gid("x1")]);
+      expect(out.games[1]).toMatchObject({
+        seed: "ef".repeat(16),
+        crews: { pilot: { username: "xena", seat: "human" }, copilot: { username: null, seat: "bot:aviator" } },
+        endedAt: "2026-10-06T11:00:00.000Z",
+        steps: [{ token: "D11112222", crew: null }],
+      });
     });
   });
 

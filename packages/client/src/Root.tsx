@@ -12,6 +12,7 @@ import { UpdateBar } from "./pwa/UpdateBar";
 const GamePage = lazy(() => import("./history/GamePage"));
 const AdminStats = lazy(() => import("./admin/AdminStats"));
 const AdminUsers = lazy(() => import("./admin/AdminUsers"));
+const AdminUserGames = lazy(() => import("./admin/AdminUserGames"));
 
 /** The page for the current path, with the app's bars (offline, a new version) over any of them. */
 export function Root() {
@@ -43,6 +44,14 @@ function Page() {
     return (
       <Suspense fallback={null}>
         <GamePage id={decodeURIComponent(game[1])} />
+      </Suspense>
+    );
+  }
+  const userGames = /^\/admin\/users\/([^/]+)\/games$/.exec(route);
+  if (userGames) {
+    return (
+      <Suspense fallback={null}>
+        <AdminUserGames userId={decodeURIComponent(userGames[1])} />
       </Suspense>
     );
   }

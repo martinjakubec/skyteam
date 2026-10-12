@@ -75,7 +75,8 @@ export async function listRoles(): Promise<RoleInfo[]> {
   return (await (await pool()).query(ADMIN_SQL.roles)).rows.map((r) => ({ name: r.name, rank: Number(r.rank), privileges: r.privileges }));
 }
 
-async function managed(id: string): Promise<ManagedUser> {
+/** One account as the list shows it (not_found when there's none). */
+export async function managed(id: string): Promise<ManagedUser> {
   const r = (await (await pool()).query(ADMIN_SQL.one, [id])).rows[0];
   if (!r) throw new AccountError("No such user.", "not_found");
   return toManaged(r);

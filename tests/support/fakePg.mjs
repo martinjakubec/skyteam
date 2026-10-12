@@ -153,6 +153,19 @@ Pool.prototype.tags = {
     };
     return rows([{ ...g, has_seed: !!g.seed, seeded_from: g.seeded_from ?? null, pilot_name: name("pilot"), copilot_name: name("copilot") }]);
   },
+  "games.export"(ids) {
+    const name = (id, crew) => {
+      const p = this.gamePlayers.find((x) => x.game_id === id && x.crew === crew);
+      return p ? this.user(p.user_id)?.username ?? null : null;
+    };
+    const key = (g) => `${new Date(g.ended_at).toISOString()}|${g.id}`;
+    return rows(
+      this.games
+        .filter((g) => ids.includes(g.id))
+        .sort((a, b) => (key(a) < key(b) ? -1 : 1))
+        .map((g) => ({ ...g, pilot_name: name(g.id, "pilot"), copilot_name: name(g.id, "copilot") })),
+    );
+  },
   "users.list"(pattern, after) {
     // LIKE with "!" as the escape: "!_" is a literal "_", "%" around it anything.
     const part = pattern.replace(/^%|%$/g, "").replace(/!(.)/g, "$1");

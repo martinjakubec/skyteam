@@ -4,12 +4,13 @@ import { call } from "../account/authApi";
 import { useAccount } from "../account/useAccount";
 import { useConfirm } from "../components/ConfirmDialog";
 import { when } from "../history/format";
-import { navigate } from "../router";
+import { Link, navigate } from "../router";
 import { AdminAlert, AdminCard, AdminLayout } from "./AdminLayout";
 
 /**
  * User management (manage_users): find an account, change its role, disable
- * it, make a reset link to hand over, or delete it. Your own account is
+ * it, make a reset link to hand over, or delete it; its games count opens its
+ * games, to export. Your own account is
  * managed on the account page, not here.
  */
 
@@ -165,7 +166,11 @@ export default function AdminUsers() {
                         <span className={u.disabled ? "adm-status off" : "adm-status"}>{u.disabled ? "disabled" : "active"}</span>
                       </td>
                       <td>{when(u.createdAt)}</td>
-                      <td className="num">{u.games}</td>
+                      <td className="num">
+                        <Link to={`/admin/users/${u.id}/games`} aria-label={`Games of ${u.username}`}>
+                          {u.games}
+                        </Link>
+                      </td>
                       <td className="adm-row-actions">
                         {mine ? (
                           <span className="adm-you">you</span>
