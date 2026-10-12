@@ -795,3 +795,54 @@ describe("invite box and 500 page", () => {
     expect(reload).toHaveBeenCalled();
   });
 });
+
+describe("whose turn", () => {
+  const banner = () => document.querySelector(".turn-banner");
+  /** The game with the turn on `crew`. */
+  const turnOf = (crew: Crew, over: Partial<RoomSnapshot> = {}) => {
+    const s = inGame(over);
+    s.game!.turn = crew;
+    return s;
+  };
+
+  test("a line on top: Your turn in my colour, the other crew's turn in theirs", async () => {
+    const sock = await inRoom(turnOf("pilot"));
+    expect(banner()!.textContent).toBe("Your turn");
+    expect(banner()!.className).toBe("turn-banner pilot mine");
+    sock.serve("room:state", turnOf("copilot"));
+    expect(banner()!.textContent).toBe("Co-Pilot's turn");
+    expect(banner()!.className).toBe("turn-banner copilot");
+  });
+
+  test("the Co-Pilot sees the Pilot's turn in blue, and its own in orange", async () => {
+    const asCopilot = (crew: Crew) => {
+      const s = turnOf(crew);
+      [s.game!.pilotId, s.game!.copilotId] = [OTHER, ME];
+      return s;
+    };
+    const sock = await inRoom(asCopilot("pilot"));
+    expect(banner()!.textContent).toBe("Pilot's turn");
+    expect(banner()!.className).toBe("turn-banner pilot");
+    sock.serve("room:state", asCopilot("copilot"));
+    expect(banner()!.textContent).toBe("Your turn");
+    expect(banner()!.className).toBe("turn-banner copilot mine");
+  });
+
+  test("a spectator sees whose turn it is, never Your turn", async () => {
+    await inRoom(turnOf("pilot", { you: { playerId: "watcher", kind: "observer" } as RoomSnapshot["you"] }));
+    expect(banner()!.textContent).toBe("Pilot's turn");
+  });
+
+  test("not in the lobby, between rounds or once the game is over", async () => {
+    const sock = await inRoom();
+    expect(banner()).toBe(null);
+    const rolling = inGame();
+    rolling.game!.phase = "rolling";
+    sock.serve("room:state", rolling);
+    expect(banner()).toBe(null);
+    const over = inGame({ status: "finished" });
+    over.game!.outcome = { result: "won" };
+    sock.serve("room:state", over);
+    expect(banner()).toBe(null);
+  });
+});

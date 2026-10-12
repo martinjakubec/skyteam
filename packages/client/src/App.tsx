@@ -13,6 +13,7 @@ import { TutorialModal } from "./components/TutorialModal";
 import { AccountChip } from "./account/AccountChip";
 import { Dot } from "./components/icons";
 import { TopbarMenu } from "./components/TopbarMenu";
+import { TurnBanner } from "./components/TurnBanner";
 import { useConfirm } from "./components/ConfirmDialog";
 import { rememberRoom } from "./pwa/installed";
 
@@ -136,113 +137,116 @@ export function App() {
   const chat = inLobby && !solo;
 
   return (
-    <main className={inGame ? "stage" : chat ? "center wide" : "center"}>
-      <header className="topbar">
-        <h1 className="wordmark">SKY&middot;TEAM</h1>
-        <div className="topbar-right">
-          <span className={`conn ${connected ? "on" : "off"}`}>
-            <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
-          </span>
-          <TopbarMenu>
-            {(phone) => (
-              <>
-                {/* In a room the account pages open in a new tab: the game here goes on. */}
-                {!inGame && <AccountChip newTab flat={phone} />}
-                {/* Out of a game (the lobby, an abandoned game, watching): leave for good. */}
-                {!inGame && snapshot && (
-                  <button
-                    className={phone ? undefined : "reset-btn exit-btn"}
-                    onClick={async () => {
-                      if (await confirm({ title: "Leave this room?", confirmLabel: "Leave room" }))
-                        leaveRoom(() => {
-                          setRoom(null);
-                          window.history.replaceState(null, "", "/");
-                          rememberRoom(null);
-                        });
-                    }}
-                  >
-                    Leave room
-                  </button>
-                )}
-                {inGame && snapshot?.you.kind === "player" && (
-                  <button
-                    className={phone ? undefined : "reset-btn exit-btn"}
-                    onClick={async () => {
-                      if (
-                        await confirm({
-                          title: "Exit to lobby?",
-                          message: "The game ends and both players return to the lobby. All progress will be lost.",
-                          confirmLabel: "Exit to lobby",
-                          danger: true,
-                        })
-                      )
-                        exitGame();
-                    }}
-                  >
-                    Exit to lobby
-                  </button>
-                )}
-                {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
-                  <button
-                    className={phone ? "menu-danger" : "reset-btn"}
-                    onClick={async () => {
-                      if (
-                        await confirm({
-                          title: "Reset the game?",
-                          message: "The game goes back to the start. All progress will be lost.",
-                          confirmLabel: "Reset game",
-                          danger: true,
-                        })
-                      )
-                        resetGame();
-                    }}
-                  >
-                    Reset game
-                  </button>
-                )}
-              </>
-            )}
-          </TopbarMenu>
-        </div>
-      </header>
-      {lastError && <p className="error">{lastError}</p>}
-
-      {!inGame && (
-        <div className={chat ? "lobby-layout with-log" : "lobby-layout"}>
-          <div className="lobby-col">
-            {/* A solo room's other seat is the bot: nobody to invite. */}
-            {!solo && <InviteBox url={inviteUrl} />}
-            {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
-            <Seats snapshot={snapshot} />
-            {snapshot && inLobby && (
-              <Lobby snapshot={snapshot} onReady={setReady} onName={setName} onSetup={setSetup} onStart={startGame} onFreshDice={freshDice} />
-            )}
+    <>
+      {inGame && <TurnBanner snapshot={snapshot} />}
+      <main className={inGame ? "stage" : chat ? "center wide" : "center"}>
+        <header className="topbar">
+          <h1 className="wordmark">SKY&middot;TEAM</h1>
+          <div className="topbar-right">
+            <span className={`conn ${connected ? "on" : "off"}`}>
+              <Dot on={connected} /> {connected ? "linked" : "reconnecting"}
+            </span>
+            <TopbarMenu>
+              {(phone) => (
+                <>
+                  {/* In a room the account pages open in a new tab: the game here goes on. */}
+                  {!inGame && <AccountChip newTab flat={phone} />}
+                  {/* Out of a game (the lobby, an abandoned game, watching): leave for good. */}
+                  {!inGame && snapshot && (
+                    <button
+                      className={phone ? undefined : "reset-btn exit-btn"}
+                      onClick={async () => {
+                        if (await confirm({ title: "Leave this room?", confirmLabel: "Leave room" }))
+                          leaveRoom(() => {
+                            setRoom(null);
+                            window.history.replaceState(null, "", "/");
+                            rememberRoom(null);
+                          });
+                      }}
+                    >
+                      Leave room
+                    </button>
+                  )}
+                  {inGame && snapshot?.you.kind === "player" && (
+                    <button
+                      className={phone ? undefined : "reset-btn exit-btn"}
+                      onClick={async () => {
+                        if (
+                          await confirm({
+                            title: "Exit to lobby?",
+                            message: "The game ends and both players return to the lobby. All progress will be lost.",
+                            confirmLabel: "Exit to lobby",
+                            danger: true,
+                          })
+                        )
+                          exitGame();
+                      }}
+                    >
+                      Exit to lobby
+                    </button>
+                  )}
+                  {inGame && snapshot?.hostPlayerId === snapshot?.you.playerId && (
+                    <button
+                      className={phone ? "menu-danger" : "reset-btn"}
+                      onClick={async () => {
+                        if (
+                          await confirm({
+                            title: "Reset the game?",
+                            message: "The game goes back to the start. All progress will be lost.",
+                            confirmLabel: "Reset game",
+                            danger: true,
+                          })
+                        )
+                          resetGame();
+                      }}
+                    >
+                      Reset game
+                    </button>
+                  )}
+                </>
+              )}
+            </TopbarMenu>
           </div>
-          {/* The crew's chat — not in a solo room: the bot doesn't talk. */}
-          {snapshot && chat && <CrewChat snapshot={snapshot} />}
-        </div>
-      )}
+        </header>
+        {lastError && <p className="error">{lastError}</p>}
 
-      {inGame && (
-        <Cockpit
-          snapshot={snapshot}
-          onCommand={sendCommand}
-          between={
-            snapshot.debrief && (
-              <div className="between">
-                <DebriefPanel snapshot={snapshot} onReady={setRoundReady} />
-                {/* Talk it over — the crew only, and not with the bot. */}
-                {snapshot.you.kind === "player" && !solo && <CrewChat snapshot={snapshot} />}
-              </div>
-            )
-          }
-        />
-      )}
+        {!inGame && (
+          <div className={chat ? "lobby-layout with-log" : "lobby-layout"}>
+            <div className="lobby-col">
+              {/* A solo room's other seat is the bot: nobody to invite. */}
+              {!solo && <InviteBox url={inviteUrl} />}
+              {snapshot?.notice && <p className="notice">{snapshot.notice}</p>}
+              <Seats snapshot={snapshot} />
+              {snapshot && inLobby && (
+                <Lobby snapshot={snapshot} onReady={setReady} onName={setName} onSetup={setSetup} onStart={startGame} onFreshDice={freshDice} />
+              )}
+            </div>
+            {/* The crew's chat — not in a solo room: the bot doesn't talk. */}
+            {snapshot && chat && <CrewChat snapshot={snapshot} />}
+          </div>
+        )}
 
-      {snapshot?.status === "abandoned" && (
-        <p className="error">A player left and didn't return in time — the game was abandoned.</p>
-      )}
-      {confirmDialog}
-    </main>
+        {inGame && (
+          <Cockpit
+            snapshot={snapshot}
+            onCommand={sendCommand}
+            between={
+              snapshot.debrief && (
+                <div className="between">
+                  <DebriefPanel snapshot={snapshot} onReady={setRoundReady} />
+                  {/* Talk it over — the crew only, and not with the bot. */}
+                  {snapshot.you.kind === "player" && !solo && <CrewChat snapshot={snapshot} />}
+                </div>
+              )
+            }
+          />
+        )}
+
+        {snapshot?.status === "abandoned" && (
+          <p className="error">A player left and didn't return in time — the game was abandoned.</p>
+        )}
+        {confirmDialog}
+      </main>
+    </>
   );
 }
