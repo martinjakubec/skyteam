@@ -104,6 +104,15 @@ describe("my games", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBe(null);
   });
 
+  test("a plain way back to the game (the installed app has no Back button)", async () => {
+    routes["GET /api/me/games"] = () => ({ body: { games: [], next: null } });
+    await open("/history");
+    const back = await screen.findByRole("link", { name: "Back to the game" });
+    expect(back.getAttribute("href")).toBe("/");
+    fireEvent.click(back);
+    expect(window.location.pathname).toBe("/");
+  });
+
   test("no games yet says so", async () => {
     routes["GET /api/me/games"] = () => ({ body: { games: [], next: null } });
     await open("/history");

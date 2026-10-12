@@ -10,13 +10,19 @@ import { useAccount } from "./useAccount";
  * first show the new recovery code.
  */
 
-/** The frame every account page shares: the wordmark (home) and a panel. */
+/** The frame every account page shares: the wordmark and a plain way back to
+ *  the game (the installed app has no Back button), then the page. */
 export function AccountFrame({ title, wide, children }: { title: string; wide?: boolean; children: ReactNode }) {
   return (
     <main className={wide ? "center wide-page" : "center"}>
-      <Link to="/" className="wordmark home-link">
-        SKY&middot;TEAM
-      </Link>
+      <header className="topbar page-head">
+        <Link to="/" className="wordmark home-link">
+          SKY&middot;TEAM
+        </Link>
+        <nav className="page-links">
+          <Link to="/">Back to the game</Link>
+        </nav>
+      </header>
       <h2 className="page-title">{title}</h2>
       {children}
     </main>

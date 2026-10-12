@@ -38,6 +38,7 @@ export default function GamePage({ id }: { id: string }) {
         </Link>
         <nav className="page-links">
           <Link to="/history">My games</Link>
+          <Link to="/">Back to the game</Link>
         </nav>
       </header>
       {error && <p className="notice">{error}</p>}

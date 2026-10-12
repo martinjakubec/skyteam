@@ -3024,6 +3024,18 @@ button.confirm-danger {
 .account-chip a {
   color: #26303c;
 }
+.page-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem 1rem;
+}
+/* The account pages' head: the wordmark, and the way back on the right. */
+.page-head {
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0;
+}
 .page-links a {
   color: #26303c;
   font-family: var(--font-display);
