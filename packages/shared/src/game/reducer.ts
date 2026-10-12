@@ -302,10 +302,11 @@ function initiateReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; value
   if (s.rerollTokens <= 0) throw new GameRuleError("No Reroll tokens available.");
   if (cmd.dieIds.length === 0) throw new GameRuleError("Select at least one die to reroll.");
 
-  applyReroll(s, crew, cmd);
+  const from = applyReroll(s, crew, cmd);
   s.rerollTokens -= 1;
   s.rerollSpent += 1;
   s.log.push(`${crewLabel(crew)} spent a Reroll token (${diceCount(cmd.dieIds.length)}).`);
+  noteReroll(s, crew, cmd.dieIds, from, cmd.values);
 
   // Hand the (free) reroll to the other crew. If they have no dice left to
   // reroll, there is nothing to prompt — resolve the event immediately.
@@ -320,25 +321,34 @@ function initiateReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; value
 
 /** Step 2 — the prompted player rerolls any number of their dice (0 = decline). */
 function respondReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): ReduceResult {
-  applyReroll(s, crew, cmd);
+  const from = applyReroll(s, crew, cmd);
   s.pendingReroll = null;
   s.log.push(
     cmd.dieIds.length > 0
       ? `${crewLabel(crew)} rerolled ${diceCount(cmd.dieIds.length)}.`
       : `${crewLabel(crew)} declined to reroll.`,
   );
+  if (cmd.dieIds.length) noteReroll(s, crew, cmd.dieIds, from, cmd.values);
   return { state: s, description: "Reroll complete." };
 }
 
-/** Overwrite the named dice in a crew's hand with the server-supplied values. */
-function applyReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): void {
+/** Overwrite the named dice in a crew's hand with the server-supplied values;
+ *  returns what they showed before. */
+function applyReroll(s: GameState, crew: Crew, cmd: { dieIds: number[]; values: DieValue[] }): DieValue[] {
   const hand = s.dice[crew];
-  cmd.dieIds.forEach((id, i) => {
+  return cmd.dieIds.map((id, i) => {
     const die = hand.find((d) => d.id === id);
     if (!die) throw new GameRuleError("No such die.");
     if (die.placed) throw new GameRuleError("Cannot reroll a die already placed.");
+    const was = die.value!;
     die.value = cmd.values[i];
+    return was;
   });
+}
+
+/** Keep a crew's reroll, old values to new, against the log line just pushed. */
+function noteReroll(s: GameState, crew: Crew, dieIds: number[], from: DieValue[], to: DieValue[]): void {
+  s.rerolls[crew].push({ logIndex: s.log.length - 1, dieIds: [...dieIds], from, to: [...to] });
 }
 
 // --- placeDie ---------------------------------------------------------------
@@ -697,9 +707,11 @@ function handleAnticipate(s: GameState, cmd: { dieId: number; value: DieValue },
   if (s.dice[crew].some((d) => d.placed)) throw new GameRuleError("Only before your first die.");
   const die = s.dice[crew].find((d) => d.id === cmd.dieId);
   if (!die || die.placed) throw new GameRuleError("No such die.");
+  const was = die.value!;
   die.value = cmd.value;
   s.anticipated = true;
   s.log.push(`${crewLabel(crew)} used Anticipation (rerolled one die).`);
+  noteReroll(s, crew, [die.id], [was], [cmd.value]);
   return { state: s, description: "Die rerolled." };
 }
 

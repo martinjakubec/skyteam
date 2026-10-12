@@ -37,6 +37,16 @@ export interface Die {
   hidden?: boolean;
 }
 
+/** A crew's own reroll (a Reroll token, or Anticipation): which dice, what they
+ *  showed and what they rolled. Private like the dice themselves — redaction
+ *  keeps only the viewer's own. `logIndex` is the public `log` line it explains. */
+export interface RerollNote {
+  logIndex: number;
+  dieIds: number[];
+  from: DieValue[];
+  to: DieValue[];
+}
+
 /** The Axis module: the two dice played this round + the persistent tilt offset.
  *  offset > 0 is tilted toward the Pilot, < 0 toward the Co-Pilot, 0 = level. */
 export interface AxisState {
@@ -147,6 +157,8 @@ export interface GameState {
 
   outcome: { result: "won" } | { result: "lost"; reason: string } | null;
   log: string[];
+  // Each crew's rerolls this game, old values to new (see RerollNote).
+  rerolls: Record<Crew, RerollNote[]>;
 }
 
 /** The Pilot leads odd rounds, the Co-Pilot even rounds (the Altitude arrow). */
@@ -226,6 +238,7 @@ export function createInitialGameState(
     pendingReroll: null,
     outcome: null,
     log: [`Flight to ${scenario.name} — cleared for approach.`],
+    rerolls: { pilot: [], copilot: [] },
   };
 }
 
@@ -298,7 +311,8 @@ export function airplanesRemaining(state: GameState): number {
  * Produce a copy of the state safe to send to `viewerId`: the *other* crew's
  * unplaced dice have their values hidden. (Placed dice are public — they're on
  * the board — and so is a die offered for Working Together, on its card.)
- * Observers see both crews' hidden dice redacted.
+ * Observers see both crews' hidden dice redacted. Reroll notes name dice
+ * values too: each crew gets only its own.
  */
 export function redactGameStateFor(state: GameState, viewerId: PlayerId): GameState {
   const viewer = crewOf(state, viewerId);
@@ -313,6 +327,10 @@ export function redactGameStateFor(state: GameState, viewerId: PlayerId): GameSt
     dice: {
       pilot: hide(state.dice.pilot, "pilot"),
       copilot: hide(state.dice.copilot, "copilot"),
+    },
+    rerolls: {
+      pilot: viewer === "pilot" ? state.rerolls.pilot : [],
+      copilot: viewer === "copilot" ? state.rerolls.copilot : [],
     },
   };
 }

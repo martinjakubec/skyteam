@@ -2318,6 +2318,37 @@ ul {
   outline-offset: 2px;
   transform: translateY(-3px);
 }
+/* A rerolled die tumbles while its face flickers (useDiceRoll): even one that
+   lands on its old face visibly rolled. Reduced motion: a flash instead. */
+.die.rolling {
+  animation: die-roll 600ms ease-out;
+}
+@keyframes die-roll {
+  0% {
+    transform: rotate(0) scale(1);
+  }
+  35% {
+    transform: rotate(-200deg) scale(0.8);
+  }
+  75% {
+    transform: rotate(-345deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(-360deg) scale(1);
+  }
+}
+@keyframes die-flash {
+  0%,
+  70% {
+    outline: 3px solid #4dd2ff;
+    outline-offset: 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .die.rolling {
+    animation: die-flash 600ms step-end;
+  }
+}
 /* The grabbed die stays in the tray (dimmed) while a floating clone is dragged */
 .die.lifted {
   opacity: 0.3;
@@ -2506,6 +2537,10 @@ ul {
   padding: 1px 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.12);
   opacity: 0.85;
+}
+/* My reroll's old → new faces, after the public line (only I get them). */
+.log .reroll-note {
+  font-weight: 700;
 }
 
 /* ---- Responsive ---- */

@@ -29,6 +29,7 @@ import type { CockpitSection } from "./cockpitSections";
 import { seatNames } from "./Seats";
 import { Coffee, Dice } from "./icons";
 import { useMediaQuery } from "../useMediaQuery";
+import { rerollText, useDiceRoll } from "../useDiceRoll";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
@@ -88,6 +89,11 @@ export function Cockpit({
   const myDice = myCrew ? game.dice[myCrew] : [];
   const oppDice = myCrew ? game.dice[myCrew === "pilot" ? "copilot" : "pilot"] : [];
   const selDie = myDice.find((d) => d.id === selected && !d.placed);
+  // My own rerolls (the server sends each crew only theirs): the log line shows
+  // old → new, and the dice tumble — a die that lands on its old face still
+  // visibly rolled.
+  const myRerolls = (myCrew && game.rerolls?.[myCrew]) || [];
+  const roll = useDiceRoll(myRerolls);
   // The held Intern token is selected via the INTERN_TOKEN sentinel id; it
   // places at face value (no Coffee).
   const selValue =
@@ -756,10 +762,11 @@ export function Cockpit({
                 )}
                 {myDice.map((d) => {
                   const picked = rerollActive && rerollPick.includes(d.id);
+                  const rolling = !d.placed && roll.ids.includes(d.id);
                   return (
                     <button
                       key={d.id}
-                      className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""}`}
+                      className={`die ${myCrew} ${selected === d.id ? "sel" : ""} ${d.placed ? "spent" : ""} ${drag?.dieId === d.id ? "lifted" : ""} ${picked ? "picked" : ""} ${rolling ? "rolling" : ""}`}
                       disabled={
                         rerollActive || pickActive
                           ? d.placed
@@ -777,7 +784,7 @@ export function Cockpit({
                       onPointerDown={rerollActive || pickActive || phone ? undefined : (e) => startDrag(e, d)}
                       onClick={rerollActive ? () => toggleRerollDie(d.id) : pickActive ? () => pickDie(d.id) : phone ? () => tapHold(d) : undefined}
                     >
-                      {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
+                      {d.placed ? "" : rolling && roll.faces[d.id] ? roll.faces[d.id] : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
                     </button>
                   );
                 })}
@@ -860,9 +867,15 @@ export function Cockpit({
 
           {!show && (
             <ul className="log">
-              {game.log.slice(-7).map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
+              {game.log.slice(-7).map((line, i, shown) => {
+                const note = myRerolls.find((n) => n.logIndex === game.log.length - shown.length + i);
+                return (
+                  <li key={i}>
+                    {line}
+                    {note && <span className="reroll-note"> {rerollText(note)}</span>}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

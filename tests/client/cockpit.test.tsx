@@ -5,7 +5,7 @@
 // must come out of the UI as a command the rules (and the strict tutorials) accept.
 import "../support/dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import {
   DEFAULT_SETUP,
   SCENARIO_TEMPLATES,
@@ -16,6 +16,8 @@ import {
   applyIntent,
   settle,
   randDice,
+  reduce,
+  redactGameStateFor,
   type Crew,
   type GameCommand,
   type GameState,
@@ -262,6 +264,39 @@ describe("cockpit views", () => {
     const pending = { ...g, pendingReroll: other as Crew };
     const { getAllByText } = render(<Cockpit snapshot={snapshotOf(pending, crew)} onCommand={() => {}} />);
     expect(getAllByText(/waiting for the (Co-)?Pilot to (pick dice|reroll)/i).length).toBeGreaterThan(0);
+  });
+
+  test("reroll: my rerolled dice tumble, and only my log shows their old → new faces", () => {
+    vi.useFakeTimers();
+    const g0 = { ...dealt(), rerollTokens: 1 };
+    const crew = g0.turn;
+    const other: Crew = crew === "pilot" ? "copilot" : "pilot";
+    const id = (c: Crew) => (c === "pilot" ? PILOT_ID : COPILOT_ID);
+    const view = (g: GameState, c: Crew) => <Cockpit snapshot={snapshotOf(redactGameStateFor(g, id(c)), c)} onCommand={() => {}} />;
+    const was = g0.dice[crew][0].value!;
+    const { container, rerender, getByText } = render(view(g0, crew));
+    const die = () => container.querySelectorAll<HTMLButtonElement>(`.hand .dice button.die.${crew}`)[0];
+    expect(die().classList.contains("rolling")).toBe(false);
+
+    // The die lands on its old face: it still rolls, and the log says so.
+    const g1 = reduce(g0, { type: "reroll", dieIds: [0], values: [was] }, id(crew)).state;
+    rerender(view(g1, crew));
+    expect(getByText(`Your die: ${was} → ${was}`)).toBeTruthy();
+    expect(die().classList.contains("rolling")).toBe(true);
+    act(() => void vi.advanceTimersByTime(700));
+    expect(die().classList.contains("rolling")).toBe(false);
+    expect(die().textContent).toBe(String(was));
+    vi.useRealTimers();
+    cleanup();
+
+    // The other crew reads the public line only; a reload doesn't roll again.
+    const theirs = render(view(g1, other));
+    expect(theirs.getByText(/spent a Reroll token \(1 die\)/)).toBeTruthy();
+    expect(theirs.queryByText(/Your die/)).toBe(null);
+    cleanup();
+    const reloaded = render(view(g1, crew));
+    expect(reloaded.container.querySelector(".die.rolling")).toBe(null);
+    expect(reloaded.getByText(`Your die: ${was} → ${was}`)).toBeTruthy();
   });
 
   test("drag and drop: a die dropped on an open space is placed; dropped elsewhere it returns", () => {

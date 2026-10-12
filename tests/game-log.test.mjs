@@ -78,7 +78,10 @@ function canon(g) {
   c.timerRemainingMs = null;
   const valueOf = (crew, id) => g.dice[crew].find((d) => d.id === id)?.value;
   if (c.pendingSwap) c.pendingSwap = { from: c.pendingSwap.from, value: valueOf(c.pendingSwap.from, c.pendingSwap.dieId) };
-  for (const crew of ["pilot", "copilot"]) c.dice[crew] = c.dice[crew].map((d) => `${d.value}${d.placed ? "x" : ""}`).sort();
+  for (const crew of ["pilot", "copilot"]) {
+    c.dice[crew] = c.dice[crew].map((d) => `${d.value}${d.placed ? "x" : ""}`).sort();
+    c.rerolls[crew] = c.rerolls[crew].map(({ dieIds: _, ...note }) => note); // which of two equal dice: either
+  }
   return c;
 }
 
