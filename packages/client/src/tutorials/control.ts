@@ -12,7 +12,7 @@ export const control: Tutorial = {
     { text: "Pilot: put your 3 on the Axis.", solution: [place("pilot", 3, axis("pilot"))], done: (s) => s.axis.pilot === 3 },
     { text: "Co-Pilot: put your 3 on the Axis — matching Axis dice earn a Coffee.", solution: [place("copilot", 3, axis("copilot"))], done: (s) => s.coffee === 1 },
     {
-      text: "Pilot: spend it — tap your 2, press +1, then drag it onto the Engine as a 3.",
+      text: "Pilot: spend it — tap your 2, press +1, then place it on the Engine as a 3.",
       solution: [place("pilot", 2, engine("pilot"), 1)],
       done: (s) => s.engines.pilot === 3 && s.coffee === 0,
     },

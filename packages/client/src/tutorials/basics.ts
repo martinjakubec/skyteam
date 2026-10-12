@@ -52,7 +52,7 @@ export const basics: Tutorial = {
     // --- Round 1: the Pilot leads ---------------------------------------------
     {
       chapter: "Round 1 · Axis",
-      text: "Every round each of you must put one die on the Axis and one on the Engines. The Pilot leads in odd rounds. Pilot: drag your 3 onto the Axis.",
+      text: "Every round each of you must put one die on the Axis and one on the Engines. The Pilot leads in odd rounds. Pilot: place your 3 on the Axis.",
       solution: [place("pilot", 3, axis("pilot"))],
       done: (s) => s.axis.pilot === 3,
     },

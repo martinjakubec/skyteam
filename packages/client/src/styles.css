@@ -2300,6 +2300,14 @@ ul {
   cursor: grab;
   touch-action: none;
 }
+/* Phones tap a die rather than drag it (Cockpit's tapHold): a swipe that
+   starts on a die scrolls the page like any other. */
+@media (max-width: 760px) {
+  .die:not(:disabled) {
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+}
 .die.sel {
   outline: 3px solid #ffd34d;
   outline-offset: 2px;

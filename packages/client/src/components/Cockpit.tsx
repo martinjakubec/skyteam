@@ -28,11 +28,14 @@ import { Window } from "./Window";
 import type { CockpitSection } from "./cockpitSections";
 import { seatNames } from "./Seats";
 import { Coffee, Dice } from "./icons";
+import { useMediaQuery } from "../useMediaQuery";
 
 /** Selection/drag ids for held extras (crew dice are 0..3): the Intern token
  *  and Synchronisation's Traffic die. */
 const INTERN_TOKEN = -1;
 const TRAFFIC_DIE = -2;
+/** Phones place dice by tapping, never by dragging (see tapHold). */
+const PHONE = "(max-width: 760px)";
 
 export function Cockpit({
   snapshot,
@@ -51,6 +54,7 @@ export function Cockpit({
   between?: ReactNode;
 }) {
   const vis = (section: CockpitSection) => !show || show.includes(section);
+  const phone = useMediaQuery(PHONE);
   const game = snapshot.game!;
   const myCrew: Crew | null =
     game.pilotId === snapshot.you.playerId
@@ -306,7 +310,8 @@ export function Cockpit({
     if (iMustRespond) return "Reroll offered — pick any of your dice to reroll, or Skip.";
     if (!myCrew) return "Spectating the approach.";
     if (!myTurn) return `Silence. Waiting for ${who(game.turn)}…`;
-    return rerollMode ? "Reroll — pick the dice to reroll, then Confirm." : "Your turn — drag a die onto a panel space.";
+    if (rerollMode) return "Reroll — pick the dice to reroll, then Confirm.";
+    return phone ? "Your turn — tap a die, then a panel space." : "Your turn — drag a die onto a panel space.";
   };
 
   const airportIdx = game.scenario.approachTrack.findIndex((s) => s.airport);
@@ -469,11 +474,21 @@ export function Cockpit({
       setSelected(g.dieId === INTERN_TOKEN || g.dieId === TRAFFIC_DIE ? g.dieId : null);
     }
   };
-  const startDrag = (e: React.PointerEvent, die: { id: number; value?: number; placed?: boolean }) => {
-    // While an extra (Intern token / Traffic die) is in hand, only that extra
-    // can be dragged — even off-turn.
+  /** Whether this die (or held extra) may be picked up now. While an extra
+   *  (Intern token / Traffic die) is in hand, only that extra can — even off-turn. */
+  const canHold = (die: { id: number; placed?: boolean }) => {
     const isExtra = die.id === INTERN_TOKEN || die.id === TRAFFIC_DIE;
-    if (die.placed || !myCrew || !(myTurn || extraHeldMine) || game.pendingReroll !== null || rerollMode || extraHeldMine !== isExtra) return;
+    return !die.placed && !!myCrew && (myTurn || extraHeldMine) && game.pendingReroll === null && !rerollMode && extraHeldMine === isExtra;
+  };
+  /** Phones: no dragging — a finger scrolling the board could drop a die
+   *  where it can't be taken back. A tap picks the die, a tap on a space places it. */
+  const tapHold = (die: { id: number; placed?: boolean }) => {
+    if (!canHold(die)) return;
+    setSelected(die.id);
+    setCoffeeDelta(0);
+  };
+  const startDrag = (e: React.PointerEvent, die: { id: number; value?: number; placed?: boolean }) => {
+    if (!myCrew || !canHold(die)) return;
     e.preventDefault();
     const base = die.value ?? 1;
     const coffee = selected === die.id ? coffeeDelta : 0;
@@ -723,7 +738,8 @@ export function Cockpit({
                   <button
                     className={`die traffic-die ${selected === TRAFFIC_DIE ? "sel" : ""} ${drag?.dieId === TRAFFIC_DIE ? "lifted" : ""}`}
                     title="Traffic die (Synchronisation) — place it on any empty space, any colour"
-                    onPointerDown={(e) => startDrag(e, { id: TRAFFIC_DIE, value: trafficHeld.value })}
+                    onPointerDown={phone ? undefined : (e) => startDrag(e, { id: TRAFFIC_DIE, value: trafficHeld.value })}
+                    onClick={phone ? () => tapHold({ id: TRAFFIC_DIE }) : undefined}
                   >
                     {trafficHeld.value}
                   </button>
@@ -732,7 +748,8 @@ export function Cockpit({
                   <button
                     className={`die intern-die ${selected === INTERN_TOKEN ? "sel" : ""} ${drag?.dieId === INTERN_TOKEN ? "lifted" : ""}`}
                     title="Intern token — place it now (not on Concentration; no Coffee)"
-                    onPointerDown={(e) => startDrag(e, { id: INTERN_TOKEN, value: internHeld.value })}
+                    onPointerDown={phone ? undefined : (e) => startDrag(e, { id: INTERN_TOKEN, value: internHeld.value })}
+                    onClick={phone ? () => tapHold({ id: INTERN_TOKEN }) : undefined}
                   >
                     {internHeld.value}
                   </button>
@@ -757,8 +774,8 @@ export function Cockpit({
                               ? "Swap this die's value"
                               : undefined
                       }
-                      onPointerDown={rerollActive || pickActive ? undefined : (e) => startDrag(e, d)}
-                      onClick={rerollActive ? () => toggleRerollDie(d.id) : pickActive ? () => pickDie(d.id) : undefined}
+                      onPointerDown={rerollActive || pickActive || phone ? undefined : (e) => startDrag(e, d)}
+                      onClick={rerollActive ? () => toggleRerollDie(d.id) : pickActive ? () => pickDie(d.id) : phone ? () => tapHold(d) : undefined}
                     >
                       {d.placed ? "" : selected === d.id && selValue !== null ? selValue : (d.value ?? "")}
                     </button>

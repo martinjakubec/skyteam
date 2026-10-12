@@ -291,7 +291,38 @@ describe("cockpit views", () => {
     expect(sent).toEqual([{ type: "placeDie", dieId: g.dice[crew][0].id, target: { kind: "axis", side: crew }, coffeeDelta: undefined }]);
   });
 
-  test("every card's board renders, turn limits marked on its approach track", () => {
+  test("phone: no dragging — a swipe from a die moves nothing; a tap picks it, a tap on a space places it", () => {
+    const real = window.matchMedia;
+    window.matchMedia = ((media: string) => ({ matches: media === "(max-width: 760px)", media, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    try {
+      const g = dealt();
+      const crew = g.turn;
+      const sent: GameCommand[] = [];
+      const { container, getByText } = render(<Cockpit snapshot={snapshotOf(g, crew)} onCommand={(c) => sent.push(c)} />);
+      const axis = container.querySelector<HTMLElement>(`.slot[data-target='${JSON.stringify({ kind: "axis", side: crew })}']`)!;
+      const die = () => container.querySelectorAll<HTMLButtonElement>(`.hand .dice button.die.${crew}`)[0];
+      expect(getByText("Your turn — tap a die, then a panel space.")).toBeTruthy();
+
+      // A finger scrolling the board from a die, ending over the Axis: no drag, nothing placed.
+      document.elementFromPoint = () => axis;
+      fireEvent.pointerDown(die(), { clientX: 300, clientY: 300 });
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 30 });
+      expect(document.querySelector(".drag-die")).toBe(null);
+      fireEvent.pointerUp(window, { clientX: 300, clientY: 30 });
+      expect(sent).toHaveLength(0);
+      expect(die().className).not.toMatch(/\bsel\b/);
+
+      // Tap the die, then the Axis.
+      fireEvent.click(die());
+      expect(die().className).toMatch(/\bsel\b/);
+      fireEvent.click(axis);
+      expect(sent).toEqual([{ type: "placeDie", dieId: g.dice[crew][0].id, target: { kind: "axis", side: crew }, coffeeDelta: undefined }]);
+    } finally {
+      window.matchMedia = real;
+    }
+  });
+
+    test("every card's board renders, turn limits marked on its approach track", () => {
     let marked = 0;
     for (const t of SCENARIO_TEMPLATES) {
       const id = t.id === "green-YUL" ? "YUL" : t.id;

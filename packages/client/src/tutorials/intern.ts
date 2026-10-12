@@ -10,7 +10,7 @@ export const intern: Tutorial = {
   setup: () => start({ modules: ["intern"], pilot: [2, 4, 5, 6], copilot: [3, 4, 6, 6] }),
   steps: [
     {
-      text: "Pilot: your next token is the 3. Drag your 2 onto the Pilot's training space to take it.",
+      text: "Pilot: your next token is the 3. Place your 2 on the Pilot's training space to take it.",
       solution: [place("pilot", 2, { kind: "intern", side: "pilot" })],
       done: (s) => s.internHeld?.crew === "pilot",
     },

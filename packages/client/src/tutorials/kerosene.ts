@@ -17,7 +17,7 @@ export const kerosene: Tutorial = {
   script: { d6: [3, 2, 6, 6, 3, 2, 6, 6] },
   steps: [
     {
-      text: "Pilot: drag your 2 onto the Kerosene space — it burns 2 right away.",
+      text: "Pilot: place your 2 on the Kerosene space — it burns 2 right away.",
       solution: [place("pilot", 2, { kind: "kerosene" })],
       done: (s, b) => s.kerosene === b.kerosene - 2,
     },
