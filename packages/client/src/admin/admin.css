@@ -138,17 +138,21 @@
 }
 
 /* Top bar. */
+/* The shell is fixed to the whole screen, so the body's safe-area padding
+   doesn't reach it: the installed iOS app (a translucent status bar) would put
+   the bar under the notch. The bar's background fills that strip instead. */
 .adm-topbar {
   position: sticky;
   top: 0;
   z-index: 10;
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--adm-surface);
   border-bottom: 1px solid var(--adm-border);
 }
 .adm-topbar-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px));
   height: 56px;
   display: flex;
   align-items: center;
@@ -199,7 +203,8 @@
 .adm-main {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px 16px 48px;
+  padding: 24px calc(16px + env(safe-area-inset-right, 0px)) calc(48px + env(safe-area-inset-bottom, 0px))
+    calc(16px + env(safe-area-inset-left, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
