@@ -198,10 +198,25 @@ function advanceGame(g: GameState, n: number, seed = 3): GameState {
 }
 
 describe("cockpit views", () => {
-  test("a spectator sees the board, no dice tray", () => {
-    const { container, getByText } = render(<Cockpit snapshot={snapshotOf(dealt(), "spectator")} onCommand={() => {}} />);
-    expect(getByText("Spectating the approach.")).toBeTruthy();
-    expect(container.querySelector(".hand")).toBe(null);
+  test("a spectator sees both hands face down; a replay (unredacted) shows their values and rerolls", () => {
+    const g = { ...dealt(), rerollTokens: 1 };
+    const live = render(<Cockpit snapshot={snapshotOf(redactGameStateFor(g, "someone-else"), "spectator")} onCommand={() => {}} />);
+    expect(live.getByText("Spectating the approach.")).toBeTruthy();
+    expect(live.container.querySelectorAll(".hand.onlooker .die.facedown")).toHaveLength(8);
+    expect(live.container.querySelector(".hand.onlooker")!.textContent).not.toMatch(/\d/);
+    expect(live.container.querySelector(".controls")).toBe(null); // nothing to press
+    cleanup();
+
+    const lead = g.turn;
+    const id = lead === "pilot" ? PILOT_ID : COPILOT_ID;
+    const was = g.dice[lead][1].value!;
+    const rerolled = reduce(g, { type: "reroll", dieIds: [1], values: [6] }, id).state;
+    const replay = render(<Cockpit snapshot={snapshotOf(rerolled, "spectator")} onCommand={() => {}} />);
+    for (const crew of ["pilot", "copilot"] as const) {
+      const shown = [...replay.container.querySelectorAll(`.hand.onlooker .die.${crew}`)].map((d) => d.textContent);
+      expect(shown).toEqual(rerolled.dice[crew].map((d) => String(d.value)));
+    }
+    expect(replay.getByText(`${lead === "pilot" ? "Pilot" : "Co-Pilot"}'s die: ${was} → 6`)).toBeTruthy();
   });
 
   test("off-turn: dice locked, the callout names who's flying (by name when set)", () => {

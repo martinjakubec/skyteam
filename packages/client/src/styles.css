@@ -2162,6 +2162,17 @@ ul {
   flex-direction: column;
   gap: 0.6rem;
 }
+/* Spectators and replays: both crews' hands side by side, read-only. */
+.hand.onlooker {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.6rem;
+}
+.onlooker-hand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
 /* Between rounds: the debrief takes the hand's place in the tray, with the
    flight log under it (on a phone the log is the bubble). */
 .between {

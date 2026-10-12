@@ -133,11 +133,15 @@ describe("a game's page and its replay", () => {
 
   test("the header, and the cockpit at the first deal", async () => {
     await open(`/games/${GAME_ID}`);
-    expect(await screen.findByText(/alice/)).toBeTruthy();
-    expect(screen.getByText(/Bot \(aviator\)/)).toBeTruthy();
+    expect((await screen.findAllByText(/alice/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Bot \(aviator\)/).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: /YUL/ })).toBeTruthy();
     expect(screen.getByText(/^Round 1 · move 1 of \d+$/)).toBeTruthy();
     expect(document.querySelector(".board")).toBeTruthy(); // the cockpit
+    // Both hands, every value showing.
+    const dice = [...document.querySelectorAll(".hand.onlooker .die")];
+    expect(dice).toHaveLength(8);
+    expect(dice.every((d) => /^[1-6]$/.test(d.textContent!))).toBe(true);
   });
 
   test("step forward and back, jump by round, and to the end", async () => {

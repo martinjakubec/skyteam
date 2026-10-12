@@ -49,8 +49,10 @@ export function useDiceRoll(rerolls: RerollNote[]): { ids: number[]; faces: Reco
   return { ids, faces };
 }
 
-/** A reroll for the log, old face → new: "Your dice: 6 → 6, 5 → 2". */
-export function rerollText(note: RerollNote): string {
-  const pairs = note.from.map((was, i) => `${was} → ${note.to[i]}`).join(", ");
-  return `${note.dieIds.length === 1 ? "Your die" : "Your dice"}: ${pairs}`;
+/** A reroll for the log, old face → new: "Your dice: 6 → 6, 5 → 2" — or, for
+ *  someone else's (a replay), "Pilot's die: 3 → 1". */
+export function rerollText(note: RerollNote, who?: string): string {
+  const pairs = note.from.map((was, i) => `${was}\u00a0→\u00a0${note.to[i]}`).join(", "); // a pair never wraps
+  const dice = note.dieIds.length === 1 ? "die" : "dice";
+  return `${who ? `${who}'s ${dice}` : `Your ${dice}`}: ${pairs}`;
 }

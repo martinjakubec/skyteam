@@ -35,6 +35,7 @@ import { rerollText, useDiceRoll } from "../useDiceRoll";
  *  and Synchronisation's Traffic die. */
 const INTERN_TOKEN = -1;
 const TRAFFIC_DIE = -2;
+const CREWS: Crew[] = ["pilot", "copilot"];
 /** Phones place dice by tapping, never by dragging (see tapHold). */
 const PHONE = "(max-width: 760px)";
 
@@ -89,11 +90,12 @@ export function Cockpit({
   const myDice = myCrew ? game.dice[myCrew] : [];
   const oppDice = myCrew ? game.dice[myCrew === "pilot" ? "copilot" : "pilot"] : [];
   const selDie = myDice.find((d) => d.id === selected && !d.placed);
-  // My own rerolls (the server sends each crew only theirs): the log line shows
-  // old → new, and the dice tumble — a die that lands on its old face still
-  // visibly rolled.
-  const myRerolls = (myCrew && game.rerolls?.[myCrew]) || [];
-  const roll = useDiceRoll(myRerolls);
+  // Rerolls, old → new: a player is sent only their own, a live spectator none,
+  // a replay both crews'. The log line shows them, and the dice tumble — a die
+  // that lands on its old face still visibly rolled.
+  const rerolls = { pilot: game.rerolls?.pilot ?? [], copilot: game.rerolls?.copilot ?? [] };
+  const rolls = { pilot: useDiceRoll(rerolls.pilot), copilot: useDiceRoll(rerolls.copilot) };
+  const roll = myCrew ? rolls[myCrew] : rolls.pilot;
   // The held Intern token is selected via the INTERN_TOKEN sentinel id; it
   // places at face value (no Coffee).
   const selValue =
@@ -732,6 +734,31 @@ export function Cockpit({
         {/* Dice tray + log */}
         <section className="tray">
           {snapshot.debrief && between}
+          {!myCrew && !snapshot.debrief && (
+            // Spectators (and replays) see both hands: a replay knows every
+            // value, a live spectator's dice stay face down.
+            <div className="hand onlooker">
+              {CREWS.map((crew) => (
+                <div key={crew} className="onlooker-hand">
+                  <label>{names[crew] ?? label(crew)}</label>
+                  <div className="dice">
+                    {game.dice[crew].map((d) => {
+                      const rolling = !d.placed && rolls[crew].ids.includes(d.id);
+                      const shown = d.placed || d.value === undefined ? "" : rolling && rolls[crew].faces[d.id] ? rolls[crew].faces[d.id] : d.value;
+                      return (
+                        <span
+                          key={d.id}
+                          className={`die ${crew} ${d.placed ? "spent" : ""} ${!d.placed && d.value === undefined ? "facedown" : ""} ${rolling ? "rolling" : ""}`}
+                        >
+                          {shown}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {myCrew && !snapshot.debrief && (
             <div className="hand">
               <label>
@@ -868,11 +895,13 @@ export function Cockpit({
           {!show && (
             <ul className="log">
               {game.log.slice(-7).map((line, i, shown) => {
-                const note = myRerolls.find((n) => n.logIndex === game.log.length - shown.length + i);
+                const at = game.log.length - shown.length + i;
+                const crew = CREWS.find((c) => rerolls[c].some((n) => n.logIndex === at));
+                const note = crew && rerolls[crew].find((n) => n.logIndex === at);
                 return (
                   <li key={i}>
                     {line}
-                    {note && <span className="reroll-note"> {rerollText(note)}</span>}
+                    {note && <span className="reroll-note"> {rerollText(note, crew === myCrew ? undefined : label(crew!))}</span>}
                   </li>
                 );
               })}

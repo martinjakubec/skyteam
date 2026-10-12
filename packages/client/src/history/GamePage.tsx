@@ -220,8 +220,8 @@ function Stepper({ record, steps }: { record: GameRecord; steps: ReplayStep[] })
   );
 }
 
-/** The room as an onlooker would have seen it at this step: the crews named,
- *  every die showing, no clock running. */
+/** The room at this step, seen from the side: the crews named, both hands
+ *  showing their values (the game isn't redacted), no clock running. */
 function replaySnapshot(record: GameRecord, game: GameState, version: number): RoomSnapshot {
   const seat = (crew: "pilot" | "copilot", role: "host" | "guest") => ({
     playerId: crew,
